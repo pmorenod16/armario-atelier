@@ -9,4 +9,4 @@ export const firebaseConfig = {
 };
 
 // 2) URL de tu Worker de Cloudflare (la que te da `npx wrangler deploy`), sin barra final.
-export const API_URL = "https://armario-api.TU-SUBDOMINIO.workers.dev";
+export const API_URL = "https://armario-api.pmorenod16.workers.dev";
