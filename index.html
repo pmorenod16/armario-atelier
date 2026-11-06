@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#25403A">
+  <title>Armario Atelier</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon-192.png">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;1,6..96,500&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head>
+<body>
+  <!-- ACCESO -->
+  <div id="authView" class="auth" hidden>
+    <div class="auth-card">
+      <div class="sub">Tu ropa · tu estilo · lo que falta</div>
+      <h1>Armario <i>Atelier</i></h1>
+      <form id="authForm" class="stack" novalidate>
+        <label>Correo<input id="authEmail" type="email" autocomplete="email" required></label>
+        <label>Contraseña<input id="authPass" type="password" autocomplete="current-password" minlength="6" required></label>
+        <div class="status" id="authStatus" aria-live="polite"></div>
+        <button class="btn primary" type="submit" id="authSubmit">Entrar</button>
+        <div class="row between">
+          <button class="link" type="button" id="authToggle">Crear cuenta nueva</button>
+          <button class="link" type="button" id="authReset">He olvidado la contraseña</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="appView" hidden>
+    <header>
+      <div class="wrap">
+        <div class="top">
+          <div>
+            <div class="sub">Tu ropa · tu estilo · lo que falta</div>
+            <div class="brand">Armario <i>Atelier</i></div>
+          </div>
+          <div class="row">
+            <span class="status" id="globalStatus" aria-live="polite"></span>
+            <button class="btn small" id="installBtn" hidden>Instalar</button>
+            <button class="btn small" id="settingsBtn" aria-label="Ajustes">Ajustes</button>
+          </div>
+        </div>
+        <nav role="tablist" aria-label="Secciones">
+          <button role="tab" id="tab-closet" aria-controls="p-closet" aria-selected="true">Armario</button>
+          <button role="tab" id="tab-outfits" aria-controls="p-outfits" aria-selected="false">Probador 3D</button>
+          <button role="tab" id="tab-style" aria-controls="p-style" aria-selected="false">Mi estilo</button>
+          <button role="tab" id="tab-shop" aria-controls="p-shop" aria-selected="false">Qué comprar</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- AJUSTES -->
+      <section class="panel" id="settingsPanel" hidden>
+        <div class="row between"><h3>Ajustes</h3><button class="btn small" id="closeSettings">Cerrar</button></div>
+        <p>Sesión iniciada como <b id="meEmail"></b>.</p>
+        <label>Tu identificador (ponlo en ALLOWED_UIDS del servidor)
+          <div class="row"><input id="meUid" readonly style="flex:1;min-width:0"><button class="btn small" id="copyUid" type="button">Copiar</button></div>
+        </label>
+        <div class="row"><button class="btn" id="signOut">Cerrar sesión</button></div>
+      </section>
+
+      <!-- ARMARIO -->
+      <section role="tabpanel" id="p-closet" aria-labelledby="tab-closet">
+        <div class="row between">
+          <div class="stack-tight">
+            <h2>Tu armario</h2>
+            <p class="lede" id="closetCount">Cargando tus prendas…</p>
+          </div>
+          <button class="btn primary" id="openAdd">+ Añadir prenda</button>
+        </div>
+        <div class="row" id="catFilter" aria-label="Filtrar por tipo"></div>
+
+        <div class="panel" id="addPanel" hidden>
+          <div class="row between"><h3 id="addTitle">Nueva prenda</h3><button class="btn small" id="closeAdd">Cerrar</button></div>
+          <div class="grid2">
+            <div class="stack">
+              <button class="drop" id="drop" type="button">
+                <span class="checker" id="previewBox" hidden><img id="photoPreview" alt="Vista previa de la prenda"></span>
+                <span id="dropText"><b>Hacer foto o elegir imagen</b><br><span class="small">En el ordenador también puedes arrastrarla aquí o pegarla con Ctrl+V. Mejor sobre fondo liso, prenda extendida y de frente.</span></span>
+              </button>
+              <input type="file" id="photoInput" accept="image/*" hidden>
+              <div class="progress" id="cutProgress" hidden><i></i></div>
+              <div class="status" id="cutStatus" aria-live="polite"></div>
+            </div>
+            <div class="stack">
+              <label>Nombre<input id="f-name" placeholder="Camisa oxford azul claro"></label>
+              <div class="grid2">
+                <label>Tipo<select id="f-category"></select></label>
+                <label>Forma<select id="f-shape"></select></label>
+              </div>
+              <div class="grid2">
+                <label>Color<input id="f-colorName" placeholder="azul claro"></label>
+                <label>Tono<input id="f-colorHex" type="color" value="#9fb7d4"></label>
+              </div>
+              <div class="grid2">
+                <label>Temporada<select id="f-season"><option>todo el año</option><option>primavera-verano</option><option>otoño-invierno</option></select></label>
+                <label>Formalidad (1–5)<input id="f-formality" type="number" min="1" max="5" value="3"></label>
+              </div>
+              <label>Estilo (separado por comas)<input id="f-tags" placeholder="clásico, minimal, casual"></label>
+            </div>
+          </div>
+          <div class="row between">
+            <div class="status" id="addStatus" aria-live="polite"></div>
+            <div class="row"><button class="btn" id="deleteItem" hidden>Eliminar prenda</button><button class="btn primary" id="saveItem">Guardar en el armario</button></div>
+          </div>
+        </div>
+
+        <div class="closet" id="closet"></div>
+      </section>
+
+      <!-- PROBADOR -->
+      <section role="tabpanel" id="p-outfits" aria-labelledby="tab-outfits" hidden>
+        <div class="stack-tight"><h2>Probador</h2><p class="lede">El maniquí se viste con las fotos reales de tus prendas. Arrástralo para girarlo; acerca pellizcando o con la rueda del ratón.</p></div>
+        <div class="studio">
+          <div class="stack">
+            <div class="stage" id="stage" aria-label="Maniquí 3D con el outfit seleccionado" tabindex="0">
+              <div class="fallback" id="stageFallback" hidden>El visor 3D no se ha podido iniciar en este dispositivo.</div>
+              <div class="stage-tools"><button class="btn small" id="frontBtn" type="button">De frente</button><button class="btn small" id="backBtn" type="button">De espaldas</button></div>
+            </div>
+            <div class="strip" id="pickStrip" aria-label="Prendas para el outfit"></div>
+          </div>
+          <div class="stack">
+            <div class="panel">
+              <h3>Outfit actual</h3>
+              <div class="slots" id="slots"></div>
+              <div class="row">
+                <input id="outfitName" placeholder="Nombre del outfit" style="flex:1;min-width:140px">
+                <button class="btn deep" id="saveOutfit">Guardar</button>
+                <button class="btn" id="clearOutfit">Vaciar</button>
+              </div>
+              <div class="status" id="outfitStatus" aria-live="polite"></div>
+            </div>
+            <div class="panel">
+              <h3>Pídele outfits a Claude</h3>
+              <div class="grid2">
+                <label>Ocasión<input id="occasion" placeholder="Clase en la uni, cena, entrevista…"></label>
+                <label>Tiempo<input id="weather" placeholder="12 °C, lluvia"></label>
+              </div>
+              <div class="row"><button class="btn primary" id="suggest">Proponer 3 outfits</button></div>
+              <div class="status" id="suggestStatus" aria-live="polite"></div>
+              <div class="cards" id="suggestions"></div>
+            </div>
+            <div class="panel">
+              <h3>Outfits guardados</h3>
+              <div class="cards" id="saved"><p class="status">Todavía no has guardado ninguno.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ESTILO -->
+      <section role="tabpanel" id="p-style" aria-labelledby="tab-style" hidden>
+        <div class="stack-tight"><h2>Tu estilo objetivo</h2><p class="lede">Claude mira las imágenes de tu tablero de Pinterest y crea tu perfil de estilo: paleta, palabras clave y prendas base. Ese perfil guía los outfits y la lista de compra.</p></div>
+        <div class="split">
+          <div class="stack">
+            <div class="panel">
+              <h3>Leer el tablero de Pinterest</h3>
+              <label>Enlace del tablero<input id="pinUrl" type="url" placeholder="https://pinterest.com/usuario/mi-estilo/"></label>
+              <div class="row"><button class="btn deep" id="readBoard">Analizar tablero</button></div>
+              <p class="note">El tablero tiene que ser público. Se leen hasta 12 pines recientes.</p>
+              <div class="status" id="boardStatus" aria-live="polite"></div>
+            </div>
+            <div class="panel">
+              <h3>O sube capturas de pines</h3>
+              <button class="drop" id="pinDrop" type="button"><span><b>Elegir capturas</b><br><span class="small">Arrástralas aquí o pégalas con Ctrl+V. Útil si el tablero es secreto. Hasta 10.</span></span></button>
+              <input type="file" id="pinInput" accept="image/*" multiple hidden>
+              <div class="thumbs" id="pinThumbs"></div>
+              <div class="row"><button class="btn primary" id="analyzePins" disabled>Analizar imágenes</button></div>
+              <div class="status" id="pinStatus" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="panel" id="styleOut"><p class="status">Aún no hay perfil de estilo.</p></div>
+        </div>
+      </section>
+
+      <!-- COMPRAR -->
+      <section role="tabpanel" id="p-shop" aria-labelledby="tab-shop" hidden>
+        <div class="row between">
+          <div class="stack-tight"><h2>Qué te falta</h2><p class="lede">Compara tu armario con tu estilo y busca en internet modelos reales en tiendas con local físico.</p></div>
+          <div class="row">
+            <label>Sección<select id="section"><option value="">Cualquiera</option><option value="mujer">Mujer</option><option value="hombre">Hombre</option></select></label>
+            <label>Presupuesto<select id="budget"><option value="bajo">Ajustado</option><option value="medio" selected>Medio</option><option value="alto">Holgado</option></select></label>
+          </div>
+        </div>
+        <div class="row"><button class="btn primary" id="findGaps">Analizar qué me falta</button><span class="status" id="gapStatus" aria-live="polite"></span></div>
+        <p class="note" id="adviceOut" hidden></p>
+        <div class="gaps" id="gaps"><div class="empty">La lista aparecerá aquí. Funciona mejor con al menos 6 prendas y tu perfil de estilo creado.</div></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

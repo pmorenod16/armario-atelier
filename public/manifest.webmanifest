@@ -1,0 +1,17 @@
+{
+  "name": "Armario Atelier",
+  "short_name": "Armario",
+  "description": "Tu armario, outfits en 3D con tus fotos y qué comprar según tu estilo de Pinterest.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ECEEEA",
+  "theme_color": "#25403A",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,16 @@
+name = "armario-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# ID de tu proyecto de Firebase (el mismo que projectId en src/config.js)
+FIREBASE_PROJECT_ID = "TU-PROYECTO"
+# Tu identificador de usuario (lo ves en la app: Ajustes). Varios, separados por comas.
+ALLOWED_UIDS = ""
+# Si publicas también la versión web en GitHub Pages, añade su dirección aquí
+ALLOWED_ORIGINS = "https://localhost,http://localhost:5173"
+MODEL_MAIN = "claude-sonnet-5-5"
+MODEL_FAST = "claude-haiku-5-5"
+
+# La clave de la API NO va aquí. Se guarda como secreto con:
+#   npx wrangler secret put ANTHROPIC_API_KEY
