@@ -85,7 +85,7 @@ Usa la misma cuenta que en el móvil: el armario se sincroniza entre los dos. En
 - **Qué comprar:** primero *Analizar qué me falta*; luego, en cada prenda, *Buscar modelos ahora* busca con Google en las webs de Zara, Massimo Dutti, H&M, Mango, Pull&Bear, Bershka, Uniqlo y COS y te enseña modelos con precio y enlace.
 
 ## Coste de la IA
-Cero. **Excepción:** *Buscar modelos ahora* usa la búsqueda de Google dentro de Gemini, que el plan gratuito no incluye: hace falta facturación en el proyecto (por ejemplo, los 10 $/mes de crédito de Google AI Pro). Sin ella, la app lo indica y quedan los botones que abren la búsqueda en cada tienda.
+Cero. *Buscar modelos ahora* usa **Tavily** (1.000 búsquedas gratis al mes, sin tarjeta): crea la cuenta en <https://app.tavily.com>, copia la clave y guárdala en Cloudflare como secreto `TAVILY_API_KEY`. Tavily busca solo en las webs de las tiendas y Gemini (gratis) saca nombre, precio y enlace. Sin esa clave, se intenta la búsqueda de Google de Gemini, que necesita facturación.
 
 Resto: La app usa Gemini (por defecto `gemini-3.5-flash`, configurable en `worker/wrangler.toml`). En el plan gratuito hay un número limitado de peticiones al día (lo ves en AI Studio) y la búsqueda con Google tiene un cupo gratuito mensual de sobra para uso personal. Con el crédito de Google AI Pro el uso normal de la app queda muy por debajo de los 10 $/mes.
 

@@ -26,3 +26,4 @@ NVIDIA_MAX_IMAGES = "1"
 # Las claves NO van aquí. Se guarda como secreto con:
 #   npx wrangler secret put GEMINI_API_KEY   (o en el panel de Cloudflare: Settings → Variables and Secrets)
 #   npx wrangler secret put NVIDIA_API_KEY   (opcional, reserva)
+#   npx wrangler secret put TAVILY_API_KEY   (búsqueda en tiendas gratis: app.tavily.com)

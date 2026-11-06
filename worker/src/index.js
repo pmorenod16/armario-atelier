@@ -80,7 +80,7 @@ const cleanImg = (s) => {
   return s;
 };
 
-const SEARCH_UNAVAILABLE = "La búsqueda de modelos no está disponible con el plan gratuito de Gemini. Usa los botones de las tiendas de arriba (o activa los créditos de Google AI Pro para tenerla).";
+const SEARCH_UNAVAILABLE = "La búsqueda de modelos necesita la clave gratuita de Tavily (TAVILY_API_KEY) o facturación en Gemini. Mientras, usa los botones de las tiendas de arriba.";
 
 /** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
 async function askGemini(env, { model, content, maxTokens = 2000, search = false }) {
@@ -278,18 +278,53 @@ Responde SOLO con JSON: {"advice": 2 frases de consejo general, "gaps":[{"piece"
     const keys = (stores || []).filter((k) => STORE_DOMAINS[k]);
     const use = keys.length ? keys : ["zara", "massimo", "hm", "mango"];
     const domains = Object.values(STORE_DOMAINS);
+    const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
+    const okUrl = (url) => { try { const u = new URL(url); return u.protocol === "https:" && okHost(u.hostname); } catch { return false; } };
+    const storeOf = (url) => { try { const h = new URL(url).hostname; const k = Object.keys(STORE_DOMAINS).find((k) => h === STORE_DOMAINS[k] || h.endsWith("." + STORE_DOMAINS[k])); return STORE_NAMES[k] || h; } catch { return ""; } };
+    const term = String(searchTerm || piece).slice(0, 80);
+
+    // 1) Gratis: Tavily busca solo en las webs de las tiendas y la IA (sin búsqueda) extrae los productos
+    if (env.TAVILY_API_KEY) {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${env.TAVILY_API_KEY}` },
+        body: JSON.stringify({
+          query: `${term} ${section === "mujer" ? "mujer" : section === "hombre" ? "hombre" : ""} comprar`.trim(),
+          include_domains: use.map((k) => STORE_DOMAINS[k]), max_results: 12, search_depth: "basic", country: "spain", language: "es",
+        }),
+      });
+      if (res.status === 401 || res.status === 403) throw new HttpError(500, "La clave de Tavily no es válida. Revisa TAVILY_API_KEY en Cloudflare.");
+      if (res.status === 429 || res.status === 432 || res.status === 433) throw new HttpError(429, "Se han acabado las búsquedas gratuitas de este mes. Usa los botones de las tiendas.");
+      if (!res.ok) { console.warn("Tavily", res.status, (await res.text()).slice(0, 300)); throw new HttpError(502, "El buscador de tiendas no responde ahora. Usa los botones de las tiendas."); }
+      const found = ((await res.json()).results || []).filter((x) => okUrl(x.url)).slice(0, 12);
+      if (!found.length) return { products: [] };
+      const list = found.map((x, i) => `[${i}] ${storeOf(x.url)} | ${x.title} | ${x.url}\n${String(x.content || "").slice(0, 400)}`).join("\n\n");
+      const r = parseJson(await askAI(env, {
+        model: FAST(env), maxTokens: 1500,
+        content: `Estos son resultados de búsqueda en webs de tiendas de ropa. Elige hasta 6 que sean fichas de producto (no categorías ni ayuda) y encajen con: "${String(piece).slice(0, 120)}" (color orientativo ${colorHint || "libre"}, presupuesto ${budget || "medio"}).
+Usa solo datos que aparezcan en el texto; si no aparece el precio, deja "price" vacío. No inventes nada.
+Responde SOLO con JSON: {"products":[{"i": número del resultado, "name": nombre del producto, "price": "29,95 €", "color": color si aparece}]}
+
+${list}`,
+      }));
+      return {
+        products: (r.products || []).map((p) => { const x = found[Number(p.i)]; return x ? { store: storeOf(x.url), name: String(p.name || x.title).slice(0, 120), price: String(p.price || ""), color: String(p.color || ""), url: x.url } : null; })
+          .filter(Boolean).slice(0, 6),
+      };
+    }
+
+    // 2) Con facturación en Gemini: búsqueda de Google integrada
     const { text, sources } = await askAI(env, {
       model: MAIN(env), maxTokens: 2500, search: true,
       content: `Busca en Google productos a la venta ahora en las webs españolas de estas tiendas: ${use.map((k) => `${STORE_NAMES[k]} (${STORE_DOMAINS[k]})`).join(", ")}. Solo de esos dominios: ${domains.join(", ")}.
-Prenda: "${String(piece).slice(0, 120)}". Búsqueda sugerida: "${String(searchTerm || piece).slice(0, 80)}". Color orientativo ${colorHint || "libre"}, sección ${section || "cualquiera"}, presupuesto ${budget || "medio"}.
+Prenda: "${String(piece).slice(0, 120)}". Búsqueda sugerida: "${term}". Color orientativo ${colorHint || "libre"}, sección ${section || "cualquiera"}, presupuesto ${budget || "medio"}.
 Devuelve hasta 6 productos distintos. Usa solo nombres, precios y enlaces que aparezcan en los resultados; si no ves el precio, deja "price" vacío. No inventes productos.
 Responde al final SOLO con JSON: {"products":[{"store": nombre de la tienda, "name": nombre del producto, "price": "29,95 €", "url": enlace a la ficha, "color": color si aparece}]}`,
     });
     const r = parseJson(text);
-    const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
     const sourceFor = (store) => sources.find((w) => domains.some((d) => (w.title || "").includes(d)) && (w.title || "").toLowerCase().includes(String(STORE_DOMAINS[Object.keys(STORE_NAMES).find((k) => STORE_NAMES[k] === store)] || "~").split(".")[0]));
     r.products = (r.products || []).map((p) => {
-      try { const u = new URL(p.url); if (u.protocol === "https:" && okHost(u.hostname)) return p; } catch {}
+      if (okUrl(p.url)) return p;
       const src = sourceFor(p.store); return src ? { ...p, url: src.uri } : null;
     }).filter(Boolean).slice(0, 6);
     return r;
