@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 # ID de tu proyecto de Firebase (el mismo que projectId en src/config.js)
 FIREBASE_PROJECT_ID = "armario-atelier"
 # Tu identificador de usuario (lo ves en la app: Ajustes). Varios, separados por comas.
-ALLOWED_UIDS = ""
+ALLOWED_UIDS = "gyhrn5U6V7cFslqwDzabTPxEu0w2"
 # Si publicas también la versión web en GitHub Pages, añade su dirección aquí
 ALLOWED_ORIGINS = "https://localhost,http://localhost:5173,https://pmorenod16.github.io"
 # Modelos de Gemini (cámbialos si Google retira alguno: https://ai.google.dev/gemini-api/docs/models)
