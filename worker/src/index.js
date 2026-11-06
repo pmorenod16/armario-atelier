@@ -80,6 +80,8 @@ const cleanImg = (s) => {
   return s;
 };
 
+const SEARCH_UNAVAILABLE = "La búsqueda de modelos no está disponible con el plan gratuito de Gemini. Usa los botones de las tiendas de arriba (o activa los créditos de Google AI Pro para tenerla).";
+
 /** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
 async function askGemini(env, { model, content, maxTokens = 2000, search = false }) {
   const parts = typeof content === "string" ? [{ text: content }] : content;
@@ -95,7 +97,7 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
   });
   if (res.status === 429) {
     console.warn("Gemini 429", model, search ? "(búsqueda)" : "", (await res.text()).slice(0, 500));
-    throw new HttpError(429, search ? "La búsqueda en tiendas ha llegado al límite gratuito de Google por ahora. Usa los enlaces de las tiendas o prueba más tarde." : "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
+    throw new HttpError(429, search ? SEARCH_UNAVAILABLE : "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
   }
   if (res.status === 400 || res.status === 403) {
     const err = await res.json().catch(() => ({}));
@@ -104,7 +106,10 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
     if (/not found|is not supported/i.test(msg)) throw new HttpError(500, "El modelo de Gemini configurado no existe. Revisa MODEL_MAIN en wrangler.toml.");
     console.error(err); throw new HttpError(502, "Gemini no ha aceptado la petición.");
   }
-  if (!res.ok) throw new HttpError(502, "Gemini no está disponible ahora. Inténtalo en un rato.");
+  if (!res.ok) {
+    console.warn("Gemini", res.status, model, (await res.text()).slice(0, 300));
+    throw new HttpError(search ? 429 : 502, search ? SEARCH_UNAVAILABLE : "Gemini no está disponible ahora. Inténtalo en un rato.");
+  }
   const data = await res.json();
   const cand = data.candidates?.[0];
   if (!cand?.content?.parts?.length) {
