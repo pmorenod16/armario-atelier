@@ -2,6 +2,9 @@ name = "armario-api"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+[observability]
+enabled = true
+
 [vars]
 # ID de tu proyecto de Firebase (el mismo que projectId en src/config.js)
 FIREBASE_PROJECT_ID = "armario-atelier"
@@ -12,6 +15,8 @@ ALLOWED_ORIGINS = "https://localhost,http://localhost:5173,https://pmorenod16.gi
 # Modelos de Gemini (cámbialos si Google retira alguno: https://ai.google.dev/gemini-api/docs/models)
 MODEL_MAIN = "gemini-3.5-flash"
 MODEL_FAST = "gemini-3.5-flash"
+# Si la búsqueda en tiendas agota el cupo gratuito del modelo principal, se prueba este
+MODEL_SEARCH_FALLBACK = "gemini-2.5-flash"
 
 # Reserva gratuita si Gemini falla o se agota: NVIDIA (build.nvidia.com)
 NVIDIA_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"

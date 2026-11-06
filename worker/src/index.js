@@ -93,7 +93,10 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
     headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
     body: JSON.stringify(body),
   });
-  if (res.status === 429) throw new HttpError(429, "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
+  if (res.status === 429) {
+    console.warn("Gemini 429", model, search ? "(búsqueda)" : "", (await res.text()).slice(0, 500));
+    throw new HttpError(429, search ? "La búsqueda en tiendas ha llegado al límite gratuito de Google por ahora. Usa los enlaces de las tiendas o prueba más tarde." : "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
+  }
   if (res.status === 400 || res.status === 403) {
     const err = await res.json().catch(() => ({}));
     const msg = err?.error?.message || "";
@@ -125,6 +128,10 @@ async function askAI(env, opts) {
   try {
     return await askGemini(env, opts);
   } catch (e) {
+    // La búsqueda con Google tiene cupos gratuitos distintos según el modelo: probar el de reserva
+    if (opts.search && e instanceof HttpError && e.status === 429 && env.MODEL_SEARCH_FALLBACK && env.MODEL_SEARCH_FALLBACK !== opts.model) {
+      return askGemini(env, { ...opts, model: env.MODEL_SEARCH_FALLBACK });
+    }
     const retryable = e instanceof HttpError && [429, 500, 502].includes(e.status);
     if (!hasNvidia || opts.search || !retryable) throw e;
     console.warn("Gemini falló, uso NVIDIA:", e.message);
