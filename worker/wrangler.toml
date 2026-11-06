@@ -9,8 +9,9 @@ FIREBASE_PROJECT_ID = "armario-atelier"
 ALLOWED_UIDS = ""
 # Si publicas también la versión web en GitHub Pages, añade su dirección aquí
 ALLOWED_ORIGINS = "https://localhost,http://localhost:5173,https://pmorenod16.github.io"
-MODEL_MAIN = "claude-sonnet-5-5"
-MODEL_FAST = "claude-haiku-5-5"
+# Modelos de Gemini (cámbialos si Google retira alguno: https://ai.google.dev/gemini-api/docs/models)
+MODEL_MAIN = "gemini-3.5-flash"
+MODEL_FAST = "gemini-3.5-flash"
 
 # La clave de la API NO va aquí. Se guarda como secreto con:
-#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put GEMINI_API_KEY   (o en el panel de Cloudflare: Settings → Variables and Secrets)

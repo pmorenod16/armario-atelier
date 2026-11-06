@@ -8,8 +8,8 @@ App para Android y ordenador para clasificar tu armario, montar outfits en un ma
 |---|---|---|
 | App (`src/`, Vite + Capacitor) | Interfaz, cámara, recorte de fondo en el móvil, maniquí 3D (three.js) | Gratis |
 | Firebase (Auth + Firestore) | Tu cuenta, tus prendas, fotos recortadas, outfits y perfil de estilo | Gratis (plan Spark) |
-| Cloudflare Worker (`worker/`) | Guarda la clave de Claude y hace las llamadas a la IA | Gratis |
-| API de Claude | Clasificar fotos, outfits, Pinterest, lista de compra, búsqueda en tiendas | Pago por uso |
+| Cloudflare Worker (`worker/`) | Guarda la clave de Gemini y hace las llamadas a la IA | Gratis |
+| API de Gemini (Google) | Clasificar fotos, outfits, Pinterest, lista de compra, búsqueda en tiendas con Google | Gratis (plan gratuito, o con los 10 $/mes de crédito de Google AI Pro) |
 | GitHub Actions | Compila el APK cada vez que subes cambios | Gratis |
 
 No usa Firebase Storage (exige el plan Blaze): las fotos recortadas se guardan comprimidas en Firestore.
@@ -25,9 +25,11 @@ No usa Firebase Storage (exige el plan Blaze): las fotos recortadas se guardan c
 4. En **Firestore → Reglas**, pega el contenido de `firestore.rules` y publica.
 5. **Configuración del proyecto → Tus apps → icono web `</>`** → registra una app → copia `apiKey`, `authDomain`, `projectId` y `appId` en `src/config.js`.
 
-### 2. Clave de la API de Claude
-1. Entra en <https://console.anthropic.com>, añade saldo y crea una clave en **API Keys**.
-2. Guárdala: solo se muestra una vez. No la pongas nunca en la app ni en GitHub.
+### 2. Clave de la API de Gemini (gratis)
+1. Entra en <https://aistudio.google.com/apikey> → **Create API key** → elige el proyecto `armario-atelier` (el de Firebase).
+2. Copia la clave. No la pongas nunca en la app ni en GitHub: va solo en Cloudflare.
+3. **Si tienes Google AI Pro:** activa los 10 $/mes de crédito de Google Cloud en <https://developers.google.com/program/my-benefits> y asígnalos a ese proyecto. Así tu uso pasa al nivel de pago, cubierto por el crédito: sin límites tan bajos y sin que Google use tus fotos para mejorar sus productos. Pon una alerta de presupuesto de 10 $ en Google Cloud para no pasarte nunca.
+4. Sin crédito, funciona igual con el plan gratuito, con límites diarios y con la condición de que Google puede usar lo que envías para mejorar sus productos.
 
 ### 3. Servidor (Cloudflare Worker)
 Necesitas Node 22 en tu ordenador.
@@ -36,7 +38,7 @@ cd worker
 npm install
 npx wrangler login                       # abre el navegador para entrar en Cloudflare (cuenta gratis)
 # edita wrangler.toml: FIREBASE_PROJECT_ID = "el projectId de tu Firebase"
-npx wrangler secret put ANTHROPIC_API_KEY  # pega tu clave de Claude
+npx wrangler secret put GEMINI_API_KEY     # pega tu clave de Gemini
 npx wrangler deploy
 ```
 Copia la dirección que te da (`https://armario-api.<algo>.workers.dev`) en `API_URL` de `src/config.js`.
@@ -52,7 +54,7 @@ Copia la dirección que te da (`https://armario-api.<algo>.workers.dev`) en `API
 2. **Ajustes → Copiar** tu identificador.
 3. En `worker/wrangler.toml` pon `ALLOWED_UIDS = "tu-identificador"` y vuelve a ejecutar `npx wrangler deploy`.
 
-A partir de aquí, solo tu cuenta puede usar la IA (y gastar tu saldo de la API).
+A partir de aquí, solo tu cuenta puede usar la IA con tu clave.
 
 ---
 
@@ -69,10 +71,10 @@ Usa la misma cuenta que en el móvil: el armario se sincroniza entre los dos. En
 - **Fotos de prendas:** extiéndela sobre un fondo liso (sábana, suelo claro), de frente y con buena luz. La primera vez el móvil descarga el modelo de recorte (unos 40 MB, con wifi mejor); después recorta sin conexión.
 - **Probador 3D:** la foto recortada se coloca sobre el maniquí y los lados y la espalda toman el color de la prenda. Arrastra para girar, pellizca para acercar.
 - **Pinterest:** pega el enlace de un tablero **público** (`pinterest.com/usuario/tablero`). Se analizan los 12 pines más recientes. Si es secreto o Pinterest no responde, sube capturas.
-- **Qué comprar:** primero *Analizar qué me falta*; luego, en cada prenda, *Buscar modelos ahora* busca en las webs de Zara, Massimo Dutti, H&M, Mango, Pull&Bear, Bershka, Uniqlo y COS y te enseña modelos con precio y enlace.
+- **Qué comprar:** primero *Analizar qué me falta*; luego, en cada prenda, *Buscar modelos ahora* busca con Google en las webs de Zara, Massimo Dutti, H&M, Mango, Pull&Bear, Bershka, Uniqlo y COS y te enseña modelos con precio y enlace.
 
 ## Coste de la IA
-Se paga a Anthropic por uso, aparte de tu suscripción de Claude. Clasificar una prenda usa el modelo rápido y es lo más barato; analizar el armario o un tablero cuesta algo más por llevar más texto o imágenes. *Buscar modelos ahora* hace hasta 5 búsquedas web, que se cobran aparte. En la consola de Anthropic puedes poner un límite de gasto mensual.
+Cero. La app usa Gemini (por defecto `gemini-3.5-flash`, configurable en `worker/wrangler.toml`). En el plan gratuito hay un número limitado de peticiones al día (lo ves en AI Studio) y la búsqueda con Google tiene un cupo gratuito mensual de sobra para uso personal. Con el crédito de Google AI Pro el uso normal de la app queda muy por debajo de los 10 $/mes.
 
 ## Desarrollo
 ```bash

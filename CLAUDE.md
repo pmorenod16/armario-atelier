@@ -17,7 +17,7 @@ src/api.js            fetch al Worker con el token de Firebase; errores ya tradu
 src/config.js         Configuración de Firebase y URL del Worker (no son secretos)
 src/styles.css        Tokens de diseño en :root (claro/oscuro con prefers-color-scheme)
 public/               manifest.webmanifest, sw.js (solo web), iconos
-worker/src/index.js   Cloudflare Worker: verifica el token de Firebase (jose) + ALLOWED_UIDS y llama a la API de Claude
+worker/src/index.js   Cloudflare Worker: verifica el token de Firebase (jose) + ALLOWED_UIDS y llama a la API de Gemini (función askAI)
 scripts/patch-android.mjs  Añade permisos de cámara/fotos al AndroidManifest generado
 .github/workflows/    android.yml (APK en cada push a main), web.yml (GitHub Pages)
 firestore.rules       Cada usuario solo accede a users/{uid}/**
@@ -49,9 +49,9 @@ cd worker && npx wrangler deploy
 | `/api/style/images` | `{images[]}` | `{style}` |
 | `/api/style/pinterest` | `{url}` tablero público → lee `<usuario>/<tablero>.rss` y descarga hasta 12 pines | `{style, pinCount}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
-| `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → búsqueda web de Claude limitada a los dominios de las tiendas | `{products:[{store,name,price,url,color}]}` |
+| `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |
 
-Modelos en `wrangler.toml`: `MODEL_MAIN=claude-sonnet-5-5`, `MODEL_FAST=claude-haiku-5-5`. La clave va como secreto (`wrangler secret put ANTHROPIC_API_KEY`), nunca en el código. Tiendas: zara, massimo, hm, mango, pull, bershka, uniqlo, cos (todas con tiendas físicas en España); los ids coinciden en `worker/src/index.js` (STORE_DOMAINS) y `src/main.js` (STORES).
+IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/mes de crédito de Cloud). Modelos en `wrangler.toml`: `MODEL_MAIN` y `MODEL_FAST` = `gemini-3.5-flash`. Llamadas REST a `generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent` con `x-goog-api-key`; JSON forzado con `responseMimeType` salvo en la búsqueda (no se puede combinar con `google_search`). La clave va como secreto `GEMINI_API_KEY`, nunca en el código. Tiendas: zara, massimo, hm, mango, pull, bershka, uniqlo, cos (todas con tiendas físicas en España); los ids coinciden en `worker/src/index.js` (STORE_DOMAINS) y `src/main.js` (STORES).
 
 ## Detalles que hay que respetar
 - El origen de Capacitor 8 en Android es `https://localhost`; la web de Pages debe estar en `ALLOWED_ORIGINS` del Worker.
@@ -61,5 +61,5 @@ Modelos en `wrangler.toml`: `MODEL_MAIN=claude-sonnet-5-5`, `MODEL_FAST=claude-h
 - Antes de dar algo por terminado: `npm run build` sin errores y, si tocas `viewer.js`, comprobar el maniquí de frente, de lado y de espaldas.
 
 ## Estado
-Hecho: todo lo anterior. Sin probar con servicios reales: compilación del APK en GitHub Actions, llamadas reales a Claude y lectura del RSS de Pinterest.
+Hecho: todo lo anterior. Comprobado: el APK compila en Actions y la web se publica en https://pmorenod16.github.io/armario-atelier/. Firebase configurado (proyecto armario-atelier, eur3, reglas publicadas, dominio de Pages autorizado). Sin probar con servicios reales: llamadas reales a Gemini, lectura del RSS de Pinterest.
 Ideas pendientes: notificación "qué me pongo hoy" según el tiempo, estadísticas de uso de cada prenda, iconos de la tienda en los resultados.

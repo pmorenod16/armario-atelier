@@ -1,5 +1,5 @@
 // Armario Atelier — servidor (Cloudflare Worker)
-// Guarda la clave de la API de Claude y solo atiende a las cuentas de Firebase que autorices.
+// Guarda la clave de la API de Gemini y solo atiende a las cuentas de Firebase que autorices.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
@@ -60,7 +60,8 @@ async function verifyUser(req, env) {
 
 /* ---------- utilidades ---------- */
 const json = (data, status, headers) => new Response(JSON.stringify(data), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
-const imageBlock = (data, media_type = "image/jpeg") => ({ type: "image", source: { type: "base64", media_type, data } });
+const imageBlock = (data, mime_type = "image/jpeg") => ({ inline_data: { mime_type, data } });
+const textBlock = (text) => ({ text });
 function b64(buf) {
   const bytes = new Uint8Array(buf); let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
@@ -70,8 +71,8 @@ function parseJson(text) {
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const src = fence ? fence[1] : text;
   const a = src.indexOf("{"), b = src.lastIndexOf("}");
-  if (a < 0 || b < a) throw new HttpError(502, "La respuesta de Claude ha salido incompleta. Vuelve a intentarlo.");
-  try { return JSON.parse(src.slice(a, b + 1)); } catch { throw new HttpError(502, "La respuesta de Claude ha salido incompleta. Vuelve a intentarlo."); }
+  if (a < 0 || b < a) throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo.");
+  try { return JSON.parse(src.slice(a, b + 1)); } catch { throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo."); }
 }
 const cleanImg = (s) => {
   if (typeof s !== "string" || s.length < 100) throw new HttpError(400, "Imagen no válida.");
@@ -79,31 +80,40 @@ const cleanImg = (s) => {
   return s;
 };
 
-/** Llamada a la API de Claude. Repite si el modelo pausa a mitad de una búsqueda web. */
-async function claude(env, { model, content, maxTokens = 2000, tools, system }) {
-  const messages = [{ role: "user", content }];
-  for (let round = 0; round < 4; round++) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages, ...(tools ? { tools } : {}) }),
-    });
-    if (res.status === 429) throw new HttpError(429, "Demasiadas peticiones seguidas. Espera un minuto.");
-    if (res.status === 401) throw new HttpError(500, "La clave de la API de Claude no es válida. Revisa ANTHROPIC_API_KEY.");
-    if (res.status === 400) {
-      const err = await res.json().catch(() => ({}));
-      if (/credit|billing/i.test(err?.error?.message || "")) throw new HttpError(402, "Tu cuenta de la API de Claude no tiene saldo.");
-      console.error(err); throw new HttpError(502, "Claude no ha aceptado la petición.");
-    }
-    if (!res.ok) throw new HttpError(502, "Claude no está disponible ahora. Inténtalo en un rato.");
-    const data = await res.json();
-    if (data.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: data.content }); continue; }
-    return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+/** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
+async function askAI(env, { model, content, maxTokens = 2000, search = false }) {
+  const parts = typeof content === "string" ? [{ text: content }] : content;
+  const body = {
+    contents: [{ role: "user", parts }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.6, ...(search ? {} : { responseMimeType: "application/json" }) },
+    ...(search ? { tools: [{ google_search: {} }] } : {}),
+  };
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 429) throw new HttpError(429, "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
+  if (res.status === 400 || res.status === 403) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err?.error?.message || "";
+    if (/api key|API_KEY/i.test(msg)) throw new HttpError(500, "La clave de Gemini no es válida. Revisa GEMINI_API_KEY en Cloudflare.");
+    if (/not found|is not supported/i.test(msg)) throw new HttpError(500, "El modelo de Gemini configurado no existe. Revisa MODEL_MAIN en wrangler.toml.");
+    console.error(err); throw new HttpError(502, "Gemini no ha aceptado la petición.");
   }
-  throw new HttpError(504, "La búsqueda ha tardado demasiado. Vuelve a intentarlo.");
+  if (!res.ok) throw new HttpError(502, "Gemini no está disponible ahora. Inténtalo en un rato.");
+  const data = await res.json();
+  const cand = data.candidates?.[0];
+  if (!cand?.content?.parts?.length) {
+    if (data.promptFeedback?.blockReason || cand?.finishReason === "SAFETY") throw new HttpError(422, "Gemini no ha querido analizar esa imagen. Prueba con otra foto.");
+    throw new HttpError(502, "Gemini ha devuelto una respuesta vacía. Vuelve a intentarlo.");
+  }
+  const text = cand.content.parts.map((p) => p.text || "").join("");
+  if (search) return { text, sources: (cand.groundingMetadata?.groundingChunks || []).map((c) => c.web).filter(Boolean) };
+  return text;
 }
-const MAIN = (env) => env.MODEL_MAIN || "claude-sonnet-5-5";
-const FAST = (env) => env.MODEL_FAST || "claude-haiku-5-5";
+const MAIN = (env) => env.MODEL_MAIN || "gemini-3.5-flash";
+const FAST = (env) => env.MODEL_FAST || "gemini-3.5-flash";
 
 const wardrobeText = (w = []) => w.slice(0, 300).map((i) => `${i.id} | ${i.name} | ${i.category}/${i.shape} | ${i.color} | ${i.season} | formalidad ${i.formality} | ${(i.tags || []).join(", ")}`).join("\n");
 const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywords || []).join(", ")}\nPaleta: ${(s.palette || []).map((p) => p.name).join(", ")}\nPrendas clave: ${(s.keyPieces || []).join(", ")}\nSiluetas: ${s.silhouettes || "-"}\nEvitar: ${s.avoid || "-"}` : "(Todavía no hay perfil de estilo: usa un estilo versátil y actual.)";
@@ -112,17 +122,17 @@ const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywor
 const ROUTES = {
   // Foto de una prenda → datos para el armario
   async "/api/classify"({ image }, env) {
-    const text = await claude(env, {
+    const text = await askAI(env, {
       model: FAST(env), maxTokens: 500,
-      content: [imageBlock(cleanImg(image)), { type: "text", text: `Eres estilista. La imagen es una prenda o complemento. Responde SOLO con JSON:
-{"name": nombre corto en español (ej. "Camisa oxford azul claro"), "category": top|outer|bottom|dress|shoes|accessory, "shape": la forma dentro de su categoría (${SHAPES}), "colorName": color principal en español, "colorHex": "#rrggbb", "season": "todo el año"|"primavera-verano"|"otoño-invierno", "formality": entero 1 (muy casual) a 5 (muy formal), "tags": 3-4 estilos en español}` }],
+      content: [imageBlock(cleanImg(image)), textBlock(`Eres estilista. La imagen es una prenda o complemento. Responde SOLO con JSON:
+{"name": nombre corto en español (ej. "Camisa oxford azul claro"), "category": top|outer|bottom|dress|shoes|accessory, "shape": la forma dentro de su categoría (${SHAPES}), "colorName": color principal en español, "colorHex": "#rrggbb", "season": "todo el año"|"primavera-verano"|"otoño-invierno", "formality": entero 1 (muy casual) a 5 (muy formal), "tags": 3-4 estilos en español}`)],
     });
     return parseJson(text);
   },
 
   // Armario + estilo + ocasión → 3 outfits
   async "/api/outfits"({ wardrobe, style, occasion, weather }, env) {
-    const text = await claude(env, {
+    const text = await askAI(env, {
       model: MAIN(env), maxTokens: 1800,
       content: `Eres estilista personal. Propón 3 outfits usando SOLO prendas de este armario (ids exactos).
 Ocasión: ${String(occasion || "día a día").slice(0, 200)}. Tiempo: ${String(weather || "no indicado").slice(0, 100)}.
@@ -142,9 +152,9 @@ Responde SOLO con JSON: {"outfits":[{"title": nombre corto, "itemIds":[ids], "wh
   async "/api/style/images"({ images }, env) {
     if (!Array.isArray(images) || !images.length) throw new HttpError(400, "Sube al menos una imagen.");
     const blocks = images.slice(0, 10).map((i) => imageBlock(cleanImg(i)));
-    const text = await claude(env, {
+    const text = await askAI(env, {
       model: MAIN(env), maxTokens: 1500,
-      content: [...blocks, { type: "text", text: `Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}` }],
+      content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}`)],
     });
     return { style: parseJson(text) };
   },
@@ -175,17 +185,17 @@ Responde SOLO con JSON: {"outfits":[{"title": nombre corto, "itemIds":[ids], "wh
       } catch { return null; }
     }))).filter(Boolean);
     if (!blocks.length) throw new HttpError(502, "No he podido descargar las imágenes de los pines. Prueba subiendo capturas.");
-    const text = await claude(env, {
+    const text = await askAI(env, {
       model: MAIN(env), maxTokens: 1500,
-      content: [...blocks, { type: "text", text: `Estas imágenes son los pines más recientes de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Títulos de los pines: ${titles.slice(0, 1500)}
-Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}` }],
+      content: [...blocks, textBlock(`Estas imágenes son los pines más recientes de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Títulos de los pines: ${titles.slice(0, 1500)}
+Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}`)],
     });
     return { style: parseJson(text), pinCount: blocks.length };
   },
 
   // Armario + estilo → qué falta comprar
   async "/api/gaps"({ wardrobe, style, budget, section }, env) {
-    const text = await claude(env, {
+    const text = await askAI(env, {
       model: MAIN(env), maxTokens: 2500,
       content: `Eres estilista y personal shopper en España. Compara el armario con el estilo objetivo y decide qué falta comprar para crear más outfits de ese estilo con lo que ya hay. Prioriza básicos versátiles que combinen con muchas prendas existentes. Presupuesto: ${budget || "medio"}. Sección: ${section || "cualquiera"}.
 Tiendas posibles (todas con tiendas físicas en España): ${Object.keys(STORE_DOMAINS).join(", ")}. Elige 2-3 por prenda según encaje de estilo y presupuesto.
@@ -211,16 +221,20 @@ Responde SOLO con JSON: {"advice": 2 frases de consejo general, "gaps":[{"piece"
     const keys = (stores || []).filter((k) => STORE_DOMAINS[k]);
     const use = keys.length ? keys : ["zara", "massimo", "hm", "mango"];
     const domains = Object.values(STORE_DOMAINS);
-    const text = await claude(env, {
-      model: MAIN(env), maxTokens: 2500,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5, allowed_domains: domains, user_location: { type: "approximate", country: "ES", timezone: "Europe/Madrid" } }],
-      content: `Busca en las webs españolas de estas tiendas (prioriza ${use.map((k) => STORE_NAMES[k]).join(", ")}) productos que estén a la venta ahora y encajen con: "${String(piece).slice(0, 120)}" (búsqueda sugerida: "${String(searchTerm || piece).slice(0, 80)}", color orientativo ${colorHint || "libre"}, sección ${section || "cualquiera"}, presupuesto ${budget || "medio"}).
+    const { text, sources } = await askAI(env, {
+      model: MAIN(env), maxTokens: 2500, search: true,
+      content: `Busca en Google productos a la venta ahora en las webs españolas de estas tiendas: ${use.map((k) => `${STORE_NAMES[k]} (${STORE_DOMAINS[k]})`).join(", ")}. Solo de esos dominios: ${domains.join(", ")}.
+Prenda: "${String(piece).slice(0, 120)}". Búsqueda sugerida: "${String(searchTerm || piece).slice(0, 80)}". Color orientativo ${colorHint || "libre"}, sección ${section || "cualquiera"}, presupuesto ${budget || "medio"}.
 Devuelve hasta 6 productos distintos. Usa solo nombres, precios y enlaces que aparezcan en los resultados; si no ves el precio, deja "price" vacío. No inventes productos.
 Responde al final SOLO con JSON: {"products":[{"store": nombre de la tienda, "name": nombre del producto, "price": "29,95 €", "url": enlace a la ficha, "color": color si aparece}]}`,
     });
     const r = parseJson(text);
     const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
-    r.products = (r.products || []).filter((p) => { try { const u = new URL(p.url); return u.protocol === "https:" && okHost(u.hostname); } catch { return false; } }).slice(0, 6);
+    const sourceFor = (store) => sources.find((w) => domains.some((d) => (w.title || "").includes(d)) && (w.title || "").toLowerCase().includes(String(STORE_DOMAINS[Object.keys(STORE_NAMES).find((k) => STORE_NAMES[k] === store)] || "~").split(".")[0]));
+    r.products = (r.products || []).map((p) => {
+      try { const u = new URL(p.url); if (u.protocol === "https:" && okHost(u.hostname)) return p; } catch {}
+      const src = sourceFor(p.store); return src ? { ...p, url: src.uri } : null;
+    }).filter(Boolean).slice(0, 6);
     return r;
   },
 };
