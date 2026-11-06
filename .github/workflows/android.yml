@@ -34,6 +34,18 @@ jobs:
           npx capacitor-assets generate --android --iconBackgroundColor '#25403A' --splashBackgroundColor '#ECEEEA' --splashBackgroundColorDark '#151B19' || echo "Iconos por defecto"
           npx cap sync android
 
+      - name: Firma fija del APK (necesaria para entrar con Google)
+        env:
+          ANDROID_DEBUG_KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_DEBUG_KEYSTORE" ]; then
+            mkdir -p ~/.android
+            echo "$ANDROID_DEBUG_KEYSTORE" | base64 -d > ~/.android/debug.keystore
+            echo "Usando la firma fija del repositorio"
+          else
+            echo "::warning::Falta el secreto ANDROID_DEBUG_KEYSTORE: entrar con Google no funcionará en este APK"
+          fi
+
       - name: Compilar el APK
         working-directory: android
         run: |

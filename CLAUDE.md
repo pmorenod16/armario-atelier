@@ -12,7 +12,7 @@ index.html            Interfaz (4 pestañas: Armario, Probador 3D, Mi estilo, Qu
 src/main.js           Lógica de la interfaz: estado, render, cámara, arrastrar/pegar, llamadas a la API
 src/viewer.js         Maniquí 3D con three.js; cada prenda = foto recortada en superficie curva + volumen de tela del color medio de la foto
 src/cutout.js         Quita el fondo en el dispositivo: @imgly/background-removal (modelo isnet_quint8) → si falla, relleno por color de fondo → si no, foto tal cual. Devuelve WebP con transparencia
-src/firebase.js       Auth (correo/contraseña, initializeAuth para el WebView) + Firestore con caché local multipestaña
+src/firebase.js       Auth (correo/contraseña y Google: popup en web, @capacitor-firebase/authentication nativo en Android con skipNativeAuth → signInWithCredential) + Firestore con caché local multipestaña
 src/api.js            fetch al Worker con el token de Firebase; errores ya traducidos
 src/config.js         Configuración de Firebase y URL del Worker (no son secretos)
 src/styles.css        Tokens de diseño en :root (claro/oscuro con prefers-color-scheme)
@@ -55,6 +55,7 @@ IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/me
 
 ## Detalles que hay que respetar
 - El origen de Capacitor 8 en Android es `https://localhost`; la web de Pages debe estar en `ALLOWED_ORIGINS` del Worker.
+- Google en Android: `android-config/google-services.json` (lo copia `patch-android.mjs`), `rgcfaIncludeGoogle` en variables.gradle, y firma fija desde el secreto `ANDROID_DEBUG_KEYSTORE` (SHA-1 `CF:0F:B5:87:4C:53:9B:50:39:DB:3A:A8:C0:06:71:48:FB:DB:1C:94` registrada en Firebase). Firebase JS fijado en 12.x por compatibilidad con el plugin.
 - `ALLOWED_UIDS` vacío = el Worker rechaza a todos (a propósito). El usuario copia su uid desde Ajustes.
 - Las fotos van siempre por `shrinkPhoto` antes de procesarlas o enviarlas.
 - `@imgly/background-removal` es AGPL-3.0: bien para uso personal; avisar si se plantea publicar la app.

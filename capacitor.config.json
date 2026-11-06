@@ -2,6 +2,15 @@
   "appId": "com.polete.armario",
   "appName": "Armario Atelier",
   "webDir": "dist",
-  "android": { "backgroundColor": "#ECEEEA" },
-  "plugins": {}
+  "android": {
+    "backgroundColor": "#ECEEEA"
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com"
+      ]
+    }
+  }
 }

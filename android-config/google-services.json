@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "712860814730",
+    "project_id": "armario-atelier",
+    "storage_bucket": "armario-atelier.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:712860814730:android:09df4900cf1fbe83d60c73",
+        "android_client_info": {
+          "package_name": "com.polete.armario"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "712860814730-haij1u390o0k3fkiul7m0kkg2k8aveb6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAU56KIUa6Ih4ejphgj8EpQX3ra0ecAUHs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "712860814730-haij1u390o0k3fkiul7m0kkg2k8aveb6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

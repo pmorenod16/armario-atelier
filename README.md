@@ -65,6 +65,10 @@ A partir de aquí, solo tu cuenta puede usar la IA con tu clave.
 
 ---
 
+## Entrar con Google
+- **Ordenador / web:** funciona directamente (ventana de Google).
+- **APK de Android:** usa el inicio de sesión nativo de Google. Necesita que el APK se firme siempre con la misma clave, guardada en el secreto de GitHub `ANDROID_DEBUG_KEYSTORE` (Settings → Secrets and variables → Actions). Su huella SHA-1 está registrada en Firebase (app Android `com.polete.armario`). Si algún día cambias esa clave, añade la nueva SHA-1 en Firebase → Configuración del proyecto → app Android.
+
 ## En el ordenador (Windows, Mac o Linux)
 La misma app se instala en el ordenador como aplicación (PWA), sin tienda y sin compilar nada:
 1. En GitHub: **Settings → Pages → Source: GitHub Actions**. Desde ese momento, cada vez que subes cambios a `main` se publica sola (Actions → *Versión de ordenador y web*).

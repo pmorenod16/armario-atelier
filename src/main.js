@@ -2,7 +2,7 @@ import "./styles.css";
 import { Capacitor } from "@capacitor/core";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import {
-  configured, auth, watchAuth, logIn, register, resetPassword, logOut,
+  configured, auth, watchAuth, logIn, register, resetPassword, logOut, logInWithGoogle,
   itemsRef, outfitsRef, metaDoc, imageDoc, newItemId, fs,
   doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch,
 } from "./firebase.js";
@@ -56,6 +56,19 @@ const AUTH_ERR = {
   "auth/user-not-found": "No hay ninguna cuenta con ese correo.", "auth/email-already-in-use": "Ya existe una cuenta con ese correo. Entra con ella.",
   "auth/weak-password": "La contraseña debe tener al menos 6 caracteres.", "auth/invalid-email": "Ese correo no es válido.",
   "auth/network-request-failed": "Sin conexión. Comprueba tu internet.", "auth/too-many-requests": "Demasiados intentos. Espera unos minutos.",
+  "auth/popup-blocked": "El navegador ha bloqueado la ventana de Google. Permite ventanas emergentes para esta página y vuelve a probar.",
+  "auth/account-exists-with-different-credential": "Ese correo ya tiene cuenta con contraseña. Entra con la contraseña.",
+  "auth/unauthorized-domain": "Esta dirección no está autorizada para entrar con Google.",
+};
+const CANCELLED = ["auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/google-cancelled"];
+$("#googleBtn").onclick = async () => {
+  if (!configured) return say("#authStatus", "Falta la configuración de Firebase en src/config.js.", true);
+  $("#googleBtn").disabled = true; say("#authStatus", "Abriendo Google…");
+  try { await logInWithGoogle(); }
+  catch (err) {
+    const cancelled = CANCELLED.includes(err?.code) || /cancel/i.test(String(err?.message || err?.code || ""));
+    say("#authStatus", cancelled ? "" : (AUTH_ERR[err?.code] || "No se ha podido entrar con Google. Inténtalo de nuevo."), !cancelled);
+  } finally { $("#googleBtn").disabled = false; }
 };
 $("#authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
