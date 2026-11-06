@@ -13,5 +13,11 @@ ALLOWED_ORIGINS = "https://localhost,http://localhost:5173,https://pmorenod16.gi
 MODEL_MAIN = "gemini-3.5-flash"
 MODEL_FAST = "gemini-3.5-flash"
 
-# La clave de la API NO va aquí. Se guarda como secreto con:
+# Reserva gratuita si Gemini falla o se agota: NVIDIA (build.nvidia.com)
+NVIDIA_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
+NVIDIA_TEXT_MODEL = "meta/llama-3.3-70b-instruct"
+NVIDIA_MAX_IMAGES = "1"
+
+# Las claves NO van aquí. Se guarda como secreto con:
 #   npx wrangler secret put GEMINI_API_KEY   (o en el panel de Cloudflare: Settings → Variables and Secrets)
+#   npx wrangler secret put NVIDIA_API_KEY   (opcional, reserva)

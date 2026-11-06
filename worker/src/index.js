@@ -81,7 +81,7 @@ const cleanImg = (s) => {
 };
 
 /** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
-async function askAI(env, { model, content, maxTokens = 2000, search = false }) {
+async function askGemini(env, { model, content, maxTokens = 2000, search = false }) {
   const parts = typeof content === "string" ? [{ text: content }] : content;
   const body = {
     contents: [{ role: "user", parts }],
@@ -111,6 +111,51 @@ async function askAI(env, { model, content, maxTokens = 2000, search = false }) 
   const text = cand.content.parts.map((p) => p.text || "").join("");
   if (search) return { text, sources: (cand.groundingMetadata?.groundingChunks || []).map((c) => c.web).filter(Boolean) };
   return text;
+}
+/**
+ * IA con reserva: primero Gemini; si no hay clave, se agota el límite o Gemini falla,
+ * pasa a NVIDIA (build.nvidia.com, gratis). La búsqueda en tiendas solo existe en Gemini.
+ */
+async function askAI(env, opts) {
+  const hasNvidia = !!env.NVIDIA_API_KEY;
+  if (!env.GEMINI_API_KEY) {
+    if (hasNvidia && !opts.search) return askNvidia(env, opts);
+    throw new HttpError(500, "Falta la clave de Gemini en el servidor (GEMINI_API_KEY).");
+  }
+  try {
+    return await askGemini(env, opts);
+  } catch (e) {
+    const retryable = e instanceof HttpError && [429, 500, 502].includes(e.status);
+    if (!hasNvidia || opts.search || !retryable) throw e;
+    console.warn("Gemini falló, uso NVIDIA:", e.message);
+    return askNvidia(env, opts);
+  }
+}
+
+/** Llamada a NVIDIA (formato compatible con OpenAI). Los modelos de visión admiten pocas imágenes por petición. */
+async function askNvidia(env, { content, maxTokens = 2000 }) {
+  const parts = typeof content === "string" ? [{ text: content }] : content;
+  const maxImages = Number(env.NVIDIA_MAX_IMAGES || 1);
+  const images = parts.filter((p) => p.inline_data).slice(0, maxImages);
+  const text = parts.filter((p) => p.text).map((p) => p.text).join("\n\n")
+    + (parts.filter((p) => p.inline_data).length > images.length ? `\n\n(Solo se adjunta${images.length > 1 ? "n" : ""} ${images.length} de las imágenes.)` : "")
+    + "\n\nResponde solo con el JSON pedido, sin texto antes ni después.";
+  const model = images.length ? (env.NVIDIA_VISION_MODEL || "meta/llama-3.2-90b-vision-instruct") : (env.NVIDIA_TEXT_MODEL || "meta/llama-3.3-70b-instruct");
+  const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${env.NVIDIA_API_KEY}` },
+    body: JSON.stringify({
+      model, max_tokens: maxTokens, temperature: 0.5,
+      messages: [{ role: "user", content: [{ type: "text", text }, ...images.map((p) => ({ type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } }))] }],
+    }),
+  });
+  if (res.status === 429) throw new HttpError(429, "Se ha agotado el límite gratuito de la IA por ahora. Espera un rato e inténtalo de nuevo.");
+  if (res.status === 401 || res.status === 403) throw new HttpError(500, "La clave de NVIDIA no es válida o el modelo no está activado en tu cuenta. Revisa NVIDIA_API_KEY.");
+  if (!res.ok) throw new HttpError(502, "La IA no está disponible ahora. Inténtalo en un rato.");
+  const data = await res.json();
+  const out = data.choices?.[0]?.message?.content;
+  if (!out) throw new HttpError(502, "La IA ha devuelto una respuesta vacía. Vuelve a intentarlo.");
+  return out;
 }
 const MAIN = (env) => env.MODEL_MAIN || "gemini-3.5-flash";
 const FAST = (env) => env.MODEL_FAST || "gemini-3.5-flash";

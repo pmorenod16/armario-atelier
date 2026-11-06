@@ -31,6 +31,12 @@ No usa Firebase Storage (exige el plan Blaze): las fotos recortadas se guardan c
 3. **Si tienes Google AI Pro:** activa los 10 $/mes de crédito de Google Cloud en <https://developers.google.com/program/my-benefits> y asígnalos a ese proyecto. Así tu uso pasa al nivel de pago, cubierto por el crédito: sin límites tan bajos y sin que Google use tus fotos para mejorar sus productos. Pon una alerta de presupuesto de 10 $ en Google Cloud para no pasarte nunca.
 4. Sin crédito, funciona igual con el plan gratuito, con límites diarios y con la condición de que Google puede usar lo que envías para mejorar sus productos.
 
+### 2 bis. Reserva gratuita: NVIDIA (opcional)
+Si Gemini llega a su límite o falla, el servidor pasa solo a NVIDIA para clasificar fotos, proponer outfits, analizar el estilo y la lista de compra (la búsqueda en tiendas sigue siendo solo de Gemini).
+1. Crea una cuenta gratis en <https://build.nvidia.com> (pide verificar el móvil, no pide tarjeta).
+2. **Get API Key** → copia la clave. Si algún modelo da error 403, entra en su página (Llama 3.2 90B Vision, Llama 3.3 70B) y pulsa *Try API* una vez.
+3. Guárdala en Cloudflare como secreto `NVIDIA_API_KEY`.
+
 ### 3. Servidor (Cloudflare Worker)
 Necesitas Node 22 en tu ordenador.
 ```bash
@@ -39,6 +45,7 @@ npm install
 npx wrangler login                       # abre el navegador para entrar en Cloudflare (cuenta gratis)
 # edita wrangler.toml: FIREBASE_PROJECT_ID = "el projectId de tu Firebase"
 npx wrangler secret put GEMINI_API_KEY     # pega tu clave de Gemini
+npx wrangler secret put NVIDIA_API_KEY     # opcional: reserva de NVIDIA
 npx wrangler deploy
 ```
 Copia la dirección que te da (`https://armario-api.<algo>.workers.dev`) en `API_URL` de `src/config.js`.
