@@ -284,16 +284,22 @@ Responde SOLO con JSON: {"advice": 2 frases de consejo general, "gaps":[{"piece"
     const term = String(searchTerm || piece).slice(0, 80);
 
     // 1) Gratis: Tavily busca solo en las webs de las tiendas y la IA (sin búsqueda) extrae los productos
-    if (env.TAVILY_API_KEY) {
+    // Limpia la clave: espacios, saltos de línea o comillas que se cuelan al copiarla
+    const tavilyKey = String(env.TAVILY_API_KEY || "").replace(/[\s"'`]/g, "");
+    if (tavilyKey) {
+      if (!tavilyKey.startsWith("tvly-")) throw new HttpError(500, "La clave de Tavily no tiene el formato correcto (debe empezar por tvly-). Vuelve a copiarla de app.tavily.com y guárdala otra vez en TAVILY_API_KEY.");
       const res = await fetch("https://api.tavily.com/search", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${env.TAVILY_API_KEY}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${tavilyKey}` },
         body: JSON.stringify({
           query: `${term} ${section === "mujer" ? "mujer" : section === "hombre" ? "hombre" : ""} comprar`.trim(),
           include_domains: use.map((k) => STORE_DOMAINS[k]), max_results: 12, search_depth: "basic", country: "spain", language: "es",
         }),
       });
-      if (res.status === 401 || res.status === 403) throw new HttpError(500, "La clave de Tavily no es válida. Revisa TAVILY_API_KEY en Cloudflare.");
+      if (res.status === 401 || res.status === 403) {
+        console.warn("Tavily", res.status, `clave ${tavilyKey.slice(0, 9)}… (${tavilyKey.length} caracteres)`, (await res.text()).slice(0, 300));
+        throw new HttpError(500, `Tavily ha rechazado la clave (empieza por ${tavilyKey.slice(0, 9)}… y tiene ${tavilyKey.length} caracteres). Comprueba en app.tavily.com que coincide y guárdala de nuevo en TAVILY_API_KEY.`);
+      }
       if (res.status === 429 || res.status === 432 || res.status === 433) throw new HttpError(429, "Se han acabado las búsquedas gratuitas de este mes. Usa los botones de las tiendas.");
       if (!res.ok) { console.warn("Tavily", res.status, (await res.text()).slice(0, 300)); throw new HttpError(502, "El buscador de tiendas no responde ahora. Usa los botones de las tiendas."); }
       const found = ((await res.json()).results || []).filter((x) => okUrl(x.url)).slice(0, 12);
