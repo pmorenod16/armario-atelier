@@ -25,7 +25,7 @@ src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, elimina
 src/views/add.js        Añadir/editar: recorte + IA en paralelo, foto de etiqueta
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: cuerpo (maniquí 3D), tallas, ubicaciones, idioma, cuenta
-src/viewer.js           Maniquí three.js: setBody({heightCm, build}), autoRotate, show(items)
+src/viewer.js           Maniquí three.js: carga public/models/maniqui.glb (cuerpo masculino realista de la malla base CC0 de MakeHuman, brazos bajados, morph targets delgada/atletica/robusta; lo genera scripts/mh2glb.py). setBody({heightCm, build}), autoRotate, show(items). Si el modelo no carga, usa un maniquí sencillo de formas
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
 worker/src/index.js     Cloudflare Worker (ver API)

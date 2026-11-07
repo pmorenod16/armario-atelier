@@ -2,6 +2,7 @@
 // Cada prenda es una superficie curva que envuelve el cuerpo: delante la foto,
 // detrás la misma foto en espejo y más oscura (la espalda de la prenda).
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -39,26 +40,42 @@ export function createViewer(stage, { onError } = {}) {
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.002; scene.add(shadow);
 
   // ---------- maniquí ----------
-  const skin = new THREE.MeshStandardMaterial({ color: 0xe6e1d8, roughness: 0.5, metalness: 0.02 });
+  // Modelo 3D de cuerpo humano (public/models/maniqui.glb) con acabado de maniquí de tienda, en la postura de reposo.
+  // Mientras carga (o si falla) se ve un maniquí sencillo hecho con formas.
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe9e4db, roughness: 0.42, metalness: 0.0 });
   const body = new THREE.Group(); root.add(body);
+  const simple = new THREE.Group(); body.add(simple);
   const torsoProfile = [
     [0, 0.8], [0.1, 0.8], [0.145, 0.84], [0.156, 0.92], [0.148, 1.0], [0.128, 1.08], [0.134, 1.16],
     [0.157, 1.26], [0.17, 1.36], [0.165, 1.42], [0.13, 1.47], [0.06, 1.5], [0.048, 1.57], [0, 1.58],
   ].map(([r, y]) => new THREE.Vector2(r, y));
   const torso = new THREE.Mesh(new THREE.LatheGeometry(torsoProfile, 48), skin);
-  torso.scale.z = 0.7; body.add(torso);
+  torso.scale.z = 0.7; simple.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 40, 28), skin);
-  head.scale.set(0.86, 1.16, 0.96); head.position.y = 1.68; body.add(head);
+  head.scale.set(0.86, 1.16, 0.96); head.position.y = 1.68; simple.add(head);
   const limb = (rt, rb, h, x, y, rz = 0) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 28), skin);
-    m.position.set(x, y, 0); m.rotation.z = rz; body.add(m); return m;
+    m.position.set(x, y, 0); m.rotation.z = rz; simple.add(m); return m;
   };
   [-1, 1].forEach((s) => {
     limb(0.068, 0.04, 0.8, s * 0.075, 0.42);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.04, 0.2), skin); foot.position.set(s * 0.078, 0.02, 0.04); body.add(foot);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.04, 0.2), skin); foot.position.set(s * 0.078, 0.02, 0.04); simple.add(foot);
     limb(0.044, 0.03, 0.66, s * 0.225, 1.1, s * 0.1);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.038, 20, 14), skin); hand.scale.y = 1.4; hand.position.set(s * 0.258, 0.73, 0); body.add(hand);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.038, 20, 14), skin); hand.scale.y = 1.4; hand.position.set(s * 0.258, 0.73, 0); simple.add(hand);
   });
+
+  const BODY_H = 1.78; // altura del maniquí en unidades de escena (1 = 1 m)
+  let model = null, bodyShape = { heightCm: 178, build: "media" };
+  // maniqui.glb: malla humana masculina (base CC0 de MakeHuman) con morph targets por complexión (scripts/mh2glb.py)
+  new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/maniqui.glb`).then((gltf) => {
+    model = gltf.scene;
+    model.traverse((o) => { if (o.isMesh) { o.material = skin; o.frustumCulled = false; } });
+    const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
+    const k = BODY_H / size.y;
+    model.scale.setScalar(k);
+    model.position.set(-(box.min.x + size.x / 2) * k, -box.min.y * k, -(box.min.z + size.z / 2) * k);
+    body.remove(simple); body.add(model); setBody(bodyShape);
+  }).catch((e) => console.warn("Maniquí 3D no disponible, se usa el sencillo:", e));
 
   const clothes = new THREE.Group(); root.add(clothes);
 
@@ -225,10 +242,19 @@ export function createViewer(stage, { onError } = {}) {
   new ResizeObserver(resize).observe(stage);
 
   /** Proporciones del usuario: altura en cm y complexión (delgada|media|atletica|robusta). */
+  // Con el modelo 3D la complexión cambia la forma del cuerpo (morph targets); con el sencillo, se estira.
   const BUILD = { delgada: [0.9, 0.92], media: [1, 1], atletica: [1.1, 1.02], robusta: [1.14, 1.16] };
+  const MORPHS = ["delgada", "atletica", "robusta"];
   function setBody({ heightCm = 178, build = "media" } = {}) {
-    const [w, d] = BUILD[build] || BUILD.media, h = clamp(heightCm, 140, 210) / 178;
-    root.scale.set(w, h, d); shadow.scale.set(w, 1, d);
+    bodyShape = { heightCm, build };
+    const h = clamp(heightCm, 140, 210) / 178;
+    if (model) {
+      model.traverse((o) => { if (o.morphTargetInfluences) MORPHS.forEach((m, i) => (o.morphTargetInfluences[i] = m === build ? 1 : 0)); });
+      root.scale.setScalar(h); shadow.scale.setScalar(build === "robusta" ? 1.15 : 1);
+    } else {
+      const [w, d] = BUILD[build] || BUILD.media;
+      root.scale.set(w, h, d); shadow.scale.set(w, 1, d);
+    }
     target.y = 0.95 * h; draw();
   }
 

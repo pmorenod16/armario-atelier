@@ -135,7 +135,7 @@ const DICT = {
     "item.ai": "Leído por la IA",
     "item.edit": "Editar",
     "item.save": "Guardar",
-    "item.saveAndAnother": "Guardar y añadir otra",
+    "item.saveAndAnother": "Guardar y otra",
     "item.saved": "Prenda guardada",
     "item.delete": "Eliminar prenda",
     "item.deleteConfirm": "Pulsa otra vez para eliminarla",
