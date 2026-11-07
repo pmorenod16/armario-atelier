@@ -3,7 +3,7 @@
   "appName": "Armario Atelier",
   "webDir": "dist",
   "android": {
-    "backgroundColor": "#ECEEEA"
+    "backgroundColor": "#EDEEF0"
   },
   "plugins": {
     "FirebaseAuthentication": {

@@ -73,7 +73,32 @@ async function trimToWebp(canvas, maxSide = 900) {
   let q = 0.86, blob;
   do { blob = await new Promise((r) => out.toBlob(r, "image/webp", q)); q -= 0.12; }
   while (blob && blob.size > 600_000 && q > 0.4);
-  return { blob, width: out.width, height: out.height, aspect: out.width / out.height };
+  return { blob, width: out.width, height: out.height, aspect: out.width / out.height, tone: toneOf(out), thumb: thumbOf(out) };
+}
+
+/** Miniatura WebP (data URL, ~5-15 KB) para que la cuadrícula del armario cargue al instante. */
+function thumbOf(canvas, side = 260) {
+  const k = Math.min(1, side / Math.max(canvas.width, canvas.height));
+  const c = canvasFor(Math.max(1, Math.round(canvas.width * k)), Math.max(1, Math.round(canvas.height * k)));
+  c.getContext("2d").drawImage(canvas, 0, 0, c.width, c.height);
+  return c.toDataURL("image/webp", 0.8);
+}
+
+/** Tono representativo de la prenda (para el halo de color): media de los píxeles opacos, dando más peso a los saturados. */
+export function toneOf(canvas) {
+  const s = 48, c = canvasFor(s, s), g = c.getContext("2d");
+  g.drawImage(canvas, 0, 0, s, s);
+  const d = g.getImageData(0, 0, s, s).data;
+  let r = 0, gg = 0, b = 0, w = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 180) continue;
+    const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+    const wt = 1 + 3 * ((mx - mn) / 255);
+    r += d[i] * wt; gg += d[i + 1] * wt; b += d[i + 2] * wt; w += wt;
+  }
+  if (!w) return "#8a8f98";
+  const hex = (v) => Math.round(v / w).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(gg)}${hex(b)}`;
 }
 
 /**

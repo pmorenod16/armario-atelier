@@ -224,5 +224,25 @@ export function createViewer(stage, { onError } = {}) {
   });
   new ResizeObserver(resize).observe(stage);
 
-  return { show, resize, front: () => turnTo(0), back: () => turnTo(Math.PI) };
+  /** Proporciones del usuario: altura en cm y complexión (delgada|media|atletica|robusta). */
+  const BUILD = { delgada: [0.9, 0.92], media: [1, 1], atletica: [1.1, 1.02], robusta: [1.14, 1.16] };
+  function setBody({ heightCm = 178, build = "media" } = {}) {
+    const [w, d] = BUILD[build] || BUILD.media, h = clamp(heightCm, 140, 210) / 178;
+    root.scale.set(w, h, d); shadow.scale.set(w, 1, d);
+    target.y = 0.95 * h; draw();
+  }
+
+  // giro lento cuando nadie lo toca
+  let idle = 0, idleOn = false;
+  function autoRotate(on) {
+    idleOn = on && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cancelAnimationFrame(idle);
+    if (!idleOn) return;
+    let last = performance.now();
+    const loop = (t) => { if (!pointers.size) { root.rotation.y += (t - last) * 0.00035; draw(); } last = t; idle = requestAnimationFrame(loop); };
+    idle = requestAnimationFrame(loop);
+  }
+  const dispose = () => { cancelAnimationFrame(idle); cancelAnimationFrame(anim); renderer.dispose(); renderer.domElement.remove(); };
+
+  return { show, resize, setBody, autoRotate, dispose, front: () => turnTo(0), back: () => turnTo(Math.PI), spin: (a) => turnTo(root.rotation.y + a) };
 }

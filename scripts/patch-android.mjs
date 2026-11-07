@@ -6,6 +6,8 @@ const perms = [
   '<uses-permission android:name="android.permission.CAMERA" />',
   '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
   '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
+  '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+  '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
   '<uses-feature android:name="android.hardware.camera" android:required="false" />',
 ];
 for (const p of perms) if (!xml.includes(p.split(" ")[1])) xml = xml.replace("</manifest>", `    ${p}\n</manifest>`);

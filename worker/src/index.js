@@ -8,7 +8,14 @@ const STORE_DOMAINS = {
   pull: "pullandbear.com", bershka: "bershka.com", uniqlo: "uniqlo.com", cos: "cos.com",
 };
 const STORE_NAMES = { zara: "Zara", massimo: "Massimo Dutti", hm: "H&M", mango: "Mango", pull: "Pull&Bear", bershka: "Bershka", uniqlo: "Uniqlo", cos: "COS" };
-const SHAPES = "top: camiseta/camisa/jersey/sudadera/top; outer: chaqueta/abrigo/blazer/cazadora; bottom: pantalon/vaquero/falda/shorts; dress: vestido/mono; shoes: zapatillas/zapatos/botas; accessory: bolso/gorro/bufanda/cinturon/otro";
+// Mantener en sincronía con src/catalog.js
+const MATERIAL_KEYS = "algodon, lino, lana, cachemira, seda, denim, poliester, nylon, viscosa, cuero, ante, punto, mezcla, otro";
+const CATALOG_FOR_AI = `tipo: camiseta, camiseta-ml, polo, tirantes, camisa, camisa-mc, sobrecamisa, jersey, cardigan, sudadera, sudadera-capucha, chaleco-punto, cazadora, chaqueta, americana, abrigo, gabardina, plumifero, parka, chaleco (acolchado), pantalon, chino, vaquero, traje-pantalon, jogger, bermuda, falda, vestido, mono, zapatillas, zapatos, mocasines, botas, botines, sandalias, gorra, gorro, bufanda, cinturon, corbata, reloj, gafas, mochila, bolso, joya, otro
+color: blanco, crudo, beige, camel, marron, gris-claro, gris, antracita, negro, azul-marino, azul, celeste, denim, verde, oliva, caqui, rojo, burdeos, rosa, morado, amarillo, mostaza, naranja, multicolor
+estampado: liso, rayas, cuadros, estampado, grafico, texturizado, degradado
+material: ${MATERIAL_KEYS}
+ajuste: slim, regular, relaxed, oversize
+temporada: primavera, verano, otono, invierno`;
 const STYLE_FORMAT = `Responde SOLO con JSON: {"summary": 2-3 frases que describan el estilo, "keywords": 5-7 palabras clave, "palette": [{"name": color en español, "hex": "#rrggbb"}] (5-7 colores), "keyPieces": 6-10 prendas concretas que definen el estilo, "silhouettes": una frase sobre siluetas y proporciones, "avoid": una frase sobre qué no encaja}`;
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -177,12 +184,24 @@ const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywor
 
 /* ---------- rutas ---------- */
 const ROUTES = {
-  // Foto de una prenda → datos para el armario
+  // Foto de una prenda → datos para el armario (claves del catálogo de src/catalog.js)
   async "/api/classify"({ image }, env) {
     const text = await askAI(env, {
+      model: FAST(env), maxTokens: 700,
+      content: [imageBlock(cleanImg(image)), textBlock(`Eres estilista y experto en ropa de hombre. La imagen es una prenda o complemento. Usa SOLO estas claves:
+${CATALOG_FOR_AI}
+Responde SOLO con JSON:
+{"name": nombre corto en español (ej. "Camisa oxford azul claro"), "type": clave de tipo, "colors": [{"k": clave de color, "hex": "#rrggbb" tono exacto}] (1-3, el principal primero), "pattern": clave de estampado, "materialKey": clave de material o null si no se distingue, "fit": clave de ajuste o null, "seasons": [claves de temporada en que se puede llevar], "formality": entero 1 (muy casual) a 5 (formal), "styleTags": 2-4 estilos en español en minúscula (ej. "minimal", "clásico", "workwear"), "brand": marca solo si se ve un logo o etiqueta legible, si no null}`)],
+    });
+    return parseJson(text);
+  },
+
+  // Foto de la etiqueta interior → marca, talla, composición y cuidado
+  async "/api/label"({ image }, env) {
+    const text = await askAI(env, {
       model: FAST(env), maxTokens: 500,
-      content: [imageBlock(cleanImg(image)), textBlock(`Eres estilista. La imagen es una prenda o complemento. Responde SOLO con JSON:
-{"name": nombre corto en español (ej. "Camisa oxford azul claro"), "category": top|outer|bottom|dress|shoes|accessory, "shape": la forma dentro de su categoría (${SHAPES}), "colorName": color principal en español, "colorHex": "#rrggbb", "season": "todo el año"|"primavera-verano"|"otoño-invierno", "formality": entero 1 (muy casual) a 5 (muy formal), "tags": 3-4 estilos en español}`)],
+      content: [imageBlock(cleanImg(image)), textBlock(`La imagen es la etiqueta interior de una prenda (marca, talla, composición, lavado). Lee solo lo que se vea; lo que no se lea, null. Claves de material: ${MATERIAL_KEYS}.
+Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M", "42", "W32 L32") o null, "material": composición en español tal cual (ej. "98% algodón, 2% elastano") o null, "materialKey": clave del material mayoritario o null, "care": instrucciones de lavado en español resumidas a partir de los símbolos o el texto (ej. "Lavar a 30 °C, no usar secadora, planchar a temperatura baja") o null, "madeIn": país de fabricación o null}`)],
     });
     return parseJson(text);
   },

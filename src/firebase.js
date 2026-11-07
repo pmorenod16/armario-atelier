@@ -9,7 +9,7 @@ import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch,
+  collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc,
 } from "firebase/firestore";
 import { firebaseConfig } from "./config.js";
 
@@ -60,4 +60,4 @@ export const metaDoc = (name) => doc(fs, `${base()}/meta/${name}`);
 export const imageDoc = (id) => doc(fs, `${base()}/images/${id}`);
 export const newItemId = () => doc(itemsRef()).id;
 
-export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch };
+export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc };

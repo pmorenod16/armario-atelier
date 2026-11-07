@@ -12,8 +12,12 @@
   "dependencies": {
     "@capacitor-firebase/authentication": "8.6.0",
     "@capacitor/android": "8.6.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/camera": "8.2.6",
     "@capacitor/core": "8.6.0",
+    "@capacitor/geolocation": "^8.2.4",
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource-variable/geist": "^5.3.0",
     "@imgly/background-removal": "1.7.0",
     "firebase": "12.19.0",
     "three": "0.187.0"

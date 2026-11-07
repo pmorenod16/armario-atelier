@@ -6,21 +6,29 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 - Toda la interfaz, los mensajes de error y los comentarios del código en **español**.
 - Mensajes de error: dicen qué ha pasado y qué hacer, sin disculpas. Nunca mostrar textos técnicos al usuario.
 
+## Especificación y fases
+**`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
+1. Armario (hecho, pendiente de su revisión) · 2. Outfits del día (tiempo, plan, cómo llevarlo, calendario, maniquí 3D, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
+
 ## Estructura
 ```
-index.html            Interfaz (4 pestañas: Armario, Probador 3D, Mi estilo, Qué comprar) + acceso
-src/main.js           Lógica de la interfaz: estado, render, cámara, arrastrar/pegar, llamadas a la API
-src/viewer.js         Maniquí 3D con three.js; cada prenda = foto recortada en superficie curva + volumen de tela del color medio de la foto
-src/cutout.js         Quita el fondo en el dispositivo: @imgly/background-removal (modelo isnet_quint8) → si falla, relleno por color de fondo → si no, foto tal cual. Devuelve WebP con transparencia
-src/firebase.js       Auth (correo/contraseña y Google: popup en web, @capacitor-firebase/authentication nativo en Android con skipNativeAuth → signInWithCredential) + Firestore con caché local multipestaña
-src/api.js            fetch al Worker con el token de Firebase; errores ya traducidos
-src/config.js         Configuración de Firebase y URL del Worker (no son secretos)
-src/styles.css        Tokens de diseño en :root (claro/oscuro con prefers-color-scheme)
-public/               manifest.webmanifest, sw.js (solo web), iconos
-worker/src/index.js   Cloudflare Worker: verifica el token de Firebase (jose) + ALLOWED_UIDS y llama a la API de Gemini (función askAI)
-scripts/patch-android.mjs  Añade permisos de cámara/fotos al AndroidManifest generado
-.github/workflows/    android.yml (APK en cada push a main), web.yml (GitHub Pages)
-firestore.rules       Cada usuario solo accede a users/{uid}/**
+index.html              Carcasa: acceso, navegación (abajo en el móvil, lateral en el ordenador), #view, #onboarding
+src/main.js             Arranque, acceso, bienvenida, rutas por hash (#/hoy #/armario #/compras #/perfil), botón atrás de Android
+src/i18n.js             Todos los textos (t("clave")). Idioma nuevo = copiar el bloque es
+src/catalog.js          Tipos, colores, estampados, materiales, ajustes, temporadas, tallas. Se guardan claves; worker CATALOG_FOR_AI debe coincidir
+src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe), normaliza prendas del formato antiguo
+src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/iconos
+src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
+src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
+src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
+src/views/add.js        Añadir/editar: recorte + IA en paralelo, foto de etiqueta
+src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
+src/views/profile.js    Perfil y bienvenida: cuerpo (maniquí 3D), tallas, ubicaciones, idioma, cuenta
+src/viewer.js           Maniquí three.js: setBody({heightCm, build}), autoRotate, show(items)
+src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
+src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
+worker/src/index.js     Cloudflare Worker (ver API)
 ```
 La carpeta `android/` no se versiona: la genera CI con `npx cap add android`.
 
@@ -34,33 +42,36 @@ cd worker && npx wrangler deploy
 ```
 
 ## Modelo de datos (Firestore)
-- `users/{uid}/items/{id}`: `name, category (top|outer|bottom|dress|shoes|accessory), shape, colorName, colorHex, season, formality 1-5, tags[], hasImage, aspect, imageVersion, cutMethod (ia|fondo-liso|sin-recorte), createdAt`
-- `users/{uid}/images/{id}`: `data` (WebP en base64), `mime, width, height`. Separado de items para que el listado sea ligero. **Límite de 1 MiB por documento**: el recorte se comprime a ≤600 KB (cutout.js) y main.js rechaza base64 > 980 000 caracteres.
-- `users/{uid}/outfits/{id}`: `name, itemIds[], createdAt`
-- `users/{uid}/meta/style`: perfil de estilo (`summary, keywords, palette[{name,hex}], keyPieces, silhouettes, avoid, source, boardUrl, pinCount`)
-- `users/{uid}/meta/shopping`: `advice, gaps[{piece, category, why, priority, searchTerm, colorHex, priceRange, stores[], combinesWith[], products[]}]`
+- `users/{uid}/items/{id}`: `name, type (clave de catalog.js), layer, colors[{k,hex}], pattern, brand, size, material (texto de la etiqueta), materialKey, fit, seasons[], formality 1-5, styleTags[], care, notes, status (disponible|sucia|prestada), thumb (dataURL webp ~10 KB), tone (#hex), hasImage, aspect, imageVersion, cutMethod, createdAt, updatedAt`. Las prendas antiguas (category/shape/colorHex) se adaptan al leer (data.js normalizeItem).
+- `users/{uid}/images/{id}`: `data` (WebP en base64), `mime, width, height`. **Límite de 1 MiB por documento**: recorte ≤600 KB y se rechaza base64 > 980 000.
+- `users/{uid}/meta/profile`: `onboarded, mannequin, heightCm, build, sizes{camiseta,camisa,jersey,americana,pantalon,vaquero,calzado}, places[{id,name,region,lat,lon}], activePlace, language`
+- `users/{uid}/meta/style`, `meta/shopping`, `outfits/`: de la versión anterior; se rehacen en las fases 2-4.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
 | Ruta | Entrada | Salida |
 |---|---|---|
-| `/api/classify` | `{image}` JPEG base64 | datos de la prenda |
+| `/api/classify` | `{image}` JPEG base64 | `{name,type,colors[{k,hex}],pattern,materialKey,fit,seasons,formality,styleTags,brand}` con claves del catálogo |
+| `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn}` |
 | `/api/outfits` | `{wardrobe, style, occasion, weather}` | `{outfits:[{title,itemIds,why,tip}]}` |
 | `/api/style/images` | `{images[]}` | `{style}` |
 | `/api/style/pinterest` | `{url}` tablero público → lee `<usuario>/<tablero>.rss` y descarga hasta 12 pines | `{style, pinCount}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
 | `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → si hay `TAVILY_API_KEY`: Tavily (`include_domains` = tiendas, gratis 1.000/mes) + Gemini sin búsqueda elige productos por índice; si no, Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |
 
-IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/mes de crédito de Cloud). Modelos en `wrangler.toml`: `MODEL_MAIN` y `MODEL_FAST` = `gemini-3.5-flash`. Llamadas REST a `generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent` con `x-goog-api-key`; JSON forzado con `responseMimeType` salvo en la búsqueda (no se puede combinar con `google_search`). La clave va como secreto `GEMINI_API_KEY`, nunca en el código. **Reserva:** `askAI` prueba Gemini (`askGemini`) y, si no hay clave o falla con 429/5xx, usa NVIDIA (`askNvidia`, `integrate.api.nvidia.com/v1/chat/completions`, formato OpenAI; visión `meta/llama-3.2-90b-vision-instruct` con 1 imagen por petición, texto `meta/llama-3.3-70b-instruct`; secreto `NVIDIA_API_KEY`). La búsqueda en tiendas (`search: true`) no tiene reserva y **no funciona en el plan gratuito de Gemini** (429 RESOURCE_EXHAUSTED, comprobado el 6/11/2026): necesita facturación/créditos; si falla devuelve SEARCH_UNAVAILABLE y la app muestra los enlaces de las tiendas. Probado en real: `/api/gaps` funciona con Gemini gratis. Tiendas: zara, massimo, hm, mango, pull, bershka, uniqlo, cos (todas con tiendas físicas en España); los ids coinciden en `worker/src/index.js` (STORE_DOMAINS) y `src/main.js` (STORES).
+IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/mes de crédito de Cloud). Modelos en `wrangler.toml`: `MODEL_MAIN` y `MODEL_FAST` = `gemini-3.5-flash`. Llamadas REST a `generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent` con `x-goog-api-key`; JSON forzado con `responseMimeType` salvo en la búsqueda (no se puede combinar con `google_search`). La clave va como secreto `GEMINI_API_KEY`, nunca en el código. **Reserva:** `askAI` prueba Gemini (`askGemini`) y, si no hay clave o falla con 429/5xx, usa NVIDIA (`askNvidia`, `integrate.api.nvidia.com/v1/chat/completions`, formato OpenAI; visión `meta/llama-3.2-90b-vision-instruct` con 1 imagen por petición, texto `meta/llama-3.3-70b-instruct`; secreto `NVIDIA_API_KEY`). La búsqueda en tiendas (`search: true`) no tiene reserva y **no funciona en el plan gratuito de Gemini** (429 RESOURCE_EXHAUSTED, comprobado el 6/11/2026): necesita facturación/créditos; si falla devuelve SEARCH_UNAVAILABLE y la app muestra los enlaces de las tiendas. Probado en real: `/api/gaps` funciona con Gemini gratis. Tiendas: zara, massimo, hm, mango, pull, bershka, uniqlo, cos (todas con tiendas físicas en España); los ids coinciden en `worker/src/index.js` (STORE_DOMAINS).
 
 ## Detalles que hay que respetar
 - El origen de Capacitor 8 en Android es `https://localhost`; la web de Pages debe estar en `ALLOWED_ORIGINS` del Worker.
 - Google en Android: `android-config/google-services.json` (lo copia `patch-android.mjs`), `rgcfaIncludeGoogle` en variables.gradle, y firma fija desde el secreto `ANDROID_DEBUG_KEYSTORE` (SHA-1 `CF:0F:B5:87:4C:53:9B:50:39:DB:3A:A8:C0:06:71:48:FB:DB:1C:94` registrada en Firebase). Firebase JS fijado en 12.x por compatibilidad con el plugin.
-- `ALLOWED_UIDS` vacío = el Worker rechaza a todos (a propósito). El usuario copia su uid desde Ajustes.
+- `ALLOWED_UIDS` vacío = el Worker rechaza a todos (a propósito). El usuario copia su uid desde Perfil → Cuenta.
 - Las fotos van siempre por `shrinkPhoto` antes de procesarlas o enviarlas.
 - `@imgly/background-removal` es AGPL-3.0: bien para uso personal; avisar si se plantea publicar la app.
 - Antes de dar algo por terminado: `npm run build` sin errores y, si tocas `viewer.js`, comprobar el maniquí de frente, de lado y de espaldas.
 
+## Pruebas sin conexión a Firebase
+Para probar la interfaz en local sin cuenta: un vite.config aparte con un plugin `resolveId` que sustituya `firebase.js` y `api.js` por versiones en memoria (ver historial). No dejar ese archivo en el repo.
+
 ## Estado
-Hecho: todo lo anterior. Comprobado: el APK compila en Actions y la web se publica en https://pmorenod16.github.io/armario-atelier/. Firebase configurado (proyecto armario-atelier, eur3, reglas publicadas, dominio de Pages autorizado). Probado en real: login con Google en web, `/api/gaps` con Gemini. Sin probar: clasificar fotos reales, RSS de Pinterest, login con Google en el APK.
-Ideas pendientes: notificación "qué me pongo hoy" según el tiempo, estadísticas de uso de cada prenda, iconos de la tienda en los resultados.
+Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
+Funciona de antes: login con Google en web, `/api/gaps` con Gemini, APK firmado en Actions, web en https://pmorenod16.github.io/armario-atelier/.
