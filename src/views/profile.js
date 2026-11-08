@@ -100,6 +100,11 @@ export function renderProfile(view) {
           <div class="palette mini-pal">${(store.style.palette || []).map((c) => `<i style="background:${c.hex}" title="${esc(c.name)}"></i>`).join("")}</div>`
         : `<p class="muted" style="margin:0">${t("style.emptyBody")}</p>`}
       </a>
+      <section class="card" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
+        <p class="muted small" style="margin:0">${t("recut.body")}</p>
+        <div class="row wrap"><button class="btn sm primary" type="button" id="recut">${icon("spark")}${t("recut.go", { n: store.items.filter((i) => i.hasImage).length })}</button><button class="btn sm ghost" type="button" id="unrecut">${icon("refresh")}${t("recut.undo")}</button></div>
+        <div class="bar" id="recutBar" hidden><i></i></div>
+        <p class="status" id="recutSt" aria-live="polite"></p></section>
       <section class="card"><h2 class="display">${t("profile.language")}</h2>
         <div class="seg">${LANGUAGES.map((l) => `<button type="button" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
         <p class="muted small" style="margin:0">${t("profile.language.soon")}</p></section>
@@ -114,6 +119,18 @@ export function renderProfile(view) {
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
   $("#upd", view).onclick = () => checkUpdate({ manual: true });
+  $("#recut", view).onclick = async () => {
+    const b = $("#recut", view), st = $("#recutSt", view), bar = $("#recutBar", view);
+    b.disabled = true; bar.hidden = false;
+    const { recutAll } = await import("../recut.js");
+    const r = await recutAll((p) => { say(st, t("recut.progress", { done: p.done, total: p.total, name: p.name || "" })); bar.firstElementChild.style.width = `${Math.round((p.done / Math.max(1, p.total)) * 100)}%`; });
+    say(st, t("recut.done", r), "ok"); b.disabled = false;
+  };
+  $("#unrecut", view).onclick = async () => {
+    const st = $("#recutSt", view); say(st, t("recut.undoing"));
+    const { undoRecuts } = await import("../recut.js");
+    const n = await undoRecuts(); say(st, t("recut.undone", { n }), "ok");
+  };
   const inst = $("#install", view);
   if (window.__installEvt) { inst.hidden = false; inst.onclick = () => { window.__installEvt.prompt(); window.__installEvt = null; inst.hidden = true; }; }
   return () => { clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };

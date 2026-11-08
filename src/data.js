@@ -211,3 +211,25 @@ export async function saveWish(w, id) {
   return id;
 }
 export const deleteWish = (id) => deleteDoc(doc(userCol("wishlist"), id));
+
+/* ---------- copias de las fotos (para poder deshacer al rehacer recortes) ---------- */
+const backupDoc = (id) => doc(userCol("images"), id + "__antes");
+/** Lee la foto guardada de una prenda: {data (base64), mime, width, height} o null. */
+export async function readImage(id) { const s = await getDoc(imageDoc(id)); return s.exists() ? s.data() : null; }
+/** Guarda una copia de la foto actual (solo la primera vez: la copia es siempre la original). */
+export async function backupImage(id, img, item) {
+  const s = await getDoc(backupDoc(id));
+  if (!s.exists()) await setDoc(backupDoc(id), { ...img, item: { aspect: item.aspect || null, thumb: item.thumb || null, tone: item.tone || null, cutMethod: item.cutMethod || null, imageVersion: item.imageVersion || null } });
+}
+export const hasBackup = async (id) => (await getDoc(backupDoc(id))).exists();
+/** Vuelve a la foto de antes del recorte nuevo. */
+export async function restoreImage(id) {
+  const s = await getDoc(backupDoc(id)); if (!s.exists()) return false;
+  const { item, ...img } = s.data(), now = Date.now();
+  const b = writeBatch(fs);
+  b.set(imageDoc(id), img);
+  b.set(doc(itemsRef(), id), { ...item, imageVersion: now, updatedAt: now }, { merge: true });
+  b.delete(backupDoc(id));
+  await b.commit(); imageCache.delete(id);
+  return true;
+}
