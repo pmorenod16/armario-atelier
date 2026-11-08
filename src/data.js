@@ -2,7 +2,7 @@
 import {
   fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
 } from "./firebase.js";
-import { base64ToBlob, blobToBase64 } from "./api.js";
+import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
 import { layerOf } from "./catalog.js";
 
 export const DEFAULT_PROFILE = {
@@ -20,7 +20,7 @@ const listeners = new Set();
 export const store = {
   items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null,
   wear: [], feedback: [], trips: [], today: null, style: null, layouts: {}, // fase 2
-  shopping: null, wishlist: [], // fase 4
+  shopping: null, wishlist: [], looks: [], // fase 4 y extras
 };
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -36,6 +36,8 @@ export function startData() {
   }, (e) => { console.error(e); store.error = "load"; store.ready.items = true; emit(); }));
   unsubs.push(onSnapshot(metaDoc("profile"), (s) => {
     store.profile = { ...DEFAULT_PROFILE, ...(s.exists() ? s.data() : {}) };
+    apiDefaults.section = store.profile.section === "mujer" ? "mujer" : "hombre";
+    apiDefaults.lang = ["ca", "en"].includes(store.profile.language) ? store.profile.language : "es";
     store.ready.profile = true; emit();
   }, (e) => { console.error(e); store.profile = { ...DEFAULT_PROFILE }; store.ready.profile = true; emit(); }));
   const list = (name, key, sort) => unsubs.push(onSnapshot(userCol(name), (snap) => {
@@ -48,12 +50,13 @@ export function startData() {
   unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("shopping"), (s) => { store.shopping = s.exists() ? s.data() : null; emit(); }, () => {}));
   list("wishlist", "wishlist", (a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  list("looks", "looks", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   unsubs.push(onSnapshot(metaDoc("style"), (s) => { store.style = s.exists() ? s.data() : null; emit(); }, () => {}));
 }
 export function stopData() {
   unsubs.splice(0).forEach((u) => u());
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
-  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = [];
+  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = []; store.looks = [];
 }
 
 /** Acepta prendas guardadas con el formato anterior (colorName/colorHex/shape) y les da la forma nueva. */
@@ -98,7 +101,7 @@ export async function saveItem(data, { id, cut } = {}) {
   return id;
 }
 
-export const setItemStatus = (id, status) => updateDoc(doc(itemsRef(), id), { status, updatedAt: Date.now() });
+export const setItemStatus = (id, status) => updateDoc(doc(itemsRef(), id), { status, updatedAt: Date.now(), ...(status === "disponible" ? { wearsSinceWash: 0 } : {}) });
 
 export async function deleteItem(id) {
   const b = writeBatch(fs);
@@ -129,10 +132,37 @@ export async function logWear({ date = todayKey(), itemIds, title = "", plan = "
   const b = writeBatch(fs);
   b.set(doc(userCol("wear"), date), { date, itemIds, title, plan, how, weather, createdAt: Date.now() });
   const added = itemIds.filter((id) => !prev?.itemIds?.includes(id)), removed = (prev?.itemIds || []).filter((id) => !itemIds.includes(id));
-  for (const id of added) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(1), lastWorn: date });
-  for (const id of removed) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1) });
+  const auto = store.profile?.autoDirty !== false;
+  for (const id of added) {
+    const it = store.items.find((i) => i.id === id); if (!it) continue;
+    const upd = { wearCount: increment(1), lastWorn: date, wearsSinceWash: increment(1) };
+    // ropa sucia automática: después de X usos según el tipo (la camiseta 1, el vaquero 6…); abrigos, calzado y complementos nunca
+    const lim = WASH_AFTER[it.type];
+    if (auto && lim && (it.wearsSinceWash || 0) + 1 >= lim && it.status === "disponible") upd.status = "sucia";
+    b.update(doc(itemsRef(), id), upd);
+  }
+  for (const id of removed) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1), wearsSinceWash: increment(-1) });
   await b.commit();
 }
+/** Usos antes de ir a lavar, por tipo de prenda. */
+export const WASH_AFTER = { camiseta: 1, "camiseta-ml": 1, polo: 1, tirantes: 1, camisa: 2, "camisa-mc": 1, sobrecamisa: 4, jersey: 3, cardigan: 3, sudadera: 3, "sudadera-capucha": 3, "chaleco-punto": 4, pantalon: 4, chino: 4, vaquero: 6, "traje-pantalon": 4, jogger: 2, bermuda: 3, falda: 3, vestido: 2, mono: 2 };
+/** Todo lo sucio, lavado. */
+export async function washAll() {
+  const dirty = store.items.filter((i) => i.status === "sucia"); if (!dirty.length) return 0;
+  const b = writeBatch(fs);
+  dirty.forEach((i) => b.update(doc(itemsRef(), i.id), { status: "disponible", wearsSinceWash: 0, updatedAt: Date.now() }));
+  await b.commit(); return dirty.length;
+}
+
+/* ---------- outfits guardados (looks) ---------- */
+// users/{uid}/looks/{id}: {title, itemIds, note, source: hoy|mano|pin|combina, createdAt}
+export async function saveLook(look, id) {
+  const ref = id ? doc(userCol("looks"), id) : doc(userCol("looks"));
+  await setDoc(ref, { ...look, createdAt: look.createdAt || Date.now(), updatedAt: Date.now() }, { merge: true });
+  return ref.id;
+}
+export const deleteLook = (id) => deleteDoc(doc(userCol("looks"), id));
+export const lookSaved = (ids) => { const k = ids.slice().sort().join(); return store.looks.find((l) => l.itemIds.slice().sort().join() === k); };
 export async function deleteWear(date) {
   const prev = store.wear.find((w) => w.date === date); if (!prev) return;
   const b = writeBatch(fs);

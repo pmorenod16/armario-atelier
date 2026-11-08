@@ -24,7 +24,10 @@ src/lens.js             Google Lens sin claves: en Android comparte la foto (@ca
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
 src/views/today.js      Hoy (tiempo + plan → /api/outfits, outfit con las fotos (board.js), cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
 src/engine.js           Motor propio SIN IA (reglas de estilismo + puntuación): suggestOutfits (tiempo, plan→formalidad, color/estampados, estilo por paleta y palabras clave, uso reciente, me gusta), packTrip, findGaps (básicos + prendas clave del estilo), matchStyle. Perfil `engine`: «ia» (Gemini con timeout; si falla, el motor) o «app» (solo el motor). Lo de visión (clasificar, etiqueta, estilo desde fotos, recrear pin, modo tienda) sigue necesitando la IA
-src/views/picker.js     Elegir prendas del armario (apuntar lo que llevaste)
+src/views/picker.js     Elegir prendas del armario (apuntar lo que llevaste, crear outfit)
+src/views/combine.js    «¿Con qué lo combino?» desde la ficha: motor con must=id y el tiempo de hoy
+src/native.js           Solo APK (plugins): plan desde el calendario del móvil (@ebarooni/capacitor-calendar, READ_CALENDAR), dictar el plan (@capacitor-community/speech-recognition; en el ordenador Web Speech) y aviso diario (@capacitor/local-notifications, id 801, perfil.reminder "HH:MM")
+src/updater.js          Actualización sola: compara __BUILD__ con dist/version.json al abrir, al volver y cada 30 min
 src/weather.js          Open-Meteo sin clave: hoy por horas, viaje (previsión ≤16 días; más lejos, mismos días del año pasado con archive-api)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
@@ -63,12 +66,16 @@ cd worker && npx wrangler deploy
 - `users/{uid}/meta/style`: tablero principal en los campos de arriba + `extra[{id,use,…mismos campos}]` (otros tableros; data.boardsOf/saveBoard/addBoard/removeBoard; styleText los manda todos con su uso y la IA elige según el plan) + `pinSig, checkedAt, autoOff` por tablero. Campos: `name, mix[{name,share,look}], summary, keywords[], palette[{name,hex}], keyPieces[], formulas[], fabrics, silhouettes, footwear, avoid, notes (de Polete), source (pinterest|capturas), boardUrl, pins[{img,link}] (URLs de pinimg o miniaturas dataURL), pinCount, analyzed, analyzedAt, match{score,fits[],off[],note,at,items}`.
 - `users/{uid}/meta/shopping`: `advice, combine[GAP], style[GAP], at, items, results{gapId:{products[],links[],size,searched}}`; GAP = `{id,kind,piece,type,color,colorHex,why,priority,searchTerm,priceMin,priceMax,pairsWith[ids],newOutfits,stores[]}`.
 - `users/{uid}/wishlist/{id}`: `name, store, price, priceNum, oldPrice, url, image (URL o dataURL del modo tienda), color, gap, pairsWith[], verdict (justo|caro|barato), size, bought, boughtAt, addedAt, checkedAt`.
+- `users/{uid}/looks/{id}`: outfits guardados/hechos a mano `{title, itemIds, note, how[], source (hoy|app|mano|pin|combina), createdAt}` (pestaña Outfits de Hoy).
+- Prendas: `wearsSinceWash` (ropa sucia sola tras WASH_AFTER[tipo] usos si perfil.autoDirty ≠ false; se pone a 0 al marcar disponible o «Lo he lavado todo»).
+- Perfil: `section` (hombre|mujer → apiDefaults.section; el Worker adapta los textos de la IA y Zara WOMAN), `language` (es|ca|en; ca/en se traducen con /api/translate y se guardan en localStorage `i18n:{l}`; apiDefaults.lang hace que la IA responda en ese idioma), `engine`, `reminder`, `autoDirty`.
 - `users/{uid}/outfits/`: de la versión anterior, sin uso.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
 | Ruta | Entrada | Salida |
 |---|---|---|
+| `/api/translate` | `{lang: ca|en, entries{clave: texto}}` (≤120) | `{entries}` traducidos (conserva {variables}) |
 | `/api/locate` | `{image}` | `{box:[ymin,xmin,ymax,xmax] 0-1000, what}` de la prenda principal (sin percha ni persona) |
 | `/api/classify` | `{image}` JPEG base64 | `{name,type,colors[{k,hex}],pattern,materialKey,fit,seasons,formality,styleTags,brand}` con claves del catálogo |
 | `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn,ref}` |

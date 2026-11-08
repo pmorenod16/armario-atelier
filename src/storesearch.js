@@ -3,6 +3,7 @@
 // Las tiendas bloquean a los servidores, pero no a un móvil: por eso se hace aquí y no en el Worker.
 import { CapacitorHttp } from "@capacitor/core";
 import { isNative } from "./ui.js";
+import { apiDefaults } from "./api.js";
 
 export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
   ["Massimo Dutti", "massimodutti.com", /-l\d{6,}|\/p\/|c\d+p\d+/i],
@@ -101,7 +102,7 @@ export async function searchStores({ term, piece, color, skip = ["zara.com"], ma
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const stores = STORES.filter(([, d]) => !skip.includes(d));
-  const q = `${term} hombre`;
+  const q = `${term} ${apiDefaults.section || "hombre"}`;
   const groups = [stores.slice(0, 5), stores.slice(5, 9), stores.slice(9)].filter((g) => g.length);
   const lists = await Promise.all([webSearch(`${q} comprar`, diag), ...groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))]);
   const seen = new Set(), cand = [];

@@ -4,7 +4,10 @@ import { API_URL } from "./config.js";
 export const apiConfigured = !API_URL.includes("TU-SUBDOMINIO");
 
 /** Llama al Worker con el token de Firebase. Lanza {message, status} con texto listo para mostrar. */
+/** Datos que van en todas las peticiones (sección de ropa de la cuenta). */
+export const apiDefaults = {};
 export async function api(path, body, { timeout = 0 } = {}) {
+  body = { ...apiDefaults, ...body };
   if (!apiConfigured) throw { message: "Falta poner la URL del servidor en src/config.js." };
   const token = await auth.currentUser.getIdToken();
   let res;

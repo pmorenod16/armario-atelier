@@ -1,9 +1,9 @@
 // Catálogo de prendas: tipos, colores, estampados, materiales y ajustes.
 // Se guardan las claves (k) en Firestore; las etiquetas por idioma viven aquí.
 // La IA del servidor recibe estas mismas claves (worker/src/index.js → CATALOG_FOR_AI): mantener en sincronía.
-import { getLanguage } from "./i18n.js";
+import { getLanguage, tr } from "./i18n.js";
 
-export const label = (entry) => entry ? (entry[getLanguage()] ?? entry.es ?? entry.k) : "";
+export const label = (entry) => entry ? (entry[getLanguage()] ?? tr(entry.es ?? entry.k)) : "";
 
 // capa = cómo se coloca en el maniquí (fase 2)
 export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory"];

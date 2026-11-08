@@ -31,7 +31,10 @@ export default {
       const path = new URL(req.url).pathname;
       const handler = ROUTES[path];
       if (!handler) throw new HttpError(404, "Ruta desconocida.");
-      return json(await handler(body, env), 200, cors);
+      // sección de ropa de la cuenta (hombre por defecto; mujer para la pareja de Polete)
+      const section = body?.section === "mujer" ? "mujer" : "hombre";
+      const lang = ["ca", "en"].includes(body?.lang) ? body.lang : "es";
+      return json(await handler(body, { ...env, SECTION: section, LANG: lang }), 200, cors);
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
       if (status === 500) console.error(e);
@@ -71,8 +74,8 @@ const norm = (x) => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0
 function parseJsonLoose(text) { try { return JSON.parse(String(text).replace(/^[^{]*/, "").replace(/[^}]*$/, "")); } catch { return null; } }
 
 // Zara (catálogo de Inditex). El formato de la respuesta no está documentado: se recorre buscando productos con fotos.
-async function zara(q) {
-  const u = `https://www.zara.com/itxrest/1/search/store/10701/query?query=${encodeURIComponent(q)}&locale=es_ES&deviceType=desktop&deviceOs=Windows&deviceOsVersion=10&catalogue=0&session=armario&offset=0&limit=12&scope=default&origin=default&section=MAN`;
+async function zara(q, section = "hombre") {
+  const u = `https://www.zara.com/itxrest/1/search/store/10701/query?query=${encodeURIComponent(q)}&locale=es_ES&deviceType=desktop&deviceOs=Windows&deviceOsVersion=10&catalogue=0&session=armario&offset=0&limit=12&scope=default&origin=default&section=${section === "mujer" ? "WOMAN" : "MAN"}`;
   const r = await fetch(u, { headers: { ...BROWSER, accept: "application/json" } });
   if (!r.ok) throw new Error("zara " + r.status);
   return inditexProducts(await r.json(), "https://www.zara.com/es/es/");
@@ -353,7 +356,24 @@ async function askGeminiSteady(env, opts) {
   throw last instanceof HttpError && last.status !== 500 ? last : new HttpError(502, "Gemini está saturado ahora mismo. Vuelve a probar en unos minutos.");
 }
 
+/** Los textos para la IA están escritos para ropa de hombre; con la sección de mujer se adaptan. */
+const LANG_NAME = { ca: "catalán", en: "inglés" };
+function forSection(env, opts) {
+  if (env.LANG && env.LANG !== "es" && !opts.raw) {
+    const note = `\n\nIMPORTANTE: escribe todos los textos para la persona (nombres, frases, consejos) en ${LANG_NAME[env.LANG]}; las claves del JSON y los ids, tal cual.`;
+    opts = { ...opts, content: typeof opts.content === "string" ? opts.content + note : [...opts.content, { text: note }] };
+  }
+  if (env.SECTION !== "mujer") return opts;
+  const fem = (t) => String(t)
+    .replace(/HOMBRE/g, "MUJER").replace(/un hombre joven/g, "una mujer joven").replace(/de un hombre/g, "de una mujer")
+    .replace(/para un hombre/g, "para una mujer").replace(/ropa de hombre/g, "ropa de mujer").replace(/de hombre/g, "de mujer")
+    .replace(/\bhombre\b/g, "mujer").replace(/lo que dice él/g, "lo que dice ella").replace(/Él describe/g, "Ella describe");
+  const content = typeof opts.content === "string" ? fem(opts.content) : opts.content.map((p) => (p.text ? { text: fem(p.text) } : p));
+  return { ...opts, content };
+}
+
 async function askAI(env, opts) {
+  opts = forSection(env, opts);
   // Orden: Gemini → IA de Cloudflare (Workers AI, sin clave: va en la misma cuenta) → NVIDIA (si hay clave)
   const backups = [];
   if (env.AI && !opts.search) backups.push(["Cloudflare", askWorkersAI]);
@@ -430,6 +450,20 @@ const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywor
 /* ---------- rutas ---------- */
 const ROUTES = {
   // Foto de una prenda → datos para el armario (claves del catálogo de src/catalog.js)
+  // Traducir los textos de la app (catalán / inglés); la app los guarda y solo pide los nuevos
+  async "/api/translate"({ lang, entries }, env) {
+    if (!LANG_NAME[lang] || !entries || typeof entries !== "object") throw new HttpError(400, "Petición no válida.");
+    const list = Object.entries(entries).slice(0, 120);
+    const text = await askAI(env, {
+      model: FAST(env), maxTokens: 8000, raw: true,
+      content: `Traduce al ${LANG_NAME[lang]} estos textos de la interfaz de una app de móvil de armario y moda (tono cercano, frases cortas, como una app bien hecha). Reglas: conserva exactamente lo que va entre llaves {así}, los símbolos | (separan opciones), los emojis, «comillas» y la puntuación; no traduzcas nombres propios ni marcas (Armario Atelier, Pinterest, Google, Zara…). Las claves que empiezan por ~ son nombres de prendas, colores o tejidos.
+Responde SOLO con JSON {"clave": "traducción"} con todas las claves:
+${JSON.stringify(Object.fromEntries(list))}`,
+    });
+    const r = parseJson(text);
+    return { entries: Object.fromEntries(list.map(([k]) => [k, typeof r[k] === "string" ? r[k].slice(0, 600) : null]).filter(([, v]) => v)) };
+  },
+
   // Dónde está la prenda principal en la foto (caja 0-1000) para recortar solo eso
   async "/api/locate"({ image }, env) {
     const text = await askAI(env, {
@@ -712,7 +746,7 @@ Responde SOLO con JSON: {"advice": 1-2 frases de diagnóstico de su armario, "co
     const found = [], notes = [];
     const tasks = [];
     // 1) Zara: su buscador público (sección hombre) devuelve productos con precio y fotos
-    tasks.push(zara(term).then((l) => found.push(...l.map((p) => ({ ...p, store: "Zara", via: "zara" })))).catch((e) => notes.push("zara: " + e.message)));
+    tasks.push(zara(term, env.SECTION).then((l) => found.push(...l.map((p) => ({ ...p, store: "Zara", via: "zara" })))).catch((e) => notes.push("zara: " + e.message)));
     // 2) Búsqueda de Google con Gemini (solo si la cuenta tiene crédito/facturación): el resto de tiendas
     const others = use.filter((k) => k !== "zara");
     if (others.length) tasks.push(googleProducts(env, { piece, term, color, priceMin, priceMax, keys: others }).then((l) => found.push(...l)).catch((e) => notes.push("google: " + (e.status || "") + " " + e.message)));
@@ -742,7 +776,7 @@ Responde SOLO con JSON: {"keep": [números]}`,
     }
     const seenUrl = new Set();
     products = products.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 8);
-    const q = encodeURIComponent(`${term} hombre`);
+    const q = encodeURIComponent(`${term} ${env.SECTION || "hombre"}`);
     const links = Object.keys(STORE_DOMAINS).map((k) => ({
       store: STORE_NAMES[k],
       url: k === "zara" ? `https://www.zara.com/es/es/search?searchTerm=${encodeURIComponent(term)}&section=MAN`

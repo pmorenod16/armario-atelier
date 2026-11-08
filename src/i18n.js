@@ -206,6 +206,50 @@ const DICT = {
 
     "today.title": "Hoy",
     "today.tab.hoy": "Hoy",
+    "today.tab.outfits": "Outfits",
+    "today.fromCal": "Calendario",
+    "today.voice": "Dictar el plan",
+    "today.calDone": "Plan sacado de tu calendario",
+    "today.calEmpty": "No tienes nada en el calendario hoy",
+    "today.calFail": "No he podido leer el calendario",
+    "today.voiceFail": "No te he entendido. Prueba otra vez.",
+    "remind.title": "Aviso por la mañana",
+    "remind.on": "Avisarme cada día para elegir el outfit",
+    "remind.time": "Hora",
+    "remind.set": "Te avisaré cada día a las {time}",
+    "remind.off": "Aviso quitado",
+    "combine.title": "¿Con qué lo combino?",
+    "combine.sub": "Outfits con «{name}» y tu ropa disponible, para el tiempo de hoy.",
+    "combine.thinking": "Buscando combinaciones…",
+    "combine.none": "No he encontrado combinaciones: añade más prendas.",
+    "combine.weather": "Pensado para hoy: entre {min} y {max} °C.",
+    "wash.count": "Puesta {n} de {max} veces desde que se lavó: después pasará a «Sucia» sola.",
+    "wash.all": "Lo he lavado todo ({n})",
+    "wash.done": "Hecho: {n} prendas vuelven a estar disponibles",
+    "wash.auto": "Marcar como sucia sola después de usarla",
+    "wash.autoHint": "Camisetas 1 uso, camisas 2, jerséis 3, pantalones 4, vaqueros 6. Abrigos, calzado y complementos nunca.",
+    "looks.title": "Mis outfits",
+    "looks.sub": "Los que guardas de las propuestas y los que montas tú.",
+    "looks.create": "Crear outfit",
+    "looks.pick": "Elige las prendas del outfit",
+    "looks.editItems": "Cambiar prendas",
+    "looks.editTitle": "Tu outfit",
+    "looks.nameIt": "Ponle nombre",
+    "looks.name": "Nombre",
+    "looks.namePh": "Ej. Viernes de cena",
+    "looks.note": "Nota (opcional)",
+    "looks.notePh": "Ej. con la camisa por dentro",
+    "looks.saveIt": "Guardar outfit",
+    "looks.save": "Guardar",
+    "looks.saved": "Guardado",
+    "looks.savedToast": "Outfit guardado en Mis outfits",
+    "looks.removed": "Outfit quitado de Mis outfits",
+    "looks.untitled": "Mi outfit",
+    "looks.byYou": "Tuyo",
+    "looks.delete": "Borrar",
+    "looks.deleteSure": "¿Seguro? Pulsa otra vez",
+    "looks.emptyTitle": "Aún no tienes outfits guardados",
+    "looks.emptyBody": "Guarda los que te gusten desde Hoy con el botón Guardar, o crea uno con tus prendas.",
     "today.tab.calendario": "Calendario",
     "today.tab.maleta": "Maleta",
     "today.wx.loading": "Mirando el tiempo…",
@@ -463,9 +507,17 @@ const DICT = {
     "profile.places": "Ubicaciones",
     "profile.language": "Idioma",
     "profile.language.soon": "Más idiomas pronto",
+    "profile.language.note": "La primera vez que eliges catalán o inglés, la IA traduce la app (unos segundos). Las respuestas de la IA también saldrán en ese idioma.",
+    "profile.translating": "Traduciendo la app… {d} de {n}",
+    "profile.translateFail": "No se ha podido traducir ahora. Inténtalo en un rato.",
     "profile.account": "Cuenta",
     "profile.uid": "Tu identificador (para autorizar tu cuenta en el servidor)",
 "profile.version": "Versión de la app",
+    "profile.section": "Sección de ropa",
+    "profile.sectionHint": "Cambia lo que busca la app en las tiendas y cómo te aconseja la IA. Para otra persona, mejor que use su propia cuenta.",
+    "section.hombre": "Hombre",
+    "section.mujer": "Mujer",
+    "profile.wash": "Ropa sucia",
     "recut.title": "Recortes de tus prendas",
     "recut.body": "Vuelve a recortar las fotos que ya tienes con el recorte nuevo: deja solo la prenda y quita restos de fondo. Si alguna no sale mejor, se queda como estaba, y puedes deshacerlo.",
     "recut.go": "Mejorar los recortes ({n})",
@@ -491,9 +543,42 @@ const DICT = {
 };
 
 let lang = "es";
-export const setLanguage = (l) => { if (DICT[l]) { lang = l; document.documentElement.lang = l; } };
+export const LANGUAGES = [{ k: "es", label: "Castellano" }, { k: "ca", label: "Català" }, { k: "en", label: "English" }];
+// Catalán e inglés: los textos se traducen con la IA la primera vez y se guardan en el dispositivo.
+// Si se añade o cambia un texto en castellano, solo se traduce lo nuevo.
+const LS = (l) => `i18n:${l}`;
+const readCache = (l) => { try { return JSON.parse(localStorage.getItem(LS(l)) || "{}"); } catch { return {}; } };
+function load(l) {
+  const c = readCache(l), d = {};
+  for (const [k, [src, tr]] of Object.entries(c)) if (src === (DICT.es[k] ?? k.slice(1))) d[k] = tr;
+  DICT[l] = d;
+}
+export const setLanguage = (l) => {
+  if (!LANGUAGES.some((x) => x.k === l)) l = "es";
+  if (l !== "es") load(l);
+  lang = l; document.documentElement.lang = l;
+};
 export const getLanguage = () => lang;
-export const LANGUAGES = [{ k: "es", label: "Castellano" }];
+/** Traduce lo que falte del idioma l. onProgress(hechas, total). Devuelve cuántas ha traducido. */
+export async function ensureLanguage(l, onProgress = () => {}) {
+  if (l === "es") return 0;
+  const cat = await import("./catalog.js"), { api } = await import("./api.js");
+  const src = { ...DICT.es };
+  for (const list of [cat.GROUPS, cat.TYPES, cat.COLORS, cat.PATTERNS, cat.MATERIALS, cat.FITS]) for (const e of list || []) if (e.es) src["~" + e.es] = e.es;
+  const cache = readCache(l);
+  const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);
+  for (let i = 0; i < missing.length; i += 80) {
+    const part = Object.fromEntries(missing.slice(i, i + 80));
+    const r = await api("/api/translate", { lang: l, entries: part }, { timeout: 60000 });
+    for (const [k, v] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) cache[k] = [v, r.entries[k]];
+    try { localStorage.setItem(LS(l), JSON.stringify(cache)); } catch {}
+    onProgress(Math.min(i + 80, missing.length), missing.length);
+  }
+  if (lang === l) load(l);
+  return missing.length;
+}
+/** Texto libre en castellano del catálogo → idioma actual. */
+export const tr = (es) => (lang === "es" ? es : DICT[lang]?.["~" + es] ?? es);
 
 /** t("closet.count", {n: 3}) → "3 prendas" */
 export function t(key, vars) {

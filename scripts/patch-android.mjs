@@ -9,8 +9,17 @@ const perms = [
   '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
   '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
   '<uses-feature android:name="android.hardware.camera" android:required="false" />',
+  // plan del día desde el calendario del móvil, por voz y aviso por la mañana
+  '<uses-permission android:name="android.permission.READ_CALENDAR" />',
+  '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+  '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+  '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
+  '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />',
+  '<uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
 ];
 for (const p of perms) if (!xml.includes(p.split(" ")[1])) xml = xml.replace("</manifest>", `    ${p}\n</manifest>`);
+// el reconocimiento de voz de Google tiene que ser visible para la app (Android 11+)
+if (!xml.includes("android.speech.RecognitionService")) xml = xml.replace("</manifest>", `    <queries><intent><action android:name="android.speech.RecognitionService" /></intent></queries>\n</manifest>`);
 writeFileSync(path, xml);
 console.log("Permisos añadidos a AndroidManifest.xml");
 

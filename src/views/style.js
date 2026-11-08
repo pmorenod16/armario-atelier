@@ -5,7 +5,7 @@ import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
 import { $, esc, icon, toast, say, setHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
 import { api, blobToBase64 } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
-import { store, subscribe, saveStyle, saveBoard, addBoard, removeBoard, boardsOf, styleText, logWear } from "../data.js";
+import { store, subscribe, saveStyle, saveBoard, addBoard, removeBoard, boardsOf, styleText, logWear, saveLook } from "../data.js";
 import { tintFor } from "./add.js";
 import { pinToBase64 } from "../pinterest.js";
 import { readBoardPins, analyzePins } from "../stylesync.js";
@@ -233,6 +233,7 @@ function recreatePin(s, i) {
         ${r.missing?.length ? `<h3 class="how-title">${t("style.toNail")}</h3><ul class="rc-missing">${r.missing.map((m) => `<li><b>${esc(m.piece)}</b><span class="muted small">${esc(m.why)}</span></li>`).join("")}</ul>` : `<p class="notice">${icon("check")} ${t("style.nothingMissing")}</p>`}
         <div class="row wrap">
           ${items.length >= 2 ? `<button class="btn sm primary" type="button" id="wear">${icon("check")}${t("today.wear")}</button>` : ""}
+          ${items.length >= 2 ? `<button class="btn sm" type="button" id="keep">${icon("bookmark")}${t("looks.save")}</button>` : ""}
           <button class="btn sm ghost" type="button" id="again">${icon("refresh")}${t("style.recreateAgain")}</button>
         </div>
       </div>`;
@@ -244,6 +245,8 @@ function recreatePin(s, i) {
       catch { w.disabled = false; toast(t("item.saveFail"), "error"); }
     };
     $("#again", out).onclick = () => { recreated.delete(pin.img); run(); };
+    const k = $("#keep", out);
+    if (k) k.onclick = async () => { k.disabled = true; try { await saveLook({ title: r.title, itemIds: r.itemIds, how: r.how || [], note: t("style.fromPin"), source: "pin", pin: pin.img }); toast(t("looks.savedToast")); } catch { k.disabled = false; toast(t("item.saveFail"), "error"); } };
   };
 
   async function run() {

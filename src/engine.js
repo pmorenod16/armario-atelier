@@ -172,7 +172,7 @@ function harmony(items) {
  * wear: store.wear; feedback: store.feedback; exclude: [[ids]]; count.
  * Devuelve {outfits:[{title,itemIds,why,how[],tucked[],repeats[]}], missing, engine:true}
  */
-export function suggestOutfits({ items, weather, plan, style, wear = [], feedback = [], exclude = [], count = 4, date = new Date() }) {
+export function suggestOutfits({ items, weather, plan, style, wear = [], feedback = [], exclude = [], count = 4, date = new Date(), must = null }) {
   const ctx = contextFrom({ weather, plan, style, date });
   const today = date.toISOString().slice(0, 10);
   const recentDays = new Map();
@@ -182,7 +182,9 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
     for (const id of w.itemIds || []) if (!recentDays.has(id) || recentDays.get(id) > days) recentDays.set(id, days);
   }
   const sc = new Map(items.map((it) => [it.id, itemScore(it, ctx, recentDays)]));
-  const best = (arr, n) => arr.slice().sort((a, b) => sc.get(b.id) - sc.get(a.id)).slice(0, n);
+  const mustIt = must ? items.find((it) => it.id === must) : null;
+  if (mustIt) sc.set(mustIt.id, Math.max(sc.get(mustIt.id), 0) + 4); // la prenda pedida va sí o sí
+  const best = (arr, n) => { const l = arr.slice().sort((a, b) => sc.get(b.id) - sc.get(a.id)).slice(0, n); if (mustIt && arr.includes(mustIt) && !l.includes(mustIt)) l.push(mustIt); return l; };
   const tops = best(items.filter((it) => BASE_TOP.has(it.type) || MID.has(it.type)), 14);
   const mids = items.filter(isKind(MID));
   const outers = items.filter(isKind(OUTER));
@@ -213,8 +215,14 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
       const o = bestAdd([...base, ...layers], fit.length ? fit : outers, sc, ctx);
       if (o) { layers.push(o.item); warmth += WARMTH[o.item.type] || 1; }
     }
-    if (warmth > maxWarmth) continue;
+    if (mustIt && (MID.has(mustIt.type) || OUTER.has(mustIt.type)) && ![...base, ...layers].includes(mustIt)) {
+      // con «¿con qué lo combino?» de una capa: se pone esa capa (y se quita la otra del mismo tipo)
+      layers = layers.filter((x) => (MID.has(mustIt.type) ? !MID.has(x.type) : !OUTER.has(x.type)));
+      layers.push(mustIt); warmth = (WARMTH[top.type] || 0) + layers.reduce((a, x) => a + (WARMTH[x.type] || 1), 0);
+    }
+    if (warmth > maxWarmth && !mustIt) continue;
     const all = [...base, ...layers];
+    if (mustIt && TYPE[mustIt.type]?.g !== "complementos" && !all.includes(mustIt)) continue;
     const ids = all.map((x) => x.id);
     const key = ids.slice().sort().join();
     if (excluded.has(key)) continue;
@@ -243,9 +251,13 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
   // si el armario es pequeño, completar repitiendo
   for (const c of combos) { if (chosen.length >= count) break; if (!chosen.includes(c)) chosen.push(c); }
 
-  const accs = items.filter((it) => TYPE[it.type]?.g === "complementos");
+  const accs = items.filter((it) => TYPE[it.type]?.g === "complementos" && !(mustIt && it.type === mustIt.type && it.id !== mustIt.id));
   const watchUse = new Map();
-  const outfits = chosen.map((c, i) => describeOutfit(addAccessories(c, ctx, accs, sc, i, watchUse), ctx, i));
+  const outfits = chosen.map((c, i) => {
+    let x = addAccessories(c, ctx, accs, sc, i, watchUse);
+    if (mustIt && !x.ids.includes(mustIt.id)) x = { ...x, items: [...x.items, mustIt], ids: [...x.ids, mustIt.id] };
+    return describeOutfit(x, ctx, i);
+  });
   const missing = !shoes.length ? "No tienes calzado en el armario: añádelo para que los outfits estén completos."
     : needWarmth >= 2 && !outers.length ? `Para ${T} °C te vendría bien una chaqueta o un abrigo: no tienes ninguno disponible.` : null;
   return { outfits, missing, engine: true };

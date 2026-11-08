@@ -1,12 +1,13 @@
 // Perfil y bienvenida: cuerpo (maniquí con tus proporciones), tallas, ubicaciones, idioma y cuenta.
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
-import { t, LANGUAGES, getLanguage } from "../i18n.js";
+import { t, LANGUAGES, getLanguage, ensureLanguage } from "../i18n.js";
 import { SIZE_KEYS } from "../catalog.js";
 import { $, $$, esc, icon, toast, say, isNative } from "../ui.js";
 import { store, saveProfile } from "../data.js";
 import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
+import { canNotify, setMorningReminder } from "../native.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
 const sizePh = (k) => t(`size.placeholder.${k}`) !== `size.placeholder.${k}` ? t(`size.placeholder.${k}`) : SIZE_PH[k] || "";
@@ -100,14 +101,23 @@ export function renderProfile(view) {
           <div class="palette mini-pal">${(store.style.palette || []).map((c) => `<i style="background:${c.hex}" title="${esc(c.name)}"></i>`).join("")}</div>`
         : `<p class="muted" style="margin:0">${t("style.emptyBody")}</p>`}
       </a>
+      ${canNotify() ? `<section class="card"><h2 class="display">${t("remind.title")}</h2>
+        <label class="auto-row"><input type="checkbox" id="remOn" ${store.profile?.reminder ? "checked" : ""}><span>${t("remind.on")}</span></label>
+        <label class="field"><span>${t("remind.time")}</span><input class="input" type="time" id="remAt" value="${esc(store.profile?.reminder || "08:00")}"></label></section>` : ""}
+      <section class="card"><h2 class="display">${t("profile.wash")}</h2>
+        <label class="auto-row"><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}<small class="muted"> · ${t("wash.autoHint")}</small></span></label></section>
       <section class="card" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
         <p class="muted small" style="margin:0">${t("recut.body")}</p>
         <div class="row wrap"><button class="btn sm primary" type="button" id="recut">${icon("spark")}${t("recut.go", { n: store.items.filter((i) => i.hasImage).length })}</button><button class="btn sm ghost" type="button" id="unrecut">${icon("refresh")}${t("recut.undo")}</button></div>
         <div class="bar" id="recutBar" hidden><i></i></div>
         <p class="status" id="recutSt" aria-live="polite"></p></section>
+      <section class="card"><h2 class="display">${t("profile.section")}</h2>
+        <div class="seg" id="section">${["hombre", "mujer"].map((k) => `<button type="button" data-sec="${k}" aria-pressed="${(store.profile?.section || "hombre") === k}">${t("section." + k)}</button>`).join("")}</div>
+        <p class="muted small" style="margin:0">${t("profile.sectionHint")}</p></section>
       <section class="card"><h2 class="display">${t("profile.language")}</h2>
-        <div class="seg">${LANGUAGES.map((l) => `<button type="button" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
-        <p class="muted small" style="margin:0">${t("profile.language.soon")}</p></section>
+        <div class="seg" id="langs">${LANGUAGES.map((l) => `<button type="button" data-lang="${l.k}" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
+        <p class="status" id="langSt" aria-live="polite"></p>
+        <p class="muted small" style="margin:0">${t("profile.language.note")}</p></section>
       <section class="card span2"><h2 class="display">${t("profile.account")}</h2>
         <div class="field"><span>${t("profile.uid")}</span><div class="row"><code class="uid" style="flex:1">${esc(user?.uid || "")}</code><button class="btn sm" type="button" id="copy">${icon("copy")}${t("profile.copy")}</button></div></div>
         <div class="field"><span>${t("profile.version")}</span><div class="row"><code class="uid" style="flex:1">${esc(BUILD)}${isNative ? ` · ${esc(location.host)}` : ""}</code><button class="btn sm" type="button" id="upd">${icon("refresh")}${t("profile.checkUpdate")}</button></div></div>
@@ -118,6 +128,31 @@ export function renderProfile(view) {
   $("#cSizes", view).append(sizesBlock(p, change));
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
+  $("#langs", view).onclick = async (e) => {
+    const b = e.target.closest("[data-lang]"); if (!b || b.dataset.lang === getLanguage()) return;
+    const l = b.dataset.lang, st = $("#langSt", view);
+    $("#langs", view).querySelectorAll("button").forEach((x) => (x.disabled = true));
+    try {
+      if (l !== "es") await ensureLanguage(l, (d, n) => say(st, t("profile.translating", { d, n })));
+      await saveProfile({ language: l });
+      location.reload();
+    } catch (err) { say(st, err?.message || t("profile.translateFail"), "error"); $("#langs", view).querySelectorAll("button").forEach((x) => (x.disabled = false)); }
+  };
+  $("#section", view).onclick = (e) => {
+    const b = e.target.closest("[data-sec]"); if (!b) return;
+    $("#section", view).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    change({ section: b.dataset.sec });
+  };
+  $("#autoDirty", view).onchange = (e) => change({ autoDirty: e.target.checked });
+  const remOn = $("#remOn", view), remAt = $("#remAt", view);
+  if (remOn) {
+    const apply = async () => {
+      const time = remOn.checked ? remAt.value || "08:00" : null;
+      try { await setMorningReminder(time); change({ reminder: time }); toast(time ? t("remind.set", { time }) : t("remind.off")); }
+      catch (e) { remOn.checked = false; toast(e?.message || t("item.saveFail"), "error"); }
+    };
+    remOn.onchange = apply; remAt.onchange = () => { if (remOn.checked) apply(); };
+  }
   $("#upd", view).onclick = () => checkUpdate({ manual: true });
   $("#recut", view).onclick = async () => {
     const b = $("#recut", view), st = $("#recutSt", view), bar = $("#recutBar", view);

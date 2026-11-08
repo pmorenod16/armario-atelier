@@ -3,7 +3,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/bricolage-grotesque";
 import "./styles.css";
 import { App } from "@capacitor/app";
-import { t, translateDom, setLanguage } from "./i18n.js";
+import { t, translateDom, setLanguage, getLanguage, ensureLanguage } from "./i18n.js";
 import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle } from "./firebase.js";
 import { store, subscribe, startData, stopData } from "./data.js";
 import { $, $$, icon, say, topSheet, isNative, setHalo } from "./ui.js";
@@ -108,7 +108,8 @@ watchAuth((user) => {
   let started = false;
   unsubStore = subscribe(() => {
     if (!store.ready.profile) return;
-    setLanguage(store.profile.language || "es");
+    setLanguage(store.profile.language || "es"); translateDom();
+    if (getLanguage() !== "es" && !window.__i18nChecked) { window.__i18nChecked = true; ensureLanguage(getLanguage()).then((n) => { if (n) { setLanguage(getLanguage()); translateDom(); route(); } }).catch(() => {}); }
     if (!store.profile.onboarded && !onboarding && !started) {
       onboarding = true; $("#app").hidden = true;
       runOnboarding($("#onboarding"), () => { onboarding = false; started = true; $("#app").hidden = false; route(); });
@@ -136,3 +137,4 @@ if (!isNative && import.meta.env.PROD && "serviceWorker" in navigator) navigator
 
 /* ---------- actualizaciones ---------- */
 startUpdater();
+import("./native.js").then((m) => m.listenReminder()).catch(() => {});

@@ -4,8 +4,9 @@ import {
   GROUPS, TYPE, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, STATUSES, label, groupOf, TYPES,
 } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, tilt, setHalo } from "../ui.js";
-import { store, subscribe } from "../data.js";
+import { store, subscribe, washAll } from "../data.js";
 import { openItem } from "./item.js";
+import { toast } from "../ui.js";
 import { openAdd, tintFor } from "./add.js";
 
 const state = { q: "", group: "", sort: "recent", f: { color: [], size: [], pattern: [], brand: [], materialKey: [], season: [], fit: [], status: [], formality: [] } };
@@ -42,7 +43,7 @@ const SORTS = {
 
 export function renderCloset(view) {
   view.innerHTML = `
-    <header class="head"><div><h1 class="display">${t("closet.title")}</h1><div class="sub" id="count"></div></div></header>
+    <header class="head"><div><h1 class="display">${t("closet.title")}</h1><div class="sub" id="count"></div></div><button class="btn sm" type="button" id="wash" hidden>${icon("wash")}<span></span></button></header>
     <div id="notice"></div>
     <div class="toolbar">
       <label class="searchbox">${icon("search")}<input class="input" type="search" id="q" placeholder="${t("closet.search")}" value="${esc(state.q)}" aria-label="${t("closet.search")}"></label>
@@ -52,6 +53,7 @@ export function renderCloset(view) {
     <div class="scroller" id="groups" role="group"></div>
     <div id="grid"></div>`;
   $("#q", view).oninput = (e) => { state.q = e.target.value; draw(); };
+  $("#wash", view).onclick = async () => { try { const n = await washAll(); toast(t("wash.done", { n })); } catch { toast(t("item.saveFail"), "error"); } };
   $("#filterBtn", view).onclick = () => openFilters(draw);
   $("#sortBtn", view).onclick = () => openSort(draw);
   $("#groups", view).onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; state.group = b.dataset.g; draw(); };
@@ -68,6 +70,8 @@ export function renderCloset(view) {
   function draw() {
     const all = store.items;
     $("#count", view).textContent = all.length === 1 ? t("closet.countOne") : t("closet.count", { n: all.length });
+    const dirty = store.items.filter((i) => i.status === "sucia").length, wb = $("#wash", view);
+    wb.hidden = !dirty; wb.lastChild.textContent = t("wash.all", { n: dirty });
     $("#notice", view).innerHTML = store.error ? `<div class="notice">${t("common.loadFail")}</div>` : store.offline && all.length ? `<div class="notice">${t("common.offline")}</div>` : "";
     const n = activeCount(); $("#fdot", view).hidden = !n; $("#fdot", view).textContent = n;
     const base = all.filter((it) => matches(it, { ignoreGroup: true }));

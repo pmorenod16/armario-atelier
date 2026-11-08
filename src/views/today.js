@@ -6,6 +6,7 @@ import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
+  saveLook, deleteLook, lookSaved,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
@@ -14,6 +15,7 @@ import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
 import { suggestOutfits, packTrip } from "../engine.js";
+import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
 export const engineMode = () => store.profile?.engine === "app" ? "app" : "ia";
@@ -28,19 +30,83 @@ const byId = (id) => store.items.find((i) => i.id === id);
 export function renderToday(view) {
   view.innerHTML = `
     <header class="head"><div><h1 class="display">${t("today.title")}</h1><div class="sub">${fmtDate(todayKey(), { weekday: "long", day: "numeric", month: "long" })}</div></div></header>
-    <div class="seg tabs" role="tablist">${["hoy", "calendario", "maleta"].map((k) => `<button type="button" role="tab" data-tab="${k}" aria-pressed="${state.tab === k}">${icon({ hoy: "sun", calendario: "calendar", maleta: "bag" }[k])}${t("today.tab." + k)}</button>`).join("")}</div>
+    <div class="seg tabs" role="tablist">${["hoy", "outfits", "calendario", "maleta"].map((k) => `<button type="button" role="tab" data-tab="${k}" aria-pressed="${state.tab === k}">${icon({ hoy: "sun", outfits: "bookmark", calendario: "calendar", maleta: "bag" }[k])}<span>${t("today.tab." + k)}</span></button>`).join("")}</div>
     <div id="tab"></div>`;
   let cleanupTab = null;
   const show = () => {
     cleanupTab?.(); setHalo(null);
     $$(".tabs button", view).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === state.tab)));
     const box = $("#tab", view);
-    cleanupTab = { hoy: tabToday, calendario: tabCalendar, maleta: tabTrip }[state.tab](box) || null;
+    cleanupTab = { hoy: tabToday, outfits: tabLooks, calendario: tabCalendar, maleta: tabTrip }[state.tab](box) || null;
   };
   $(".tabs", view).onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { state.tab = b.dataset.tab; show(); } };
   view.addEventListener("click", (e) => { const m = e.target.closest("[data-item]"); if (m) openItem(m.dataset.item); });
   show();
   return () => cleanupTab?.();
+}
+
+/* =================== MIS OUTFITS (guardados y hechos a mano) =================== */
+function tabLooks(box) {
+  function draw() {
+    const looks = store.looks.map((l) => ({ ...l, itemIds: l.itemIds.filter(byId) })).filter((l) => l.itemIds.length);
+    box.innerHTML = `
+      <section class="card looks-head">
+        <div class="grow"><h2 class="display">${t("looks.title")}</h2><p class="muted small" style="margin:0">${t("looks.sub")}</p></div>
+        <button class="btn primary" type="button" id="newLook">${icon("plus")}${t("looks.create")}</button>
+      </section>
+      ${looks.length ? `<div class="looks-grid">${looks.map((l) => `
+        <article class="card look-card" data-l="${l.id}">
+          ${boardHTML(l.itemIds, { small: true })}
+          <div class="row between"><b>${esc(l.title || t("looks.untitled"))}</b>${l.source === "mano" ? `<span class="pill soft">${t("looks.byYou")}</span>` : ""}</div>
+        </article>`).join("")}</div>`
+      : `<div class="empty"><div class="empty-art">${icon("bookmark")}</div><h2 class="display">${t("looks.emptyTitle")}</h2><p>${t("looks.emptyBody")}</p></div>`}`;
+    $("#newLook", box).onclick = () => editLook();
+    box.querySelectorAll("[data-l]").forEach((c) => (c.onclick = (e) => { if (!e.target.closest("[data-item]")) openLook(c.dataset.l); }));
+    box.querySelectorAll(".look-card .bd-item").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); openLook(b.closest("[data-l]").dataset.l); }));
+  }
+  draw();
+  return subscribe(() => { if (!box.querySelector(".board.editing")) draw(); });
+}
+/** Crear o cambiar las prendas de un outfit propio. */
+async function editLook(look = null) {
+  const ids = await pickItems(look?.itemIds || [], { title: t(look ? "looks.editItems" : "looks.pick") });
+  if (!ids?.length) return;
+  const sh = openSheet(`
+    <div class="sheet-head"><h2 class="display">${t(look ? "looks.editTitle" : "looks.nameIt")}</h2><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div>
+    <div class="look-preview">${boardHTML(ids)}</div>
+    <label class="field"><span>${t("looks.name")}</span><input class="input" id="lt" maxlength="60" placeholder="${t("looks.namePh")}" value="${esc(look?.title || "")}"></label>
+    <label class="field"><span>${t("looks.note")}</span><input class="input" id="ln" maxlength="200" placeholder="${t("looks.notePh")}" value="${esc(look?.note || "")}"></label>
+    <div class="sheet-foot"><button class="btn" type="button" data-close>${t("common.cancel")}</button><button class="btn primary" type="button" id="ok">${icon("bookmark")}${t("looks.saveIt")}</button></div>`, { label: t("looks.create") });
+  hydrateBoard(sh.el);
+  sh.el.onclick = async (e) => {
+    if (e.target.closest("[data-close]")) return sh.close();
+    if (!e.target.closest("#ok")) return;
+    try { await saveLook({ title: $("#lt", sh.el).value.trim() || t("looks.untitled"), note: $("#ln", sh.el).value.trim(), itemIds: ids, source: look?.source || "mano" }, look?.id); sh.close(); toast(t("looks.savedToast")); }
+    catch { toast(t("item.saveFail"), "error"); }
+  };
+}
+function openLook(id) {
+  const l = store.looks.find((x) => x.id === id); if (!l) return;
+  const ids = l.itemIds.filter(byId);
+  const sh = openSheet(`
+    <div class="sheet-head"><h2 class="display">${esc(l.title || t("looks.untitled"))}</h2><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div>
+    <div class="look-stage" id="ls">${boardHTML(ids)}${boardTools()}</div>
+    ${l.note ? `<p class="muted">${esc(l.note)}</p>` : ""}
+    ${l.how?.length ? `<ol class="how">${l.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
+    <div class="row wrap">
+      <button class="btn sm primary" type="button" id="w">${icon("check")}${t("today.wear")}</button>
+      <button class="btn sm" type="button" id="e">${icon("edit")}${t("looks.editItems")}</button>
+      <button class="btn sm ghost danger" type="button" id="d">${icon("trash")}${t("looks.delete")}</button>
+    </div>`, { label: l.title, wide: true });
+  hydrateBoard(sh.el);
+  wireBoardEdit($("#ls", sh.el), () => toast(t("board.saved")));
+  sh.el.onclick = async (e) => {
+    if (e.target.closest("[data-close]")) return sh.close();
+    if (e.target.closest("#w")) { try { await logWear({ itemIds: ids, title: l.title, plan: "", how: l.how || [] }); toast(t("today.wornSaved")); } catch { toast(t("item.saveFail"), "error"); } }
+    if (e.target.closest("#e")) { sh.close(); editLook(l); }
+    const d = e.target.closest("#d");
+    if (d) { if (!d.dataset.sure) { d.dataset.sure = 1; d.lastChild.textContent = t("looks.deleteSure"); return; } await deleteLook(l.id); sh.close(); toast(t("looks.removed")); }
+  };
 }
 
 /* =================== HOY =================== */
@@ -50,7 +116,7 @@ function tabToday(box) {
     <div class="today-grid">
       <section class="wx card" id="wx"><p class="muted">${t("today.wx.loading")}</p></section>
       <section class="card plan">
-        <label class="field"><span>${t("today.plan")}</span><textarea id="plan" rows="2" maxlength="300" placeholder="${t("today.planPh")}"></textarea></label>
+        <label class="field"><span class="row between">${t("today.plan")}<span class="plan-tools">${canCalendar() ? `<button class="btn sm ghost" type="button" id="cal">${icon("calendar")}${t("today.fromCal")}</button>` : ""}${canVoice() ? `<button class="btn sm icon ghost" type="button" id="mic" aria-label="${t("today.voice")}">${icon("mic")}</button>` : ""}</span></span><textarea id="plan" rows="2" maxlength="300" placeholder="${t("today.planPh")}"></textarea></label>
         <div class="chips" id="quick">${t("today.quick").split("|").map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
         <div class="engine-row"><span class="muted small">${t("engine.label")}</span><div class="seg engine-seg" id="engine">${["ia", "app"].map((k) => `<button type="button" data-e="${k}" aria-pressed="${engineMode() === k}">${t("engine." + k)}</button>`).join("")}</div></div>
         <button class="btn primary block" type="button" id="go">${icon("spark")}${t("today.go")}</button>
@@ -60,6 +126,19 @@ function tabToday(box) {
     </div>
     <div id="result"></div>`;
   const planEl = $("#plan", box);
+  const addPlan = (txt) => { if (txt) planEl.value = planEl.value.trim() ? `${planEl.value.trim()}. ${txt}` : txt; };
+  const calB = $("#cal", box), micB = $("#mic", box);
+  if (calB) calB.onclick = async () => {
+    calB.disabled = true;
+    try { const p = await planFromCalendar(); if (p) { addPlan(p); toast(t("today.calDone")); } else toast(t("today.calEmpty")); }
+    catch (e) { toast(e?.message || t("today.calFail"), "error"); }
+    calB.disabled = false;
+  };
+  if (micB) micB.onclick = async () => {
+    micB.disabled = true; micB.classList.add("on");
+    try { addPlan(await planByVoice()); } catch (e) { toast(e?.message || t("today.voiceFail"), "error"); }
+    micB.disabled = false; micB.classList.remove("on");
+  };
   $("#engine", box).onclick = (e) => {
     const b = e.target.closest("[data-e]"); if (!b) return;
     store.profile.engine = b.dataset.e; saveProfile({ engine: b.dataset.e }).catch(() => {});
@@ -205,6 +284,7 @@ function tabToday(box) {
       <div class="row wrap look-actions">
         <button class="btn sm ${fb?.liked === true ? "on" : ""}" type="button" id="like" aria-pressed="${fb?.liked === true}">${icon("up")}${t("today.like")}</button>
         <button class="btn sm ${fb?.liked === false ? "on" : ""}" type="button" id="dislike" aria-pressed="${fb?.liked === false}">${icon("down")}${t("today.dislike")}</button>
+        <button class="btn sm ${lookSaved(o.itemIds) ? "on" : ""}" type="button" id="saveLook" aria-pressed="${!!lookSaved(o.itemIds)}">${icon("bookmark")}${t(lookSaved(o.itemIds) ? "looks.saved" : "looks.save")}</button>
         <button class="btn sm primary" type="button" id="wear" ${isWorn ? "disabled" : ""}>${icon("check")}${t(isWorn ? "today.worn" : "today.wear")}</button>
       </div>
       ${td?.missing ? `<p class="notice">${icon("spark")} ${esc(td.missing)}</p>` : ""}`;
@@ -216,6 +296,11 @@ function tabToday(box) {
       }
       if (e.target.closest("#wear")) {
         try { await logWear({ itemIds: o.itemIds, title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t("today.wornSaved")); }
+        catch { toast(t("item.saveFail"), "error"); }
+      }
+      if (e.target.closest("#saveLook")) {
+        const ex = lookSaved(o.itemIds);
+        try { if (ex) { await deleteLook(ex.id); toast(t("looks.removed")); } else { await saveLook({ title: o.title, itemIds: o.itemIds, how: o.how || [], source: o.engine ? "app" : "hoy" }); toast(t("looks.savedToast")); } }
         catch { toast(t("item.saveFail"), "error"); }
       }
     };

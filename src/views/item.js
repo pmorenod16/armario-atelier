@@ -2,7 +2,7 @@
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, setHalo } from "../ui.js";
-import { store, subscribe, fullImage, setItemStatus, deleteItem } from "../data.js";
+import { store, subscribe, fullImage, setItemStatus, deleteItem, WASH_AFTER } from "../data.js";
 import { openEdit, tintFor } from "./add.js";
 
 export function openItem(id) {
@@ -37,6 +37,8 @@ export function openItem(id) {
           <div><div class="kicker">${esc(label(groupOf(item.type)))}</div><h2 class="display">${esc(item.name)}</h2></div>
           <div class="seg" role="group" aria-label="${t("item.status")}">${STATUSES.map((s) => `<button type="button" data-s="${s}" aria-pressed="${item.status === s}">${t("status." + s)}</button>`).join("")}</div>
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+          <button class="btn primary" type="button" id="combine">${icon("spark")}${t("combine.title")}</button>
+          ${item.status === "disponible" && WASH_AFTER[item.type] ? `<p class="muted small" style="margin:0">${t("wash.count", { n: item.wearsSinceWash || 0, max: WASH_AFTER[item.type] })}</p>` : ""}
           <div class="row wrap">
             <button class="btn" type="button" id="edit">${icon("edit")}${t("item.edit")}</button>
             <button class="btn danger" type="button" id="del">${icon("trash")}<span>${t("item.delete")}</span></button>
@@ -50,6 +52,7 @@ export function openItem(id) {
       try { await setItemStatus(item.id, b.dataset.s); } catch { toast(t("item.saveFail"), "error"); }
     }));
     $("#edit", root).onclick = () => openEdit(item);
+    $("#combine", root).onclick = async () => (await import("./combine.js")).openCombine(item);
     let armed = 0;
     $("#del", root).onclick = async (e) => {
       const btn = e.currentTarget;
