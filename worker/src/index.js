@@ -303,6 +303,28 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
  * IA con reserva: primero Gemini; si no hay clave, se agota el límite o Gemini falla,
  * pasa a NVIDIA (build.nvidia.com, gratis). La búsqueda en tiendas solo existe en Gemini.
  */
+/** Gemini a veces responde 503 («modelo saturado») un rato: reintenta y, si sigue, prueba otro modelo de Gemini (cupo aparte). */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function askGeminiSteady(env, opts) {
+  if (opts.search) return askGemini(env, opts);
+  const busy = (e) => e instanceof HttpError && [429, 500, 502, 503].includes(e.status);
+  try { return await askGemini(env, opts); }
+  catch (e) {
+    if (!busy(e)) throw e;
+    if (e.status !== 429) { // saturado: un segundo intento con el mismo modelo
+      await sleep(1500);
+      try { return await askGemini(env, opts); } catch (e2) { if (!busy(e2)) throw e2; }
+    }
+  }
+  const backups = String(env.MODEL_BACKUP || "gemini-2.5-flash,gemini-2.5-flash-lite").split(",").map((m) => m.trim()).filter((m) => m && m !== (opts.model || MAIN(env)));
+  let last;
+  for (const model of backups) {
+    try { console.warn("Gemini saturado, pruebo", model); return await askGemini(env, { ...opts, model }); }
+    catch (e) { last = e; if (!(busy(e) || e.status === 500)) break; }
+  }
+  throw last instanceof HttpError && last.status !== 500 ? last : new HttpError(502, "Gemini está saturado ahora mismo. Vuelve a probar en unos minutos.");
+}
+
 async function askAI(env, opts) {
   const hasNvidia = !!env.NVIDIA_API_KEY;
   if (!env.GEMINI_API_KEY) {
@@ -310,7 +332,7 @@ async function askAI(env, opts) {
     throw new HttpError(500, "Falta la clave de Gemini en el servidor (GEMINI_API_KEY).");
   }
   try {
-    return await askGemini(env, opts);
+    return await askGeminiSteady(env, opts);
   } catch (e) {
     // La búsqueda con Google tiene cupos gratuitos distintos según el modelo: probar el de reserva
     if (opts.search && e instanceof HttpError && e.status === 429 && env.MODEL_SEARCH_FALLBACK && env.MODEL_SEARCH_FALLBACK !== opts.model) {
