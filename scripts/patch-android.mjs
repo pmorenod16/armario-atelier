@@ -26,3 +26,12 @@ if (!vars.includes("rgcfaIncludeGoogle")) {
   writeFileSync(varsPath, vars);
   console.log("Variables de Google añadidas a variables.gradle");
 }
+
+// Descarga de Gradle: más margen (a veces services.gradle.org tarda más de 10 s en responder)
+const wrapperPath = "android/gradle/wrapper/gradle-wrapper.properties";
+if (existsSync(wrapperPath)) {
+  let w = readFileSync(wrapperPath, "utf8");
+  w = /networkTimeout=/.test(w) ? w.replace(/networkTimeout=\d+/, "networkTimeout=120000") : w + "\nnetworkTimeout=120000\n";
+  writeFileSync(wrapperPath, w);
+  console.log("Tiempo de espera de Gradle ampliado");
+}
