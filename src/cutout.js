@@ -245,8 +245,9 @@ export async function makeCutout(photo, onProgress = () => {}, { locate } = {}) 
 
 /**
  * Gafas de ver: deja los cristales transparentes. El recorte deja la gafa entera opaca (montura + lo que se ve a
- * través del cristal). Se separa la montura del cristal por color (la montura es el color del borde exterior de la
- * silueta; el cristal es «lo otro») y se quitan las zonas de cristal encerradas por la montura.
+ * través del cristal: la mesa, la pared, reflejos). Se divide la gafa en zonas de color parecido y se quitan las zonas
+ * GRUESAS (los cristales son manchas anchas; la montura y las patillas son líneas finas), más los reflejos y motas que
+ * quedan dentro de ellas. Funciona con monturas finas de metal y de pasta, de frente o en ángulo.
  * Recibe y devuelve lo mismo que makeCutout ({blob, width, height, aspect, tone, thumb, method}).
  */
 export async function clearLenses(cut) {
@@ -256,68 +257,93 @@ export async function clearLenses(cut) {
   g.drawImage(img, 0, 0);
   const id = g.getImageData(0, 0, w, h), d = id.data;
   const op = new Uint8Array(n);
-  for (let p = 0; p < n; p++) op[p] = d[p * 4 + 3] > 128 ? 1 : 0;
-  const lab = (p) => { const i = p * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  let opaque = 0;
+  for (let p = 0; p < n; p++) if (d[p * 4 + 3] > 128) { op[p] = 1; opaque++; }
+  if (opaque < 400) return cut;
+  const col = (p) => [d[p * 4], d[p * 4 + 1], d[p * 4 + 2]];
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  // 1) color de la montura: píxeles opacos pegados al exterior (banda de 1-3 px del contorno)
-  const edge = [];
-  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-    const p = y * w + x; if (!op[p]) continue;
-    if (!op[p - 1] || !op[p + 1] || !op[p - w] || !op[p + w]) { const q = [p + 1, p - 1, p + w, p - w].find((k) => op[k] && op[k + 1] && op[k - 1] && op[k + w] && op[k - w]); if (q != null) edge.push(lab(q)); }
-  }
-  if (edge.length < 20) return cut;
-  const med = (arr, k) => arr.map((v) => v[k]).sort((a, b) => a - b)[arr.length >> 1];
-  let frame = [med(edge, 0), med(edge, 1), med(edge, 2)];
-  // 2) dos grupos de color (montura / cristal) con k-medias, empezando por la montura y lo más lejano a ella
-  const all = []; for (let p = 0; p < n; p += 2) if (op[p]) all.push(lab(p));
-  let lens = all.reduce((best, v) => (dist(v, frame) > dist(best, frame) ? v : best), frame);
-  if (dist(lens, frame) < 40) return cut; // todo del mismo color: no se distingue el cristal
-  for (let it = 0; it < 8; it++) {
-    const sA = [0, 0, 0, 0], sB = [0, 0, 0, 0];
-    for (const v of all) { const s = dist(v, frame) <= dist(v, lens) ? sA : sB; s[0] += v[0]; s[1] += v[1]; s[2] += v[2]; s[3]++; }
-    if (sA[3]) frame = [sA[0] / sA[3], sA[1] / sA[3], sA[2] / sA[3]];
-    if (sB[3]) lens = [sB[0] / sB[3], sB[1] / sB[3], sB[2] / sB[3]];
-  }
-  const isFrame = new Uint8Array(n);
-  for (let p = 0; p < n; p++) if (op[p]) { const v = lab(p); isFrame[p] = dist(v, frame) * 1.15 < dist(v, lens) ? 1 : 0; }
-  // 3) la montura se engorda un poco para cerrar huecos y que los cristales queden encerrados
-  const R = Math.max(1, Math.round(Math.min(w, h) / 150));
-  const fat = new Uint8Array(n);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (!isFrame[y * w + x]) continue;
-    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < h && xx >= 0 && xx < w) fat[yy * w + xx] = 1; }
-  }
-  // 4) zonas opacas que no son montura: las grandes y rodeadas de montura son cristales
-  const seen = new Int32Array(n).fill(-1), comps = [];
-  let opaque = 0; for (let p = 0; p < n; p++) opaque += op[p];
-  for (let s = 0; s < n; s++) {
-    if (!op[s] || fat[s] || seen[s] >= 0) continue;
-    const k = comps.length, stack = [s], pix = []; let open = 0; seen[s] = k;
-    while (stack.length) {
-      const p = stack.pop(); pix.push(p);
-      const x = p % w, y = (p / w) | 0;
-      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
-        if (q < 0) { open++; continue; }
-        if (!op[q]) { open++; continue; } // toca el exterior: no está encerrada
-        if (fat[q] || seen[q] >= 0) continue;
-        seen[q] = k; stack.push(q);
+  const nb = (p) => { const x = p % w, r = []; if (x > 0) r.push(p - 1); if (x < w - 1) r.push(p + 1); if (p >= w) r.push(p - w); if (p < n - w) r.push(p + w); return r; };
+  // 1) zonas de color parecido (crecen mientras el color se parece a la media de la zona y no hay un borde marcado)
+  const T = 34, STEP = 22;
+  const lab = new Int32Array(n).fill(-1), regs = [];
+  for (let s0 = 0; s0 < n; s0++) {
+    if (!op[s0] || lab[s0] >= 0) continue;
+    const k = regs.length, pix = [s0], m = col(s0), sum = [...m];
+    lab[s0] = k;
+    for (let qi = 0; qi < pix.length; qi++) {
+      const p = pix[qi], cp = col(p);
+      for (const q of nb(p)) {
+        if (!op[q] || lab[q] >= 0) continue;
+        const cq = col(q);
+        if (dist(cq, cp) > STEP || dist(cq, [sum[0] / pix.length, sum[1] / pix.length, sum[2] / pix.length]) > T) continue;
+        lab[q] = k; pix.push(q); sum[0] += cq[0]; sum[1] += cq[1]; sum[2] += cq[2];
       }
     }
-    comps.push({ pix, open });
+    regs.push({ pix, mean: sum.map((v) => v / pix.length) });
   }
-  const lenses = comps.filter((cm) => cm.pix.length > opaque * 0.04 && cm.open < cm.pix.length * 0.02);
+  // 2) grosor de cada zona: distancia al borde de la zona más lejana (transformada de distancia por chaflán)
+  const INF = 1e9, dt = new Float32Array(n);
+  for (let p = 0; p < n; p++) {
+    if (!op[p]) { dt[p] = 0; continue; }
+    const x = p % w, y = (p / w) | 0;
+    dt[p] = (x === 0 || y === 0 || x === w - 1 || y === h - 1 || nb(p).some((q) => lab[q] !== lab[p])) ? 1 : INF;
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const p = y * w + x; if (dt[p] <= 1) continue;
+    let v = dt[p]; if (x > 0 && lab[p - 1] === lab[p]) v = Math.min(v, dt[p - 1] + 1); if (y > 0 && lab[p - w] === lab[p]) v = Math.min(v, dt[p - w] + 1);
+    if (x > 0 && y > 0 && lab[p - w - 1] === lab[p]) v = Math.min(v, dt[p - w - 1] + 1.4); if (x < w - 1 && y > 0 && lab[p - w + 1] === lab[p]) v = Math.min(v, dt[p - w + 1] + 1.4); dt[p] = v; }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { const p = y * w + x; if (dt[p] <= 1) continue;
+    let v = dt[p]; if (x < w - 1 && lab[p + 1] === lab[p]) v = Math.min(v, dt[p + 1] + 1); if (y < h - 1 && lab[p + w] === lab[p]) v = Math.min(v, dt[p + w] + 1);
+    if (x < w - 1 && y < h - 1 && lab[p + w + 1] === lab[p]) v = Math.min(v, dt[p + w + 1] + 1.4); if (x > 0 && y < h - 1 && lab[p + w - 1] === lab[p]) v = Math.min(v, dt[p + w - 1] + 1.4); dt[p] = v; }
+  for (const r of regs) { let mx = 0; for (const p of r.pix) if (dt[p] > mx) mx = dt[p]; r.thick = mx; }
+  // 3) cristales = zonas grandes y gruesas (la más gruesa marca la escala: la montura es mucho más fina)
+  const big = regs.filter((r) => r.pix.length > opaque * 0.02);
+  const top = Math.max(0, ...big.map((r) => r.thick));
+  const minThick = Math.max(6, Math.min(w, h) * 0.035, top * 0.35);
+  const lenses = big.filter((r) => r.thick >= minThick);
+  if (globalThis.__lensDebug) globalThis.__lensDebug.push({ w, h, opaque, regs: regs.length, top: Math.round(top), minThick: Math.round(minThick), big: big.map((r) => [r.pix.length, Math.round(r.thick), r.mean.map(Math.round).join(",")]) });
   if (!lenses.length) return cut;
-  // 5) cristal fuera: transparente, recuperando también el borde engordado que no era montura
   const clear = new Uint8Array(n);
-  for (const cm of lenses) for (const p of cm.pix) clear[p] = 1;
-  for (let pass = 0; pass < R + 1; pass++) {
+  for (const r of lenses) for (const p of r.pix) clear[p] = 1;
+  // 4) reflejos, motas y vetas que quedan dentro del cristal: zonas pequeñas rodeadas casi solo de cristal
+  const lensIds = new Set(lenses.map((r) => regs.indexOf(r)));
+  for (let pass = 0; pass < 4; pass++) for (let k = 0; k < regs.length; k++) {
+    const r = regs[k]; if (lensIds.has(k) || clear[r.pix[0]] || r.thick > minThick * 0.8) continue;
+    let touch = 0, around = 0;
+    for (const p of r.pix) for (const q of nb(p)) { if (lab[q] === k) continue; around++; if (clear[q]) touch++; }
+    if (around && touch / around > 0.6) for (const p of r.pix) clear[p] = 1;
+  }
+  // 4b) trozos de lo de detrás que se ven por otros huecos (entre patilla y montura): mismo color que el cristal, no tan finos
+  for (let k = 0; k < regs.length; k++) {
+    const r = regs[k]; if (lensIds.has(k) || r.pix.length < opaque * 0.003 || r.thick < Math.max(4, minThick * 0.3)) continue;
+    if (lenses.some((L) => dist(L.mean, r.mean) < 26)) for (const p of r.pix) clear[p] = 1;
+  }
+  // 4c) lo que queda completamente rodeado de cristal (reflejos sueltos, motas) también es cristal
+  {
+    const seen = new Uint8Array(n);
+    for (let s0 = 0; s0 < n; s0++) {
+      if (!op[s0] || clear[s0] || seen[s0]) continue;
+      const comp = [s0]; seen[s0] = 1; let outside = false;
+      for (let qi = 0; qi < comp.length; qi++) {
+        const p = comp[qi], x = p % w;
+        if (x === 0 || x === w - 1 || p < w || p >= n - w) outside = true;
+        for (const q of nb(p)) { if (!op[q]) { outside = true; continue; } if (!clear[q] && !seen[q]) { seen[q] = 1; comp.push(q); } }
+      }
+      if (!outside && comp.length < opaque * 0.05) for (const p of comp) clear[p] = 1;
+    }
+  }
+  // 5) el borde entre cristal y montura (píxeles mezclados) también se va si se parece más al cristal
+  const lensMean = lenses.map((r) => r.mean);
+  for (let pass = 0; pass < 2; pass++) {
     const add = [];
-    for (let p = 0; p < n; p++) if (!clear[p] && op[p] && !isFrame[p]) { const x = p % w; if ((x > 0 && clear[p - 1]) || (x < w - 1 && clear[p + 1]) || clear[p - w] || clear[p + w]) add.push(p); }
+    for (let p = 0; p < n; p++) {
+      if (clear[p] || !op[p] || !nb(p).some((q) => clear[q])) continue;
+      const cp = col(p), own = regs[lab[p]].mean;
+      if (Math.min(...lensMean.map((m) => dist(cp, m))) < dist(cp, own) * 0.9 || dist(cp, own) > T) add.push(p);
+    }
     add.forEach((p) => (clear[p] = 1));
   }
   for (let p = 0; p < n; p++) if (clear[p]) d[p * 4 + 3] = 0;
-  // borde suave entre montura y cristal
-  for (let p = w; p < n - w; p++) if (!clear[p] && op[p] && (clear[p - 1] || clear[p + 1] || clear[p - w] || clear[p + w])) d[p * 4 + 3] = Math.min(d[p * 4 + 3], 200);
+  for (let p = 0; p < n; p++) if (!clear[p] && op[p] && nb(p).some((q) => clear[q])) d[p * 4 + 3] = Math.min(d[p * 4 + 3], 210);
   g.putImageData(id, 0, 0);
   let q = 0.9, blob;
   do { blob = await new Promise((r) => c.toBlob(r, "image/webp", q)); q -= 0.12; } while (blob && blob.size > 600_000 && q > 0.4);
