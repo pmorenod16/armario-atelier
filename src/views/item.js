@@ -48,6 +48,9 @@ export function openItem(id) {
           ${false && item.status === "disponible" && washLimit(item.type) ? `<p class="muted small" style="margin:0">${t("wash.count", { n: item.wearsSinceWash || 0, max: washLimit(item.type) })}</p>` : ""}
           <div class="row wrap">
             <button class="btn" type="button" id="edit">${icon("edit")}${t("item.edit")}</button>
+            ${item.type === "gafas-ver" && item.hasImage ? (item.lensesCleared
+              ? `<button class="btn ghost" type="button" id="lensUndo">${icon("refresh")}${t("lens.undo")}</button>`
+              : `<button class="btn" type="button" id="lens">${icon("spark")}${t("lens.clear")}</button>`) : ""}
             <button class="btn danger" type="button" id="del">${icon("trash")}<span>${t("item.delete")}</span></button>
           </div>
         </div>
@@ -62,6 +65,19 @@ export function openItem(id) {
     $("#wAfter", root).onchange = (e) => { const v = Math.max(0, Math.min(60, Math.round(+e.target.value || 0))); e.target.value = v; updateItem(item.id, { washAfter: v }).then(() => toast(t("profile.saved"))).catch(() => toast(t("item.saveFail"), "error")); };
     $("#wDry", root).onchange = (e) => updateItem(item.id, { dryClean: e.target.checked }).then(() => toast(t("profile.saved"))).catch(() => toast(t("item.saveFail"), "error"));
     const wd = $("#wDefault", root); if (wd) wd.onclick = () => updateItem(item.id, { washAfter: null }).catch(() => {});
+    const lb = $("#lens", root), lu = $("#lensUndo", root);
+    if (lb) lb.onclick = async () => {
+      lb.disabled = true; toast(t("lens.working"));
+      try { const m = await import("../lenses.js"); const n = await m.clearItemLenses(item); toast(t(n ? "lens.done" : "lens.notFound"), n ? undefined : "error"); }
+      catch (e) { console.warn(e); toast(t("item.saveFail"), "error"); }
+      lb.disabled = false;
+    };
+    if (lu) lu.onclick = async () => {
+      lu.disabled = true;
+      try { const m = await import("../lenses.js"); toast(t((await m.undoItemLenses(item)) ? "lens.undone" : "lens.noBackup")); }
+      catch { toast(t("item.saveFail"), "error"); }
+      lu.disabled = false;
+    };
     $("#combine", root).onclick = async () => (await import("./combine.js")).openCombine(item);
     let armed = 0;
     $("#del", root).onclick = async (e) => {

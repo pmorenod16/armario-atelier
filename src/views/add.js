@@ -2,7 +2,7 @@
 // Editar usa el mismo formulario.
 import { t } from "../i18n.js";
 import { $, esc, icon, openSheet, pickPhoto, isCancel, dropZone, toast, say, soften, setHalo, isNative } from "../ui.js";
-import { shrinkPhoto, makeCutout } from "../cutout.js";
+import { shrinkPhoto, makeCutout, clearLenses } from "../cutout.js";
 import { api, blobToBase64 } from "../api.js";
 import { saveItem, fullImage } from "../data.js";
 import { itemForm } from "./form.js";
@@ -135,7 +135,9 @@ export function openAdd(file) {
       await cutting; if (!cut) return;
       $("#save", root).disabled = $("#saveMore", root).disabled = true;
       try {
-        await saveItem({ ...data, status: "disponible", ...(official || {}) }, { cut });
+        // gafas de ver: cristales transparentes
+        if (data.type === "gafas-ver" && !cut.lensesCleared) { try { cut = await clearLenses(cut); } catch (e) { console.warn("cristales", e); } }
+        await saveItem({ ...data, status: "disponible", ...(official || {}), ...(cut.lensesCleared ? { lensesCleared: true } : {}) }, { cut });
         toast(t("item.saved"));
         sheet.close();
         if (again) setTimeout(() => openAdd(), 360);
@@ -293,7 +295,8 @@ export function openEdit(item) {
     if (!data.name) { toast(t("item.needName"), "error"); return; }
     $("#save", root).disabled = true;
     try {
-      await saveItem({ ...data, createdAt: item.createdAt, status: item.status, ...(official || {}) }, { id: item.id, cut });
+      if (cut && data.type === "gafas-ver" && !cut.lensesCleared) { try { cut = await clearLenses(cut); } catch (e) { console.warn("cristales", e); } }
+      await saveItem({ ...data, createdAt: item.createdAt, status: item.status, ...(official || {}), ...(cut?.lensesCleared ? { lensesCleared: true } : {}) }, { id: item.id, cut });
       toast(t("item.saved")); sheet.close();
     } catch (e) { toast(t(e?.code === "too-big" ? "item.tooBig" : "item.saveFail"), "error"); $("#save", root).disabled = false; }
   };

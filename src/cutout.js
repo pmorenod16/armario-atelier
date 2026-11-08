@@ -242,3 +242,84 @@ export async function makeCutout(photo, onProgress = () => {}, { locate } = {}) 
   const res = await trimToWebp(plain);
   return { ...res, method: "sin-recorte" };
 }
+
+/**
+ * Gafas de ver: deja los cristales transparentes. El recorte deja la gafa entera opaca (montura + lo que se ve a
+ * través del cristal). Se separa la montura del cristal por color (la montura es el color del borde exterior de la
+ * silueta; el cristal es «lo otro») y se quitan las zonas de cristal encerradas por la montura.
+ * Recibe y devuelve lo mismo que makeCutout ({blob, width, height, aspect, tone, thumb, method}).
+ */
+export async function clearLenses(cut) {
+  const img = await loadImage(cut.blob);
+  const w = img.naturalWidth, h = img.naturalHeight, n = w * h;
+  const c = canvasFor(w, h), g = c.getContext("2d");
+  g.drawImage(img, 0, 0);
+  const id = g.getImageData(0, 0, w, h), d = id.data;
+  const op = new Uint8Array(n);
+  for (let p = 0; p < n; p++) op[p] = d[p * 4 + 3] > 128 ? 1 : 0;
+  const lab = (p) => { const i = p * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  // 1) color de la montura: píxeles opacos pegados al exterior (banda de 1-3 px del contorno)
+  const edge = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x; if (!op[p]) continue;
+    if (!op[p - 1] || !op[p + 1] || !op[p - w] || !op[p + w]) { const q = [p + 1, p - 1, p + w, p - w].find((k) => op[k] && op[k + 1] && op[k - 1] && op[k + w] && op[k - w]); if (q != null) edge.push(lab(q)); }
+  }
+  if (edge.length < 20) return cut;
+  const med = (arr, k) => arr.map((v) => v[k]).sort((a, b) => a - b)[arr.length >> 1];
+  let frame = [med(edge, 0), med(edge, 1), med(edge, 2)];
+  // 2) dos grupos de color (montura / cristal) con k-medias, empezando por la montura y lo más lejano a ella
+  const all = []; for (let p = 0; p < n; p += 2) if (op[p]) all.push(lab(p));
+  let lens = all.reduce((best, v) => (dist(v, frame) > dist(best, frame) ? v : best), frame);
+  if (dist(lens, frame) < 40) return cut; // todo del mismo color: no se distingue el cristal
+  for (let it = 0; it < 8; it++) {
+    const sA = [0, 0, 0, 0], sB = [0, 0, 0, 0];
+    for (const v of all) { const s = dist(v, frame) <= dist(v, lens) ? sA : sB; s[0] += v[0]; s[1] += v[1]; s[2] += v[2]; s[3]++; }
+    if (sA[3]) frame = [sA[0] / sA[3], sA[1] / sA[3], sA[2] / sA[3]];
+    if (sB[3]) lens = [sB[0] / sB[3], sB[1] / sB[3], sB[2] / sB[3]];
+  }
+  const isFrame = new Uint8Array(n);
+  for (let p = 0; p < n; p++) if (op[p]) { const v = lab(p); isFrame[p] = dist(v, frame) * 1.15 < dist(v, lens) ? 1 : 0; }
+  // 3) la montura se engorda un poco para cerrar huecos y que los cristales queden encerrados
+  const R = Math.max(1, Math.round(Math.min(w, h) / 150));
+  const fat = new Uint8Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!isFrame[y * w + x]) continue;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < h && xx >= 0 && xx < w) fat[yy * w + xx] = 1; }
+  }
+  // 4) zonas opacas que no son montura: las grandes y rodeadas de montura son cristales
+  const seen = new Int32Array(n).fill(-1), comps = [];
+  let opaque = 0; for (let p = 0; p < n; p++) opaque += op[p];
+  for (let s = 0; s < n; s++) {
+    if (!op[s] || fat[s] || seen[s] >= 0) continue;
+    const k = comps.length, stack = [s], pix = []; let open = 0; seen[s] = k;
+    while (stack.length) {
+      const p = stack.pop(); pix.push(p);
+      const x = p % w, y = (p / w) | 0;
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+        if (q < 0) { open++; continue; }
+        if (!op[q]) { open++; continue; } // toca el exterior: no está encerrada
+        if (fat[q] || seen[q] >= 0) continue;
+        seen[q] = k; stack.push(q);
+      }
+    }
+    comps.push({ pix, open });
+  }
+  const lenses = comps.filter((cm) => cm.pix.length > opaque * 0.04 && cm.open < cm.pix.length * 0.02);
+  if (!lenses.length) return cut;
+  // 5) cristal fuera: transparente, recuperando también el borde engordado que no era montura
+  const clear = new Uint8Array(n);
+  for (const cm of lenses) for (const p of cm.pix) clear[p] = 1;
+  for (let pass = 0; pass < R + 1; pass++) {
+    const add = [];
+    for (let p = 0; p < n; p++) if (!clear[p] && op[p] && !isFrame[p]) { const x = p % w; if ((x > 0 && clear[p - 1]) || (x < w - 1 && clear[p + 1]) || clear[p - w] || clear[p + w]) add.push(p); }
+    add.forEach((p) => (clear[p] = 1));
+  }
+  for (let p = 0; p < n; p++) if (clear[p]) d[p * 4 + 3] = 0;
+  // borde suave entre montura y cristal
+  for (let p = w; p < n - w; p++) if (!clear[p] && op[p] && (clear[p - 1] || clear[p + 1] || clear[p - w] || clear[p + w])) d[p * 4 + 3] = Math.min(d[p * 4 + 3], 200);
+  g.putImageData(id, 0, 0);
+  let q = 0.9, blob;
+  do { blob = await new Promise((r) => c.toBlob(r, "image/webp", q)); q -= 0.12; } while (blob && blob.size > 600_000 && q > 0.4);
+  return { ...cut, blob, tone: toneOf(c), thumb: thumbOf(c), lensesCleared: lenses.length };
+}

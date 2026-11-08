@@ -2,7 +2,7 @@
 // Guarda una copia de cada foto antes de cambiarla, para poder deshacer.
 import { store, readImage, backupImage, restoreImage, saveItem } from "./data.js";
 import { base64ToBlob, api, blobToBase64 } from "./api.js";
-import { makeCutout, shrinkPhoto } from "./cutout.js";
+import { makeCutout, shrinkPhoto, clearLenses } from "./cutout.js";
 
 async function locate(blob) {
   const small = await shrinkPhoto(blob, 768);
@@ -29,11 +29,12 @@ export async function recutAll(onProgress = () => {}, { ids } = {}) {
     onProgress({ done: k, total: list.length, ...res, name: it.name });
     try {
       const img = await readImage(it.id); if (!img?.data) { res.failed++; continue; }
-      const cut = await makeCutout(await onWhite(img), () => {}, { locate });
+      let cut = await makeCutout(await onWhite(img), () => {}, { locate });
+      if (it.type === "gafas-ver" && cut.method === "ia") cut = await clearLenses(cut).catch(() => cut);
       if (cut.method !== "ia" || !cut.blob) { res.kept++; continue; } // si no sale mejor, se queda como estaba
       await backupImage(it.id, img, it);
       const { id, ...data } = it;
-      await saveItem(data, { id, cut });
+      await saveItem({ ...data, ...(cut.lensesCleared ? { lensesCleared: true } : {}) }, { id, cut });
       res.ok++;
     } catch (e) { console.warn("recorte", it.name, e); res.failed++; }
   }
