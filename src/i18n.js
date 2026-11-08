@@ -233,6 +233,12 @@ const DICT = {
     "today.wornToday": "Hoy llevas «{title}»",
     "today.yourOutfit": "tu outfit",
 
+    "board.edit": "Colocar a mi gusto",
+    "board.done": "Guardar",
+    "board.reset": "Recolocar",
+    "board.hint": "Arrastra para mover · esquina, pellizco o rueda para el tamaño · tocar trae al frente",
+    "board.saved": "Composición guardada",
+
     "cal.prev": "Mes anterior",
     "cal.next": "Mes siguiente",
     "cal.monthCount": "{n} días apuntados este mes. Toca un día para ver o apuntar lo que llevaste.",

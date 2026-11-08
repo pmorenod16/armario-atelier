@@ -29,7 +29,7 @@ src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, elimina
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
-src/views/board.js      Outfit = composición (flat lay) con las fotos recortadas de las prendas: posición por capa (abrigo, arriba, abajo, calzado, complementos). Sin maniquí por decisión de Polete (8/11/2026); el maniquí 3D quedó en el historial de git (commit anterior a "Quita el maniquí")
+src/views/board.js      Outfit = lienzo limpio (estilo Whering) con las fotos de las prendas, rectas y de la cabeza a los pies (autoLayout por capa). Modo "Colocar a mi gusto": arrastrar, tamaño (esquina, pellizco, rueda), traer al frente; se guarda en users/{uid}/layouts/{ids ordenados} {boxes:{id:[l,t,w,h,z]}}. Sin maniquí por decisión de Polete (8/11/2026); el 3D quedó en el historial de git
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
 worker/src/index.js     Cloudflare Worker (ver API)
@@ -53,6 +53,7 @@ cd worker && npx wrangler deploy
 - `users/{uid}/feedback/{ids ordenados}`: `itemIds, liked, title, plan, at` (me gusta / no me gusta).
 - `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
 - `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
+- `users/{uid}/layouts/{ids ordenados}`: `boxes{itemId:[left,top,width,height,z]}` en % del lienzo 4:5, `at`.
 - `users/{uid}/meta/style`, `meta/shopping`, `outfits/`: de la versión anterior; se rehacen en las fases 3-4.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 

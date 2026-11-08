@@ -2,7 +2,7 @@
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, toast, say, setHalo, tilt } from "../ui.js";
+import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
@@ -12,7 +12,7 @@ import { searchCity } from "../places.js";
 import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
-import { boardHTML, hydrateBoard } from "./board.js";
+import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
 
 const state = { tab: "hoy", sel: 0, month: null, trip: null };
 const HALO = { sun: ["#f3c26b", "#f2a476"], cloudsun: ["#e9cf98", "#b9c6d6"], cloud: ["#b9c2cd", "#d3d6db"], rain: ["#7fa2c8", "#9cb2c9"], snow: ["#dde6f2", "#c5d3e6"], storm: ["#6f7b9a", "#8d88a8"], fog: ["#c7ccd2", "#d9dadc"] };
@@ -149,7 +149,7 @@ function tabToday(box) {
     if (!result.querySelector(".look")) {
       result.innerHTML = `
         <section class="look card">
-          <div class="look-stage" id="stage"></div>
+          <div class="look-stage"><div id="stage"></div>${boardTools()}</div>
           <div class="look-info" id="info"></div>
         </section>`;
     }
@@ -188,7 +188,8 @@ function tabToday(box) {
   let shown = "";
   function showBoard(o) {
     const stage = $("#stage", result); if (!stage) return;
-    const sig = o.itemIds.join();
+    if (stage.querySelector(".board.editing")) return; // no rehacer mientras se coloca a mano
+    const sig = o.itemIds.join() + JSON.stringify(store.layouts?.[o.itemIds.slice().sort().join("_")]?.boxes || null);
     if (sig === shown) return; shown = sig;
     stage.innerHTML = boardHTML(o.itemIds);
     hydrateBoard(stage);
@@ -198,7 +199,7 @@ function tabToday(box) {
 
   drawResult();
   const unsub = subscribe(drawResult);
-  tilt(result, ".board", 5);
+  wireBoardEdit(result, () => toast(t("board.saved")));
   return () => unsub();
 }
 

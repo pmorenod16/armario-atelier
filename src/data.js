@@ -19,7 +19,7 @@ export const DEFAULT_PROFILE = {
 const listeners = new Set();
 export const store = {
   items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null,
-  wear: [], feedback: [], trips: [], today: null, style: null, // fase 2
+  wear: [], feedback: [], trips: [], today: null, style: null, layouts: {}, // fase 2
 };
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -43,13 +43,14 @@ export function startData() {
   list("wear", "wear", (a, b) => b.date.localeCompare(a.date));
   list("feedback", "feedback", (a, b) => (b.at || 0) - (a.at || 0));
   list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  unsubs.push(onSnapshot(userCol("layouts"), (snap) => { store.layouts = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("style"), (s) => { store.style = s.exists() ? s.data() : null; emit(); }, () => {}));
 }
 export function stopData() {
   unsubs.splice(0).forEach((u) => u());
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
-  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null;
+  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {};
 }
 
 /** Acepta prendas guardadas con el formato anterior (colorName/colorHex/shape) y les da la forma nueva. */
@@ -149,3 +150,11 @@ export async function saveTrip(trip, id) {
   return ref.id;
 }
 export const deleteTrip = (id) => deleteDoc(doc(userCol("trips"), id));
+
+/* ---------- colocación de las prendas en el lienzo de un outfit ---------- */
+export const layoutKey = (ids) => ids.slice().sort().join("_").slice(0, 600);
+export function saveLayout(ids, boxes) {
+  // Firestore no admite listas dentro de mapas anidados en listas: se guardan como objeto de listas planas
+  return setDoc(doc(userCol("layouts"), layoutKey(ids)), { boxes, at: Date.now() });
+}
+export const deleteLayout = (ids) => deleteDoc(doc(userCol("layouts"), layoutKey(ids)));
