@@ -110,7 +110,7 @@ export function cleanMask(canvas) {
   for (let p = 0; p < n; p++) {
     const a = d[p * 4 + 3];
     if (a < 40) d[p * 4 + 3] = 0; else if (a > 215) d[p * 4 + 3] = 255;
-    solid[p] = d[p * 4 + 3] >= 60 ? 1 : 0;
+    solid[p] = d[p * 4 + 3] >= 100 ? 1 : 0;
   }
   // componentes conexas de lo opaco
   const label = new Int32Array(n), sizes = [0];
