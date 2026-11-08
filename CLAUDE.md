@@ -30,7 +30,8 @@ src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, elimina
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
-src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
+src/stylesync.js        Leer tablero + sacar estilo (readBoardPins/analyzePins) y autoRefresh(): cada 3 días (main.js, 6 s tras arrancar) mira si cada tablero tiene pines nuevos (pinSig) y, si cambia, lo vuelve a analizar; se desactiva por tablero con autoOff
+src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): pestañas de tableros (principal + extra con su uso: salir, eventos…); tocar un pin = «Recréame este pin» (/api/style/recreate); enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
 src/views/board.js      Outfit = lienzo limpio (estilo Whering) con las fotos de las prendas, rectas y de la cabeza a los pies (autoLayout por capa). Modo "Colocar a mi gusto": arrastrar, tamaño (esquina, pellizco, rueda), traer al frente; se guarda en users/{uid}/layouts/{ids ordenados} {boxes:{id:[l,t,w,h,z]}}. Sin maniquí por decisión de Polete (8/11/2026); el 3D quedó en el historial de git
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
@@ -56,7 +57,7 @@ cd worker && npx wrangler deploy
 - `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
 - `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
 - `users/{uid}/layouts/{ids ordenados}`: `boxes{itemId:[left,top,width,height,z]}` en % del lienzo 4:5, `at`.
-- `users/{uid}/meta/style`: `name, summary, keywords[], palette[{name,hex}], keyPieces[], formulas[], fabrics, silhouettes, footwear, avoid, notes (de Polete), source (pinterest|capturas), boardUrl, pins[{img,link}] (URLs de pinimg o miniaturas dataURL), pinCount, analyzed, analyzedAt, match{score,fits[],off[],note,at,items}`.
+- `users/{uid}/meta/style`: tablero principal en los campos de arriba + `extra[{id,use,…mismos campos}]` (otros tableros; data.boardsOf/saveBoard/addBoard/removeBoard; styleText los manda todos con su uso y la IA elige según el plan) + `pinSig, checkedAt, autoOff` por tablero. Campos: `name, mix[{name,share,look}], summary, keywords[], palette[{name,hex}], keyPieces[], formulas[], fabrics, silhouettes, footwear, avoid, notes (de Polete), source (pinterest|capturas), boardUrl, pins[{img,link}] (URLs de pinimg o miniaturas dataURL), pinCount, analyzed, analyzedAt, match{score,fits[],off[],note,at,items}`.
 - `users/{uid}/meta/shopping`, `outfits/`: de la versión anterior; se rehacen en la fase 4.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
@@ -74,6 +75,7 @@ cd worker && npx wrangler deploy
 | `/api/style/pinterest` | `{url}` tablero público (también pin.it) → widget público `widgets.pinterest.com/v3/pidgets/boards/{u}/{t}/pins/` (hasta 50) y, si falla, `{u}/{t}.rss`; analiza hasta 40 pines repartidos (MAX_ANALYZE, a 236x); STYLE_FORMAT incluye mix[{name,share,look}] (mezcla de estéticas) y las notas de Polete se mandan como pista (hint) | `{style, pins[{img,link}], pinCount, analyzed, board}`. Sin probar en real desde un servidor |
 | `/api/style/resolve` | `{url}` pin.it | `{url}` del tablero |
 | `/api/style/pins` | `{board, pins[{img,link}], titles}` leídos por el móvil (src/pinterest.js, widget JSONP) | `{style, analyzed}`; si no puede bajar las fotos responde 424 "IMAGENES" y la app las baja ella y usa `/api/style/images` |
+| `/api/style/recreate` | `{image (base64) o url (pinimg), wardrobe, style}` | `{title, look[], itemIds, likeness 0-100, why, how[], missing[{piece,why}]}` |
 | `/api/style/match` | `{style (texto), wardrobe}` | `{score 0-100, fits[], off[], note}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
 | `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → si hay `TAVILY_API_KEY`: Tavily (`include_domains` = tiendas, gratis 1.000/mes) + Gemini sin búsqueda elige productos por índice; si no, Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |

@@ -446,7 +446,7 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
       model: MAIN(env), maxTokens: 4500,
       content: `Eres el estilista personal de un hombre joven. Hoy tiene este plan: «${String(plan || "día normal").slice(0, 300)}».
 Tiempo: ${String(weather || "no indicado").slice(0, 600)}
-Estilo que busca (sacado de su Pinterest; lo que dice él manda): ${style ? String(style).slice(0, 2000) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
+Estilo que busca (sacado de su Pinterest; lo que dice él manda): ${style ? String(style).slice(0, 3500) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
 
 Su armario (solo prendas disponibles):
 ${itemsText(wardrobe)}
@@ -480,7 +480,7 @@ Responde SOLO con JSON:
       content: `Eres estilista. Haz la maleta de un hombre joven para ${n} días en ${String(destination || "").slice(0, 80)}.
 Plan del viaje: «${String(plan || "turismo").slice(0, 300)}».
 Tiempo por días: ${String(weather || "no disponible").slice(0, 1500)}
-Estilo que busca (sacado de su Pinterest; lo que dice él manda; si es una mezcla, reparte los días entre sus estéticas): ${style ? String(style).slice(0, 2000) : "actual, cuidado y sencillo"}
+Estilo que busca (sacado de su Pinterest; lo que dice él manda; si es una mezcla, reparte los días entre sus estéticas; si tiene varios tableros, usa el que encaje con el plan de cada día): ${style ? String(style).slice(0, 3500) : "actual, cuidado y sencillo"}
 Su armario (solo disponibles):
 ${itemsText(wardrobe)}
 
@@ -535,6 +535,33 @@ Responde SOLO con JSON:
     if (blocks.length < 3) throw new HttpError(424, "IMAGENES"); // la app las descargará ella y usará /api/style/images
     const style = await analyzeStyle(env, blocks, String(titles || ""), hint, list.length);
     return { style, analyzed: blocks.length, board };
+  },
+
+  // Un pin → el mismo look con la ropa de su armario y lo que le falta para clavarlo
+  async "/api/style/recreate"({ image, url, wardrobe, style }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    if (ids.size < 2) throw new HttpError(400, "Añade más prendas al armario para recrear looks.");
+    let block = null;
+    if (image) block = imageBlock(cleanImg(image));
+    else if (/^https:\/\/i\.pinimg\.com\//.test(url || "")) block = await fetchImageBlock(url);
+    if (!block) throw new HttpError(424, "No he podido descargar la foto del pin. Inténtalo otra vez.");
+    const text = await askAI(env, {
+      model: MAIN(env), maxTokens: 2500,
+      content: [block, textBlock(`Esta imagen es un look de su Pinterest (ropa de hombre). Recréalo lo más fiel posible con SU armario.
+Su estilo: ${String(style || "no indicado").slice(0, 1500)}
+Su armario (solo disponibles):
+${itemsText(wardrobe)}
+
+Primero identifica las prendas del look (tipo, color, material, ajuste). Luego elige de su armario la prenda más parecida para cada una (por color, tipo y formalidad); si no tiene nada razonable para una pieza, no la fuerces: ponla en "missing". Usa SOLO ids de su armario, como mucho una prenda por capa salvo abrigo encima.
+Responde SOLO con JSON: {"title": nombre corto del look, "look": [prendas del pin, en frases cortas tipo "abrigo largo camel"], "itemIds": [ids], "likeness": 0-100 cuánto se parecerá el resultado al pin, "why": 1-2 frases de qué se conserva del look, "how": [2-4 instrucciones para llevarlo como en la foto: por dentro, remangado, cuello subido…], "missing": [{"piece": prenda concreta que le falta (tipo + color + material), "why": qué aporta al look}] (0-4)}`)],
+    });
+    const r = parseJson(text);
+    const itemIds = [...new Set((r.itemIds || []).filter((id) => ids.has(id)))];
+    return {
+      title: clip(r.title, 60) || "Look del pin", look: (r.look || []).map((x) => clip(x, 60)).slice(0, 8), itemIds,
+      likeness: Math.max(0, Math.min(100, Math.round(+r.likeness || 0))), why: clip(r.why, 300), how: (r.how || []).map((x) => clip(x, 160)).slice(0, 4),
+      missing: (r.missing || []).filter((m) => m?.piece).slice(0, 4).map((m) => ({ piece: clip(m.piece, 70), why: clip(m.why, 140) })),
+    };
   },
 
   // Estilo + armario → cuánto encaja y qué prendas lo representan mejor

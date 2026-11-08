@@ -162,18 +162,38 @@ export const deleteLayout = (ids) => deleteDoc(doc(userCol("layouts"), layoutKey
 /* ---------- fase 3: estilo ---------- */
 export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, updatedAt: Date.now() }, { merge: true });
 
-/** Texto del estilo para la IA (outfits, maleta, compras). */
-export function styleText(s) {
-  if (!s?.summary) return null;
+/** Tableros: el principal son los campos de arriba de meta/style; los demás van en `extra` (cada uno con su `use`). */
+export const boardsOf = (s) => s ? [{ ...s, id: "main", extra: undefined }, ...(s.extra || [])] : [];
+export function saveBoard(id, patch) {
+  if (id === "main") return saveStyle(patch);
+  const extra = (store.style?.extra || []).map((b) => (b.id === id ? { ...b, ...patch } : b));
+  return saveStyle({ extra });
+}
+export const addBoard = (b) => saveStyle({ extra: [...(store.style?.extra || []), b] });
+export const removeBoard = (id) => saveStyle({ extra: (store.style?.extra || []).filter((b) => b.id !== id) });
+
+function boardText(s, long) {
+  return [
+    s.name ? `«${s.name}»: ${s.summary}` : s.summary,
+    s.mix?.length > 1 && `Mezcla: ${s.mix.map((m) => `${m.name} ${m.share}%${m.look ? ` (${m.look})` : ""}`).join(", ")}`,
+    long && s.keywords?.length && `Palabras clave: ${s.keywords.join(", ")}`,
+    s.palette?.length && `Paleta: ${s.palette.map((p) => p.name).join(", ")}`,
+    s.formulas?.length && `Fórmulas de outfit: ${(long ? s.formulas : s.formulas.slice(0, 3)).join(" | ")}`,
+    long && s.silhouettes && `Siluetas: ${s.silhouettes}`, long && s.fabrics && `Materiales: ${s.fabrics}`, long && s.footwear && `Calzado: ${s.footwear}`,
+    s.keyPieces?.length && `Prendas clave: ${(long ? s.keyPieces : s.keyPieces.slice(0, 6)).join(", ")}`,
+    s.avoid && `Evitar: ${s.avoid}`,
+  ].filter(Boolean).join(". ");
+}
+
+/** Texto del estilo para la IA (outfits, maleta, compras). Con varios tableros, cada uno con su uso. `onlyMain` para la comparación con el armario. */
+export function styleText(s, { onlyMain = false } = {}) {
+  if (!s) return null;
+  const extra = onlyMain ? [] : (s.extra || []).filter((b) => b.summary);
+  if (!s.summary && !extra.length) return null;
   return [
     s.notes && `Lo que dice él (manda sobre todo lo demás): ${s.notes}`,
-    s.name && `Estilo «${s.name}»: ${s.summary}`, !s.name && s.summary,
-    s.mix?.length > 1 && `Mezcla: ${s.mix.map((m) => `${m.name} ${m.share}%${m.look ? ` (${m.look})` : ""}`).join(", ")}`,
-    s.keywords?.length && `Palabras clave: ${s.keywords.join(", ")}`,
-    s.palette?.length && `Paleta: ${s.palette.map((p) => p.name).join(", ")}`,
-    s.formulas?.length && `Fórmulas de outfit: ${s.formulas.join(" | ")}`,
-    s.silhouettes && `Siluetas: ${s.silhouettes}`, s.fabrics && `Materiales: ${s.fabrics}`, s.footwear && `Calzado: ${s.footwear}`,
-    s.keyPieces?.length && `Prendas clave: ${s.keyPieces.join(", ")}`,
-    s.avoid && `Evitar: ${s.avoid}`,
+    s.summary && (extra.length ? `TABLERO PRINCIPAL (${s.use || "día a día"}): ` : "Estilo ") + boardText(s, true),
+    ...extra.map((b) => `OTRO TABLERO, para «${b.use}»: ${boardText(b, false)}`),
+    extra.length && "Usa el tablero cuyo uso encaje con el plan; si ninguno encaja, el principal",
   ].filter(Boolean).join(". ");
 }

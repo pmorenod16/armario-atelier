@@ -499,7 +499,12 @@ body.no-select, .board.editing { user-select: none; -webkit-user-select: none; }
 .style-hero { padding: 0; overflow: hidden; margin-bottom: 14px; gap: 0; }
 .mood { columns: 3 110px; column-gap: 6px; padding: 6px; max-height: 360px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 @media (min-width: 900px) { .mood { columns: 6 120px; max-height: 300px; } }
-.mood a { display: block; margin-bottom: 6px; break-inside: avoid; border-radius: 12px; overflow: hidden; }
+.mood .pin { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; margin-bottom: 6px; break-inside: avoid; border-radius: 12px; overflow: hidden; }
+.mood .pin span { position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgb(255 255 255 / .88); color: #111; opacity: 0; transform: scale(.8); transition: .2s; }
+.mood .pin span svg { width: 15px; height: 15px; }
+.mood .pin:hover span, .mood .pin:focus-visible span { opacity: 1; transform: none; }
+@media (hover: none) { .mood .pin span { opacity: .9; transform: none; } }
+.mood.all { max-height: none; -webkit-mask-image: none; mask-image: none; }
 .mood img { width: 100%; display: block; }
 .style-head { padding: 4px 18px 18px; display: grid; gap: 10px; }
 .style-head h2 { margin: 0; font-size: clamp(30px, 7vw, 44px); line-height: 1; }
@@ -543,3 +548,28 @@ body.no-select, .board.editing { user-select: none; -webkit-user-select: none; }
 .opt-more { place-content: center; justify-items: center; text-align: center; border: 1.5px dashed var(--line, rgb(0 0 0 / .15)); background: transparent; box-shadow: none; color: var(--muted); }
 .opt-more svg { width: 22px; height: 22px; }
 @media (min-width: 900px) { .opts { margin: 0 0 14px; padding: 2px 0 6px; flex-wrap: wrap; overflow: visible; } .opt { width: 150px; } }
+
+/* Mi estilo: varios tableros, revisión automática y «Recréame este pin» */
+.board-tabs { display: flex; gap: 8px; margin: 0 -18px 14px; padding: 2px 18px 4px; overflow-x: auto; }
+.board-tabs .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.board-tabs .chip svg { width: 15px; height: 15px; }
+.board-tabs .chip.ghost { border-style: dashed; color: var(--muted); }
+@media (min-width: 900px) { .board-tabs { margin: 0 0 14px; padding: 2px 0 4px; flex-wrap: wrap; } }
+.auto-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; cursor: pointer; }
+.auto-row input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); }
+.auto-row small { display: inline; }
+.mood-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 14px 0; }
+.mood-foot svg { width: 14px; height: 14px; vertical-align: -2px; }
+.recreate { display: grid; gap: 16px; }
+@media (min-width: 760px) { .recreate { grid-template-columns: minmax(200px, 300px) 1fr; align-items: start; } }
+.rc-pin { margin: 0; display: grid; gap: 8px; justify-items: start; }
+.rc-pin img { width: 100%; max-height: 420px; object-fit: contain; border-radius: 16px; background: var(--surface-solid); }
+@media (max-width: 759px) { .rc-pin { grid-template-columns: auto 1fr; align-items: end; } .rc-pin img { max-height: 170px; width: auto; max-width: 46vw; } .rc-board .board { max-width: 300px; } }
+.rc-pin a.btn { text-decoration: none; color: inherit; }
+.rc-out { display: grid; gap: 14px; min-width: 0; }
+.rc-board .board { max-width: 380px; margin: 0 auto; }
+.rc-info { display: grid; gap: 10px; }
+.rc-info h3.display { margin: 0; font-size: 20px; }
+.rc-info p { margin: 0; }
+.rc-missing { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rc-missing li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--ink) 5%, transparent); }

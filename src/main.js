@@ -95,7 +95,7 @@ document.addEventListener("drop", (e) => {
 });
 
 /* ---------- sesión ---------- */
-let unsubStore = null, onboarding = false;
+let unsubStore = null, onboarding = false, autoChecked = false;
 watchAuth((user) => {
   unsubStore?.(); unsubStore = null; cleanup?.(); cleanup = null;
   while (topSheet()) topSheet().close();
@@ -113,6 +113,8 @@ watchAuth((user) => {
       return;
     }
     if (!started && !onboarding) { started = true; $("#app").hidden = false; route(); }
+    // cada 3 días mira si tus tableros de Pinterest tienen pines nuevos (en segundo plano)
+    if (started && !autoChecked && store.ready.style !== false) { autoChecked = true; setTimeout(() => import("./stylesync.js").then((m) => m.autoRefresh()).catch(() => {}), 6000); }
   });
 });
 
