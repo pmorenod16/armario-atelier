@@ -188,6 +188,15 @@ async function fetchImageBlock(src) {
 }
 const hintText = (hint) => hint ? ` Él describe su estilo así (tenlo muy en cuenta y úsalo para nombrar las estéticas): «${clip(hint, 300)}».` : "";
 async function analyzeStyle(env, blocks, titles = "", hint = "", total = 0) {
+  try { return await analyzeStyleOnce(env, blocks, titles, hint, total); }
+  catch (e) {
+    // respuesta cortada o rara: un segundo intento con la mitad de los pines
+    if (e?.status !== 502 || blocks.length < 8) throw e;
+    console.warn("estilo: reintento con menos pines", e.message);
+    return analyzeStyleOnce(env, spread(blocks, Math.ceil(blocks.length / 2)), titles, hint, total);
+  }
+}
+async function analyzeStyleOnce(env, blocks, titles, hint, total) {
   const text = await askAI(env, {
     model: MAIN(env), maxTokens: 3000,
     content: [...blocks, textBlock(`Estas ${blocks.length} imágenes son pines repartidos por todo un tablero de Pinterest${total > blocks.length ? ` de ${total} pines` : ""} con el estilo de ropa que la persona quiere llevar.${titles ? ` Títulos y descripciones: ${String(titles).slice(0, 2500)}` : ""}${hintText(hint)}
@@ -256,7 +265,7 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
   const parts = typeof content === "string" ? [{ text: content }] : content;
   const body = {
     contents: [{ role: "user", parts }],
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.6, ...(search ? {} : { responseMimeType: "application/json" }) },
+    generationConfig: { maxOutputTokens: Math.min(65536, maxTokens + 12000), temperature: 0.6, ...(search ? {} : { responseMimeType: "application/json" }) },
     ...(search ? { tools: [{ google_search: {} }] } : {}),
   };
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -285,7 +294,8 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
     if (data.promptFeedback?.blockReason || cand?.finishReason === "SAFETY") throw new HttpError(422, "Gemini no ha querido analizar esa imagen. Prueba con otra foto.");
     throw new HttpError(502, "Gemini ha devuelto una respuesta vacía. Vuelve a intentarlo.");
   }
-  const text = cand.content.parts.map((p) => p.text || "").join("");
+  const text = cand.content.parts.filter((p) => !p.thought).map((p) => p.text || "").join("");
+  if (cand.finishReason === "MAX_TOKENS") console.warn("Gemini cortado por MAX_TOKENS", model, data.usageMetadata);
   if (search) return { text, sources: (cand.groundingMetadata?.groundingChunks || []).map((c) => c.web).filter(Boolean) };
   return text;
 }
