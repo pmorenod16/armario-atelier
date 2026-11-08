@@ -8,6 +8,7 @@ import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle 
 import { store, subscribe, startData, stopData } from "./data.js";
 import { $, $$, icon, say, topSheet, isNative, setHalo } from "./ui.js";
 import { renderCloset } from "./views/closet.js";
+import { renderToday } from "./views/today.js";
 import { renderProfile, runOnboarding } from "./views/profile.js";
 import { openAdd } from "./views/add.js";
 
@@ -66,8 +67,8 @@ let cleanup = null;
 const soon = (k) => (v) => {
   v.innerHTML = `<div class="soon"><div class="soon-card"><div class="soon-orb"></div><span class="pill">${t(`soon.${k}.phase`)}</span><h1 class="display">${t(`soon.${k}.title`)}</h1><p>${t(`soon.${k}.body`)}</p></div></div>`;
 };
-const ROUTES = { hoy: soon("today"), armario: renderCloset, compras: soon("shop"), perfil: renderProfile };
-const DEFAULT = "armario";
+const ROUTES = { hoy: renderToday, armario: renderCloset, compras: soon("shop"), perfil: renderProfile };
+const DEFAULT = "hoy";
 
 function route() {
   if (!store.ready.profile || $("#app").hidden) return;

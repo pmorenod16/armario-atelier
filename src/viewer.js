@@ -3,6 +3,7 @@
 // detrás la misma foto en espejo y más oscura (la espalda de la prenda).
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { layerOf } from "./catalog.js";
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -65,7 +66,8 @@ export function createViewer(stage, { onError } = {}) {
   });
 
   const BODY_H = 1.78; // altura del maniquí en unidades de escena (1 = 1 m)
-  let model = null, bodyShape = { heightCm: 178, build: "media" };
+  let model = null, bodyMesh = null, bodyShape = { heightCm: 178, build: "media" };
+  let modelLoaded; const modelReady = new Promise((r) => (modelLoaded = r));
   // maniqui.glb: malla humana masculina (base CC0 de MakeHuman) con morph targets por complexión (scripts/mh2glb.py)
   new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/maniqui.glb`).then((gltf) => {
     model = gltf.scene;
@@ -74,8 +76,11 @@ export function createViewer(stage, { onError } = {}) {
     const k = BODY_H / size.y;
     model.scale.setScalar(k);
     model.position.set(-(box.min.x + size.x / 2) * k, -box.min.y * k, -(box.min.z + size.z / 2) * k);
-    body.remove(simple); body.add(model); setBody(bodyShape);
-  }).catch((e) => console.warn("Maniquí 3D no disponible, se usa el sencillo:", e));
+    body.remove(simple); body.add(model);
+    model.traverse((o) => { if (o.isMesh && !bodyMesh) bodyMesh = o; });
+    prepareBody(k);
+    setBody(bodyShape); modelLoaded(true);
+  }).catch((e) => { console.warn("Maniquí 3D no disponible, se usa el sencillo:", e); modelLoaded(false); });
 
   const clothes = new THREE.Group(); root.add(clothes);
 
@@ -175,6 +180,146 @@ export function createViewer(stage, { onError } = {}) {
     }
   }
 
+  // ---------- ropa con la forma del cuerpo ----------
+  // Cada prenda es una "funda" hecha con los vértices del maniquí de esa zona, separada unos milímetros
+  // de la piel y con la tela real (un trozo de la foto repetido). Sigue la complexión (morph targets).
+  let B = null; // datos del cuerpo en metros
+  function prepareBody(k) {
+    const g = bodyMesh.geometry, pos = g.attributes.position, n = pos.count;
+    const box = new THREE.Box3().setFromBufferAttribute(pos);
+    const ym = new Float32Array(n), xm = new Float32Array(n), zm = new Float32Array(n);
+    for (let i = 0; i < n; i++) { ym[i] = (pos.getY(i) - box.min.y) * k; xm[i] = pos.getX(i) * k; zm[i] = pos.getZ(i) * k; }
+    const armt = g.attributes._armt?.array || new Float32Array(n);
+    // centro de cada brazo (para envolver la tela alrededor)
+    const armC = { 1: [0, 0, 0], [-1]: [0, 0, 0] };
+    for (let i = 0; i < n; i++) if (armt[i]) { const c = armC[Math.sign(armt[i])]; c[0] += xm[i]; c[1] += zm[i]; c[2]++; }
+    // centro del tronco (de delante a atrás), medido a la altura del pecho
+    let zlo = 1e9, zhi = -1e9; for (let i = 0; i < n; i++) if (!armt[i] && ym[i] > 1.2 && ym[i] < 1.3) { zlo = Math.min(zlo, zm[i]); zhi = Math.max(zhi, zm[i]); }
+    const z0 = (zlo + zhi) / 2;
+    // centro de cada pierna, medido a la altura de la rodilla
+    // centro de cada pierna a cada altura (franjas de 5 cm): las piernas van algo abiertas
+    const legBands = { 1: [], [-1]: [] };
+    for (const sd of [1, -1]) for (let b = 0; b < 18; b++) {
+      let xl = 1e9, xh = -1e9, zl = 1e9, zh = -1e9;
+      for (let i = 0; i < n; i++) if (!armt[i] && Math.sign(xm[i]) === sd && ym[i] >= b * 0.05 && ym[i] < b * 0.05 + 0.05) { xl = Math.min(xl, xm[i]); xh = Math.max(xh, xm[i]); zl = Math.min(zl, zm[i]); zh = Math.max(zh, zm[i]); }
+      legBands[sd][b] = xh > xl ? [(xl + xh) / 2, (zl + zh) / 2] : legBands[sd][b - 1] || [sd * 0.09, z0];
+    }
+    const legAt = (sd, y) => legBands[sd][Math.max(0, Math.min(17, Math.floor(y / 0.05)))];
+    const legC = { 1: legAt(1, 0.5), [-1]: legAt(-1, 0.5) };
+    const uv = new Float32Array(n * 2), TILE = 0.15;
+    for (let i = 0; i < n; i++) {
+      let cx = 0, r = 0.16;
+      if (armt[i]) { const c = armC[Math.sign(armt[i])]; cx = c[0] / c[2]; r = 0.045; }
+      let cz = z0;
+      if (!armt[i] && ym[i] < 0.84) { [cx, cz] = legAt(xm[i] > 0 ? 1 : -1, ym[i]); r = 0.07; }
+      uv[i * 2] = (Math.atan2(xm[i] - cx, zm[i] - cz) * r) / TILE;
+      uv[i * 2 + 1] = ym[i] / TILE;
+    }
+    // perfil del cuerpo por ángulo (pecho, cadera y rodillas): la ropa cae recta desde ahí en vez de pegarse a la piel
+    const BINS = 48, bin = (dx, dz) => Math.floor(((Math.atan2(dx, dz) + Math.PI) / (2 * Math.PI)) * BINS) % BINS;
+    const prof = (sel, cx, cz = z0) => { const r = new Float32Array(BINS); for (let i = 0; i < n; i++) if (sel(i)) { const dx = xm[i] - cx, dz = zm[i] - cz, b = bin(dx, dz); r[b] = Math.max(r[b], Math.hypot(dx, dz)); } return r; };
+    const chest = prof((i) => !armt[i] && ym[i] > 1.24 && ym[i] < 1.3, 0);
+    const hips = prof((i) => !armt[i] && ym[i] > 0.86 && ym[i] < 0.92, 0);
+    const knee = { 1: prof((i) => !armt[i] && xm[i] > 0 && ym[i] > 0.47 && ym[i] < 0.53, ...legC[1]), [-1]: prof((i) => !armt[i] && xm[i] < 0 && ym[i] > 0.47 && ym[i] < 0.53, ...legC[-1]) };
+    B = { k, ym, xm, zm, z0, armt, uv, index: g.index.array, n, bin, chest, hips, knee, legAt };
+  }
+
+  // zona del cuerpo que cubre cada prenda (metros desde el suelo; arm = hasta dónde llega la manga, 1 = muñeca)
+  function zoneFor(item, opts) {
+    const t = item.type, L = item.layer || layerOf(t), tucked = opts.tucked?.has(item.id);
+    const sleeve = { camiseta: 0.3, polo: 0.3, tirantes: 0, "camisa-mc": 0.36, "chaleco-punto": 0, chaleco: 0 }[t] ?? 0.97;
+    if (L === "top") {
+      const knit = ["jersey", "cardigan", "sudadera", "sudadera-capucha", "chaleco-punto"].includes(t);
+      return { y0: tucked ? 0.97 : t.startsWith("camisa") || t === "sobrecamisa" ? 0.84 : 0.87, y1: t.startsWith("camisa") || t === "polo" ? 1.49 : 1.465, arm: sleeve, off: tucked ? 0.004 : knit ? 0.014 : 0.01, drape: tucked ? 0 : knit ? 0.97 : 0.95, order: knit ? 3 : 2 };
+    }
+    if (L === "outer") {
+      const len = { americana: 0.78, abrigo: 0.62, gabardina: 0.55, parka: 0.68, plumifero: 0.82 }[t] ?? 0.86;
+      return { y0: len, y1: 1.485, arm: t === "chaleco" ? 0 : 1.0, off: t === "plumifero" ? 0.04 : 0.026, drape: 1.0, order: 5 };
+    }
+    if (L === "bottom") return { y0: t === "bermuda" ? 0.5 : t === "falda" ? 0.55 : 0.065, y1: 1.02, arm: 0, off: 0.008, leg: t === "jogger" ? 0 : t === "vaquero" ? 0.9 : 0.97, order: 1 };
+    if (L === "dress") return { y0: 0.55, y1: 1.5, arm: t === "mono" ? 0.3 : 0.25, off: 0.008, order: 2 };
+    if (L === "shoes") return { y0: -1, y1: ["botas", "botines"].includes(t) ? 0.2 : 0.1, arm: 0, off: 0.016, order: 1 };
+    if (t === "gorra" || t === "gorro") return { y0: t === "gorro" ? 1.68 : 1.71, y1: 9, arm: 0, off: 0.012, order: 6 };
+    if (t === "bufanda") return { y0: 1.42, y1: 1.56, arm: 0, off: 0.03, order: 6 };
+    if (t === "cinturon") return { y0: 0.96, y1: 1.0, arm: 0, off: 0.012, order: 6 };
+    return null; // reloj, gafas, mochila…: no se ponen en el maniquí
+  }
+
+  function shell(item, zone, mat) {
+    const { ym, armt, index, k } = B, g0 = bodyMesh.geometry;
+    const inZone = (i) => {
+      const a = Math.abs(armt[i]);
+      if (a) return zone.arm > 0 && a <= zone.arm && ym[i] <= zone.y1 + 0.02;
+      return ym[i] >= zone.y0 && ym[i] <= zone.y1;
+    };
+    const keep = new Uint8Array(B.n); for (let i = 0; i < B.n; i++) keep[i] = inZone(i) ? 1 : 0;
+    const idx = [];
+    for (let f = 0; f < index.length; f += 3) { const a = index[f], b = index[f + 1], c = index[f + 2]; if (keep[a] && keep[b] && keep[c]) idx.push(a, b, c); }
+    if (!idx.length) return null;
+    const P = g0.attributes.position.array, N = g0.attributes.normal.array, off = zone.off / k, out = new Float32Array(P.length);
+    for (let i = 0; i < P.length; i++) out[i] = P[i] + N[i] * off;
+    // caída: empuja hacia fuera hasta el perfil de pecho/cadera (arriba) o de rodilla (pernera recta)
+    const { xm, zm, z0, bin } = B, sm = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const push = (i, cx, prof, amount, ease, cz = z0) => {
+      const dx = xm[i] - cx, dz = zm[i] - cz, r = Math.hypot(dx, dz) || 1e-6, want = prof[bin(dx, dz)] * amount + zone.off;
+      if (want <= r + zone.off) return;
+      const nr = r + zone.off + (want - r - zone.off) * ease;
+      out[i * 3] = (cx + (dx / r) * nr) / k; out[i * 3 + 2] = (cz + (dz / r) * nr) / k;
+    };
+    for (let i = 0; i < B.n; i++) {
+      if (!keep[i] || armt[i]) continue;
+      if (zone.drape && ym[i] > 0.84 && ym[i] < 1.28) push(i, 0, ym[i] > 0.95 ? B.chest : B.hips, zone.drape, sm(1.28 - ym[i], 0, 0.12));
+      if (zone.leg && ym[i] < 0.6) { const sd = xm[i] > 0 ? 1 : -1, [cx, cz] = B.legAt(sd, ym[i]); push(i, cx, B.knee[sd], zone.leg, sm(0.6 - ym[i], 0, 0.1), cz); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(out, 3));
+    g.setAttribute("normal", g0.attributes.normal);
+    g.setAttribute("uv", new THREE.BufferAttribute(B.uv, 2));
+    g.morphAttributes = g0.morphAttributes; g.morphTargetsRelative = g0.morphTargetsRelative;
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, mat);
+    m.position.copy(bodyMesh.position); m.quaternion.copy(bodyMesh.quaternion); m.scale.copy(bodyMesh.scale);
+    m.morphTargetInfluences = bodyMesh.morphTargetInfluences; m.renderOrder = zone.order; m.frustumCulled = false;
+    return m;
+  }
+
+  // trozo de tela: el centro de la prenda recortada, repetido en espejo para que no se noten las costuras
+  function swatch(img, item) {
+    const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const g = c.getContext("2d");
+    const L = item.layer || layerOf(item.type);
+    const side = Math.min(W, H) * (L === "shoes" ? 0.22 : 0.24);
+    const cy = H * (L === "bottom" ? 0.3 : L === "shoes" ? 0.55 : 0.5);
+    g.fillStyle = item.tone || "#888"; g.fillRect(0, 0, 256, 256);
+    g.filter = "blur(1.2px) contrast(0.88)";
+    g.drawImage(img, W / 2 - side / 2, cy - side / 2, side, side, 0, 0, 256, 256);
+    g.filter = "none";
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return t;
+  }
+  const imgCache = new Map();
+  async function loadImg(item, getUrl) {
+    const key = item.id + ":" + (item.imageVersion || 0);
+    if (!imgCache.has(key)) imgCache.set(key, (async () => {
+      const url = item.hasImage ? await getUrl(item) : item.thumb;
+      if (!url) return null;
+      const im = new Image(); im.crossOrigin = "anonymous"; im.src = url; await im.decode(); return im;
+    })().catch(() => null));
+    return imgCache.get(key);
+  }
+  async function dressed(item, getUrl, opts) {
+    const zone = zoneFor(item, opts); if (!zone) return null;
+    const img = await loadImg(item, getUrl);
+    const mat = new THREE.MeshStandardMaterial({
+      color: img ? 0xffffff : new THREE.Color(item.tone || "#888"), map: img ? swatch(img, item) : null,
+      roughness: ["cuero", "nylon"].includes(item.materialKey) ? 0.55 : 0.9, side: THREE.DoubleSide,
+    });
+    return shell(item, zone, mat);
+  }
+
   // Sin foto: forma de color sencilla
   function plain(item) {
     const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(item.colorHex || "#888"), roughness: 0.85 });
@@ -191,15 +336,25 @@ export function createViewer(stage, { onError } = {}) {
     return g;
   }
 
-  let token = 0;
-  async function show(items, getUrl) {
+  let token = 0, worn = [];
+  /** Viste el maniquí. opts.tucked = Set de ids de prendas de arriba metidas por dentro. */
+  async function show(items, getUrl, opts = {}) {
     const my = ++token;
+    const real = await modelReady;
+    // formato antiguo para el maniquí sencillo
+    items = items.map((it) => ({ ...it, category: it.category || layerOf(it.type), shape: it.shape || it.type, colorHex: it.colorHex || it.tone }));
     const built = await Promise.all(items.map(async (it) => {
-      try { const t = it.hasImage ? await texture(it, getUrl) : null; return t ? garment(it, t) : plain(it); }
-      catch { return plain(it); }
+      try {
+        if (real && B) return await dressed(it, getUrl, opts);
+        const t = it.hasImage ? await texture(it, getUrl) : null; return t ? garment(it, t) : plain(it);
+      } catch (e) { console.warn(e); return null; }
     }));
     if (my !== token) return; // llegó otra selección mientras cargaba
-    clothes.clear(); built.forEach((g) => g && clothes.add(g));
+    clothes.clear(); worn.forEach((m) => m.parent?.remove(m)); worn = [];
+    built.forEach((g) => {
+      if (!g) return;
+      if (real && B) { bodyMesh.parent.add(g); worn.push(g); } else clothes.add(g);
+    });
     // una prenda que cubre el cuerpo oculta el maniquí por debajo en esa zona
     draw();
   }

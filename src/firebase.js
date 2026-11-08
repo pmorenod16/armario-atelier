@@ -9,7 +9,7 @@ import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc,
+  collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment,
 } from "firebase/firestore";
 import { firebaseConfig } from "./config.js";
 
@@ -59,5 +59,6 @@ export const outfitsRef = () => collection(fs, `${base()}/outfits`);
 export const metaDoc = (name) => doc(fs, `${base()}/meta/${name}`);
 export const imageDoc = (id) => doc(fs, `${base()}/images/${id}`);
 export const newItemId = () => doc(itemsRef()).id;
+export const userCol = (name) => collection(fs, `${base()}/${name}`);
 
-export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc };
+export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment };

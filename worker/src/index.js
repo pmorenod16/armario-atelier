@@ -137,6 +137,27 @@ async function productFromPage(url) {
   return { name, brand, color, ref: null, price, url, images: imgs };
 }
 
+/* ---------- outfits ---------- */
+const clip = (x, n) => String(x ?? "").slice(0, n);
+function itemsText(list) {
+  return (list || []).slice(0, 250).map((w) =>
+    [w.id, clip(w.name, 50), w.type, (w.colors || []).join("/"), w.pattern, w.material, w.fit, w.formality ? `formalidad ${w.formality}` : "",
+      (w.seasons || []).join("/"), (w.styleTags || []).join("/"), w.wears ? `${w.wears} usos` : "sin estrenar"].filter(Boolean).join(" | ")).join("\n");
+}
+const listText = (l) => (l || []).slice(0, 12).map((x) => (Array.isArray(x) ? x.join(" + ") : clip(x, 120))).join(" | ") || "nada aún";
+function cleanOutfits(r, ids) {
+  const outfits = (r?.outfits || []).map((o) => {
+    const itemIds = [...new Set((o.itemIds || []).filter((id) => ids.has(id)))];
+    return {
+      title: clip(o.title, 60) || "Outfit", itemIds, why: clip(o.why, 300),
+      how: (o.how || []).map((x) => clip(x, 160)).slice(0, 4),
+      tucked: (o.tucked || []).filter((id) => itemIds.includes(id)), repeats: (o.repeats || []).filter((id) => itemIds.includes(id)),
+    };
+  }).filter((o) => o.itemIds.length >= 2);
+  if (!outfits.length) throw new HttpError(502, "La IA no ha devuelto outfits válidos. Vuelve a intentarlo.");
+  return { outfits, missing: r?.missing ? clip(r.missing, 200) : null };
+}
+
 /* ---------- utilidades ---------- */
 const json = (data, status, headers) => new Response(JSON.stringify(data), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
 const imageBlock = (data, mime_type = "image/jpeg") => ({ inline_data: { mime_type, data } });
@@ -338,22 +359,62 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
     return { image: b64(buf), mime: type.split(";")[0] };
   },
 
-  // Armario + estilo + ocasión → 3 outfits
-  async "/api/outfits"({ wardrobe, style, occasion, weather }, env) {
+  // Plan del día + tiempo + armario (+ estilo, gustos y lo llevado estos días) → outfits y cómo llevarlos
+  async "/api/outfits"({ wardrobe, plan, weather, style, likes, dislikes, recent, count = 3, exclude }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    if (ids.size < 2) throw new HttpError(400, "Añade al menos una prenda de arriba y una de abajo para proponerte outfits.");
     const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 1800,
-      content: `Eres estilista personal. Propón 3 outfits usando SOLO prendas de este armario (ids exactos).
-Ocasión: ${String(occasion || "día a día").slice(0, 200)}. Tiempo: ${String(weather || "no indicado").slice(0, 100)}.
-Estilo objetivo:
-${styleText(style)}
+      model: MAIN(env), maxTokens: 3500,
+      content: `Eres el estilista personal de un hombre joven. Hoy tiene este plan: «${String(plan || "día normal").slice(0, 300)}».
+Tiempo: ${String(weather || "no indicado").slice(0, 600)}
+Estilo que busca: ${style ? String(style).slice(0, 800) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
 
-Armario (id | nombre | tipo/forma | color | temporada | formalidad | estilo):
-${wardrobeText(wardrobe)}
+Su armario (solo prendas disponibles):
+${itemsText(wardrobe)}
 
-Reglas: como máximo una prenda por tipo; o vestido, o parte de arriba + de abajo; incluye calzado si hay. Respeta la temporada y el tiempo. Acerca cada outfit al estilo objetivo.
-Responde SOLO con JSON: {"outfits":[{"title": nombre corto, "itemIds":[ids], "why": 1-2 frases de por qué funciona, "tip": un consejo para llevarlo}]}`,
+Le gustaron estas combinaciones: ${listText(likes)}
+No le gustaron: ${listText(dislikes)}
+Lo que ha llevado los últimos días: ${(recent || []).map((r) => `${r.date}: ${(r.itemIds || []).join(", ")}`).join(" | ") || "nada registrado"}
+${exclude?.length ? `No repitas exactamente estas combinaciones: ${exclude.map((x) => x.join("+")).join(" | ")}` : ""}
+
+Propón ${Math.min(4, Math.max(1, count))} outfits distintos usando SOLO ids de su armario.
+Reglas:
+- Cada outfit: parte de arriba + parte de abajo (o una pieza entera) + calzado si tiene. Como mucho una prenda de cada capa, salvo capa de abrigo encima.
+- Adecuado al plan (formalidad, comodidad, actividad) y al tiempo de TODO el día: si hace frío por la mañana y calor a mediodía, propón capas y di cuándo quitarlas. Si llueve, calzado y abrigo que aguanten.
+- Combina colores y estampados con criterio (como mucho un estampado protagonista).
+- No repetir, a medias: evita prendas llevadas en los últimos 3 días SOLO si hay otra prenda adecuada del mismo tipo; si no la hay, repite sin problema y dilo.
+- Tiene en cuenta lo que le gustó y lo que no.
+Responde SOLO con JSON:
+{"outfits":[{"title": nombre corto y con gancho, "itemIds":[ids], "why": 1-2 frases de por qué funciona hoy, "how": [2-4 instrucciones concretas de cómo llevarlo: por dentro o por fuera, remangado, abierto o cerrado, cuándo quitarse una capa…], "tucked": [ids de prendas de arriba que van por dentro], "repeats": [ids repetidos de los últimos días, si los hay]}], "missing": si para este plan le falta algo importante en el armario, dilo en una frase; si no, null}`,
     });
-    return parseJson(text);
+    return cleanOutfits(parseJson(text), ids);
+  },
+
+  // Destino + días + plan + tiempo → maleta con outfits combinables
+  async "/api/packing"({ wardrobe, destination, days, plan, weather, style }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    if (ids.size < 2) throw new HttpError(400, "Añade más prendas al armario para hacer la maleta.");
+    const n = Math.min(21, Math.max(1, Number(days) || 3));
+    const text = await askAI(env, {
+      model: MAIN(env), maxTokens: 5000,
+      content: `Eres estilista. Haz la maleta de un hombre joven para ${n} días en ${String(destination || "").slice(0, 80)}.
+Plan del viaje: «${String(plan || "turismo").slice(0, 300)}».
+Tiempo por días: ${String(weather || "no disponible").slice(0, 1500)}
+Estilo que busca: ${style ? String(style).slice(0, 600) : "actual, cuidado y sencillo"}
+Su armario (solo disponibles):
+${itemsText(wardrobe)}
+
+Elige el MÍNIMO de prendas que combinen entre sí (cápsula) para cubrir todos los días; repite prendas entre días. Ten en cuenta el plan de cada día si lo indica y el tiempo. Calzado: 1-2 pares. Usa SOLO ids del armario.
+Responde SOLO con JSON:
+{"pack":[ids a meter en la maleta], "days":[{"day": número de día empezando en 1, "title": nombre corto, "itemIds":[ids], "how": [1-2 consejos]}], "tips": [2-4 consejos para la maleta y el viaje], "missing": algo importante que le falte para este viaje o null}`,
+    });
+    const r = parseJson(text);
+    const ok = (list) => (list || []).filter((id) => ids.has(id));
+    return {
+      pack: ok(r.pack),
+      days: (r.days || []).map((d, i) => ({ day: d.day || i + 1, title: String(d.title || "").slice(0, 60), itemIds: ok(d.itemIds), how: (d.how || []).slice(0, 3) })).filter((d) => d.itemIds.length),
+      tips: (r.tips || []).slice(0, 5), missing: r.missing || null,
+    };
   },
 
   // Capturas de pines → perfil de estilo

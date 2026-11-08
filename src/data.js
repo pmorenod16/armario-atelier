@@ -1,6 +1,6 @@
 // Datos del usuario en Firestore: prendas, imágenes y perfil. Todo bajo users/{uid}.
 import {
-  fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, onSnapshot, writeBatch, updateDoc,
+  fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
 } from "./firebase.js";
 import { base64ToBlob, blobToBase64 } from "./api.js";
 import { layerOf } from "./catalog.js";
@@ -17,7 +17,10 @@ export const DEFAULT_PROFILE = {
 };
 
 const listeners = new Set();
-export const store = { items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null };
+export const store = {
+  items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null,
+  wear: [], feedback: [], trips: [], today: null, style: null, // fase 2
+};
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
@@ -34,10 +37,19 @@ export function startData() {
     store.profile = { ...DEFAULT_PROFILE, ...(s.exists() ? s.data() : {}) };
     store.ready.profile = true; emit();
   }, (e) => { console.error(e); store.profile = { ...DEFAULT_PROFILE }; store.ready.profile = true; emit(); }));
+  const list = (name, key, sort) => unsubs.push(onSnapshot(userCol(name), (snap) => {
+    store[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(sort); emit();
+  }, (e) => console.warn(name, e)));
+  list("wear", "wear", (a, b) => b.date.localeCompare(a.date));
+  list("feedback", "feedback", (a, b) => (b.at || 0) - (a.at || 0));
+  list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
+  unsubs.push(onSnapshot(metaDoc("style"), (s) => { store.style = s.exists() ? s.data() : null; emit(); }, () => {}));
 }
 export function stopData() {
   unsubs.splice(0).forEach((u) => u());
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
+  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null;
 }
 
 /** Acepta prendas guardadas con el formato anterior (colorName/colorHex/shape) y les da la forma nueva. */
@@ -103,3 +115,37 @@ export function fullImage(item) {
   }
   return imageCache.get(item.id).p;
 }
+
+/* ---------- fase 2: lo que te pones, gustos, propuestas del día y viajes ---------- */
+export const todayKey = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+/** Apunta un outfit en el calendario (un registro por día; si ya había, lo sustituye) y suma usos a las prendas. */
+export async function logWear({ date = todayKey(), itemIds, title = "", plan = "", how = [], weather = null }) {
+  const prev = store.wear.find((w) => w.date === date);
+  const b = writeBatch(fs);
+  b.set(doc(userCol("wear"), date), { date, itemIds, title, plan, how, weather, createdAt: Date.now() });
+  const added = itemIds.filter((id) => !prev?.itemIds?.includes(id)), removed = (prev?.itemIds || []).filter((id) => !itemIds.includes(id));
+  for (const id of added) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(1), lastWorn: date });
+  for (const id of removed) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1) });
+  await b.commit();
+}
+export async function deleteWear(date) {
+  const prev = store.wear.find((w) => w.date === date); if (!prev) return;
+  const b = writeBatch(fs);
+  b.delete(doc(userCol("wear"), date));
+  for (const id of prev.itemIds || []) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1) });
+  await b.commit();
+}
+
+/** Me gusta / no me gusta de un outfit propuesto (se usa para afinar las siguientes propuestas). */
+export const saveFeedback = ({ itemIds, liked, title, plan }) =>
+  setDoc(doc(userCol("feedback"), `${itemIds.slice().sort().join("_")}`.slice(0, 600)), { itemIds, liked, title, plan, at: Date.now() });
+
+export const saveToday = (data) => setDoc(metaDoc("today"), { ...data, updatedAt: Date.now() });
+
+export async function saveTrip(trip, id) {
+  const ref = id ? doc(userCol("trips"), id) : doc(userCol("trips"));
+  await setDoc(ref, { ...trip, createdAt: trip.createdAt || Date.now() });
+  return ref.id;
+}
+export const deleteTrip = (id) => deleteDoc(doc(userCol("trips"), id));

@@ -8,7 +8,7 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 
 ## Especificación y fases
 **`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
-1. Armario (hecho, pendiente de su revisión) · 2. Outfits del día (tiempo, plan, cómo llevarlo, calendario, maniquí 3D, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+1. Armario (aprobada el 8/11) · 2. Outfits del día (construida, pendiente de su revisión) (tiempo, plan, cómo llevarlo, calendario, maniquí 3D, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
 Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
 
 ## Estructura
@@ -21,12 +21,15 @@ src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe
 src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/iconos
 src/lens.js             Google Lens sin claves: en Android comparte la foto (@capacitor/share + filesystem) para elegir Lens; en el ordenador abre lens.google.com/v3/upload con la foto. Después el usuario pega el enlace de la tienda → /api/product
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
+src/views/today.js      Hoy (tiempo + plan → /api/outfits, maniquí vestido, cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
+src/views/picker.js     Elegir prendas del armario (apuntar lo que llevaste)
+src/weather.js          Open-Meteo sin clave: hoy por horas, viaje (previsión ≤16 días; más lejos, mismos días del año pasado con archive-api)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: cuerpo (maniquí 3D), tallas, ubicaciones, idioma, cuenta
-src/viewer.js           Maniquí three.js: carga public/models/maniqui.glb (cuerpo masculino realista de la malla base CC0 de MakeHuman, brazos bajados, morph targets delgada/atletica/robusta; lo genera scripts/mh2glb.py). setBody({heightCm, build}), autoRotate, show(items). Si el modelo no carga, usa un maniquí sencillo de formas
+src/viewer.js           Maniquí three.js. Ropa = "fundas" hechas con los vértices del cuerpo de cada zona (zoneFor por tipo: largo, manga con el atributo _armt del glb, por dentro/fuera), separadas unos mm y con caída recta desde pecho/rodilla; tela = trozo central de la foto repetido en espejo. Carga public/models/maniqui.glb (cuerpo masculino realista de la malla base CC0 de MakeHuman, brazos bajados, morph targets delgada/atletica/robusta; lo genera scripts/mh2glb.py). setBody({heightCm, build}), autoRotate, show(items). Si el modelo no carga, usa un maniquí sencillo de formas
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
 worker/src/index.js     Cloudflare Worker (ver API)
@@ -46,7 +49,11 @@ cd worker && npx wrangler deploy
 - `users/{uid}/items/{id}`: `name, type (clave de catalog.js), layer, colors[{k,hex}], pattern, brand, size, material (texto de la etiqueta), materialKey, fit, seasons[], formality 1-5, styleTags[], care, notes, status (disponible|sucia|prestada), thumb (dataURL webp ~10 KB), tone (#hex), hasImage, aspect, imageVersion, cutMethod, createdAt, updatedAt`. Las prendas antiguas (category/shape/colorHex) se adaptan al leer (data.js normalizeItem).
 - `users/{uid}/images/{id}`: `data` (WebP en base64), `mime, width, height`. **Límite de 1 MiB por documento**: recorte ≤600 KB y se rechaza base64 > 980 000.
 - `users/{uid}/meta/profile`: `onboarded, mannequin, heightCm, build, sizes{camiseta,camisa,jersey,americana,pantalon,vaquero,calzado}, places[{id,name,region,lat,lon}], activePlace, language`
-- `users/{uid}/meta/style`, `meta/shopping`, `outfits/`: de la versión anterior; se rehacen en las fases 2-4.
+- `users/{uid}/wear/{AAAA-MM-DD}`: `date, itemIds[], title, plan, how[], weather{t,min,max,code}`. Al apuntar se suma `wearCount` y `lastWorn` en cada prenda.
+- `users/{uid}/feedback/{ids ordenados}`: `itemIds, liked, title, plan, at` (me gusta / no me gusta).
+- `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
+- `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
+- `users/{uid}/meta/style`, `meta/shopping`, `outfits/`: de la versión anterior; se rehacen en las fases 3-4.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
@@ -57,7 +64,8 @@ cd worker && npx wrangler deploy
 | `/api/official` | `{brand, ref, name, type, color}` | `{source, products:[{name,color,ref,price,url,images[]}], reason?}`. Zara: catálogo público `itxrest` de Inditex (tienda 10701 = España; respondió 200 desde un servidor el 8/11/2026, formato de productos sin verificar: se recorre el JSON buscando objetos con `name` + `xmedia`). Otras marcas: búsqueda de Google vía Gemini (necesita crédito) + JSON-LD/og:image de la ficha. H&M, COS y Mango bloquean servidores (403/429) |
 | `/api/product` | `{url}` ficha de producto (p. ej. copiada de Google Lens) | `{source:"enlace", products:[…]}` desde JSON-LD/og:image |
 | `/api/image` | `{url}` | `{image, mime}`: descarga la foto oficial (la app no puede por CORS) |
-| `/api/outfits` | `{wardrobe, style, occasion, weather}` | `{outfits:[{title,itemIds,why,tip}]}` |
+| `/api/outfits` | `{wardrobe[{id,name,type,colors,pattern,material,fit,formality,seasons,styleTags,wears}], plan, weather (texto), style, likes, dislikes, recent[{date,itemIds}], exclude, count}` | `{outfits:[{title,itemIds,why,how[],tucked[],repeats[]}], missing}` (ids filtrados al armario) |
+| `/api/packing` | `{wardrobe, destination, days, plan, weather, style}` | `{pack[], days[{day,title,itemIds,how}], tips[], missing}` |
 | `/api/style/images` | `{images[]}` | `{style}` |
 | `/api/style/pinterest` | `{url}` tablero público → lee `<usuario>/<tablero>.rss` y descarga hasta 12 pines | `{style, pinCount}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
@@ -77,5 +85,5 @@ IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/me
 Para probar la interfaz en local sin cuenta: un vite.config aparte con un plugin `resolveId` que sustituya `firebase.js` y `api.js` por versiones en memoria (ver historial). No dejar ese archivo en el repo.
 
 ## Estado
-Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
+Fase 2 construida y probada con datos simulados (8/11/2026). Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
 Funciona de antes: login con Google en web, `/api/gaps` con Gemini, APK firmado en Actions, web en https://pmorenod16.github.io/armario-atelier/.

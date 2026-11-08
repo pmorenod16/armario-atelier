@@ -22,6 +22,7 @@ races = sum(target(f"{r}-male-young") for r in ("african", "asian", "caucasian")
 def smooth(x, a, b):
     t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
 W = {}
+ARMT = np.zeros(len(V))
 def lower_arms(P, deg=33):
     # baja los brazos de la postura en A a una postura de maniquí (brazos junto al cuerpo)
     P = P.copy()
@@ -29,7 +30,12 @@ def lower_arms(P, deg=33):
         sh = P[list(groups[f"joint-{side}-shoulder"])].mean(0); hd = P[list(groups[f"joint-{side}-hand"])].mean(0)
         d = (hd - sh)[:2]; d /= np.linalg.norm(d)
         rel = P[:, :2] - sh[:2]; proj = rel @ d; perp = np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0])
-        if side not in W: W[side] = smooth(proj, -0.2, 1.3) * (1 - smooth(perp, 0.8, 1.2))
+        if side not in W:
+            W[side] = smooth(proj, -0.2, 1.3) * (1 - smooth(perp, 0.8, 1.2))
+            L = np.linalg.norm((hd - sh)[:2])
+            # parte del brazo: 0 = no es brazo; si no, 0.01 (hombro) … 1 (muñeca) … >1 (mano); signo = lado
+            arm = (perp < 1.25) & (proj > -0.3) & (np.abs(P[:, 0]) > abs(sh[0]) - 0.35)
+            ARMT[arm] = np.clip(proj[arm] / L, 0.01, 1.4) * (1 if d[0] > 0 else -1)
         a = np.radians(deg) * W[side] * (1 if d[0] > 0 else -1)  # hacia el cuerpo
         c, s_ = np.cos(a), np.sin(a)
         x, y = rel[:, 0], rel[:, 1]
@@ -64,12 +70,12 @@ def add(arr, target=None, minmax=False, comp=5126, typ="VEC3"):
     a = {"bufferView": len(views) - 1, "componentType": comp, "count": len(arr) if typ != "SCALAR" else arr.size, "type": typ}
     if minmax: a["min"] = arr.min(0).tolist(); a["max"] = arr.max(0).tolist()
     accs.append(a); return len(accs) - 1
-pos = add(base, 34962, True); nor = add(bn, 34962); idx = add(T.reshape(-1), 34963, comp=5125, typ="SCALAR")
+pos = add(base, 34962, True); nor = add(bn, 34962); armt = add(ARMT[used].astype(np.float32), 34962, typ="SCALAR"); idx = add(T.reshape(-1), 34963, comp=5125, typ="SCALAR")
 names = ["delgada", "atletica", "robusta"]
 targets = [{"POSITION": add(P[k] - base, 34962, True), "NORMAL": add(N[k] - bn, 34962)} for k in names]
 gl = {"asset": {"version": "2.0", "generator": "armario-atelier mh2glb", "copyright": "CC0 — malla base de MakeHuman"},
       "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0, "name": "maniqui"}],
-      "meshes": [{"name": "maniqui", "primitives": [{"attributes": {"POSITION": pos, "NORMAL": nor}, "indices": idx, "material": 0, "targets": targets}],
+      "meshes": [{"name": "maniqui", "primitives": [{"attributes": {"POSITION": pos, "NORMAL": nor, "_ARMT": armt}, "indices": idx, "material": 0, "targets": targets}],
                   "weights": [0, 0, 0], "extras": {"targetNames": names}}],
       "materials": [{"name": "maniqui", "pbrMetallicRoughness": {"baseColorFactor": [0.9, 0.88, 0.84, 1], "metallicFactor": 0, "roughnessFactor": 0.45}}],
       "buffers": [{"byteLength": sum(len(b) for b in blobs)}], "bufferViews": views, "accessors": accs}
