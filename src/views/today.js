@@ -6,7 +6,7 @@ import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
-  saveLook, deleteLook, lookSaved, reviewWear, itemWashLimit, isDryClean,
+  saveLook, deleteLook, lookSaved, reviewWear, itemWashLimit, isDryClean, dayPlan,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
@@ -158,13 +158,18 @@ function openLook(id) {
 
 /* =================== HOY =================== */
 function tabToday(box) {
-  const today = todayKey();
+  // «Hoy» o «Mañana» (para dejarlo preparado antes de dormir); `today` es la fecha del día que se prepara
+  const off = state.day === "mañana" ? 1 : 0;
+  const realToday = todayKey(), today = off ? todayKey(new Date(Date.now() + 864e5)) : realToday;
+  const tomorrow = !!off, slot = off ? "tomorrow" : "today";
   box.innerHTML = `
+    <div class="day-switch"><div class="seg" id="daySeg">${["hoy", "mañana"].map((k) => `<button type="button" data-day="${k}" aria-pressed="${(state.day || "hoy") === k}">${t("day." + (k === "hoy" ? "today" : "tomorrow"))}</button>`).join("")}</div>
+      ${tomorrow ? `<span class="muted small">${fmtDate(today, { weekday: "long", day: "numeric", month: "long" })}</span>` : (new Date().getHours() >= 19 ? `<span class="muted small">${t("day.hint")}</span>` : "")}</div>
     <div id="washCheck"></div>
     <div class="today-grid">
       <section class="wx card" id="wx"><p class="muted">${t("today.wx.loading")}</p></section>
       <section class="card plan">
-        <label class="field"><span class="row between">${t("today.plan")}<span class="plan-tools">${canCalendar() ? `<button class="btn sm ghost" type="button" id="cal">${icon("calendar")}${t("today.fromCal")}</button>` : ""}${canVoice() ? `<button class="btn sm icon ghost" type="button" id="mic" aria-label="${t("today.voice")}">${icon("mic")}</button>` : ""}</span></span><textarea id="plan" rows="2" maxlength="300" placeholder="${t("today.planPh")}"></textarea></label>
+        <label class="field"><span class="row between">${t(tomorrow ? "today.planTomorrow" : "today.plan")}<span class="plan-tools">${canCalendar() ? `<button class="btn sm ghost" type="button" id="cal">${icon("calendar")}${t("today.fromCal")}</button>` : ""}${canVoice() ? `<button class="btn sm icon ghost" type="button" id="mic" aria-label="${t("today.voice")}">${icon("mic")}</button>` : ""}</span></span><textarea id="plan" rows="2" maxlength="300" placeholder="${t("today.planPh")}"></textarea></label>
         <div class="chips" id="quick">${t("today.quick").split("|").map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
         <div class="engine-row"><span class="muted small">${t("engine.label")}</span><div class="seg engine-seg" id="engine">${["ia", "app"].map((k) => `<button type="button" data-e="${k}" aria-pressed="${engineMode() === k}">${t("engine." + k)}</button>`).join("")}</div></div>
         <button class="btn primary block" type="button" id="go">${icon("spark")}${t("today.go")}</button>
@@ -173,13 +178,14 @@ function tabToday(box) {
       </section>
     </div>
     <div id="result"></div>`;
-  drawWashCheck($("#washCheck", box), today);
+  $("#daySeg", box).onclick = (e) => { const b = e.target.closest("[data-day]"); if (b && b.dataset.day !== (state.day || "hoy")) { state.day = b.dataset.day; state.sel = 0; document.querySelector('.tabs [data-tab="hoy"]')?.click(); } };
+  if (!tomorrow) drawWashCheck($("#washCheck", box), today);
   const planEl = $("#plan", box);
   const addPlan = (txt) => { if (txt) planEl.value = planEl.value.trim() ? `${planEl.value.trim()}. ${txt}` : txt; };
   const calB = $("#cal", box), micB = $("#mic", box);
   if (calB) calB.onclick = async () => {
     calB.disabled = true;
-    try { const p = await planFromCalendar(); if (p) { addPlan(p); toast(t("today.calDone")); } else toast(t("today.calEmpty")); }
+    try { const p = await planFromCalendar(new Date(Date.parse(today + "T12:00:00"))); if (p) { addPlan(p); toast(t("today.calDone")); } else toast(t("today.calEmpty")); }
     catch (e) { toast(e?.message || t("today.calFail"), "error"); }
     calB.disabled = false;
   };
@@ -194,7 +200,7 @@ function tabToday(box) {
     $$("#engine button", box).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     say($("#st", box), t(b.dataset.e === "app" ? "engine.appHint" : "engine.iaHint"));
   };
-  const saved = store.today?.date === today ? store.today : null;
+  const saved = dayPlan(today);
   planEl.value = saved?.plan || "";
   $("#quick", box).onclick = (e) => {
     const b = e.target.closest("[data-q]"); if (!b) return;
@@ -208,7 +214,7 @@ function tabToday(box) {
     place = p.places.find((x) => x.id === p.activePlace) || p.places[0];
     const el = $("#wx", box); if (!el) return;
     try {
-      wx = await todayWeather(place);
+      wx = await todayWeather(place, off);
       const d = describe(wx.code), [a, b] = HALO[d.icon] || HALO.cloud; setHalo(a, b);
       el.innerHTML = `
         <button type="button" class="wx-place" id="place">${icon("pin")}<span>${esc(place.name)}</span>${icon("chevron")}</button>
@@ -238,7 +244,7 @@ function tabToday(box) {
   // --- propuestas ---
   const result = $("#result", box);
   const outfitsNow = () => {
-    const td = store.today?.date === today ? store.today : null;
+    const td = dayPlan(today);
     return (td?.outfits || []).map((o) => ({ ...o, itemIds: o.itemIds.filter(byId) })).filter((o) => o.itemIds.length >= 2);
   };
 
@@ -267,7 +273,7 @@ function tabToday(box) {
     };
     const local = () => suggestOutfits({
       items: avail, weather: wx, plan, style: store.style, wear: store.wear, feedback: store.feedback,
-      exclude: payload.exclude, count: 4,
+      exclude: payload.exclude, count: 4, date: new Date(Date.parse(today + "T12:00:00")),
     });
     try {
       let r, note = "";
@@ -279,7 +285,7 @@ function tabToday(box) {
       if (!r.outfits?.length) throw { message: r.missing || t("today.fail") };
       const outfits = more ? [...outfitsNow(), ...r.outfits] : r.outfits;
       state.sel = more ? outfitsNow().length : 0;
-      await saveToday({ date: today, plan: planEl.value.trim(), placeId: place?.id || null, weather: wx ? { t: wx.now.t, min: wx.min, max: wx.max, code: wx.code } : null, outfits, missing: r.missing || null });
+      await saveToday({ date: today, plan: planEl.value.trim(), placeId: place?.id || null, weather: wx ? { t: wx.now.t, min: wx.min, max: wx.max, code: wx.code } : null, outfits, missing: r.missing || null }, slot);
       say(st, note);
     } catch (e) { say(st, e?.message || t("today.fail"), "error"); if (!more) result.innerHTML = ""; }
     $("#go", box).disabled = false;
@@ -305,7 +311,7 @@ function tabToday(box) {
           <div class="look-info" id="info"></div>
         </section>`;
     }
-    const td = store.today;
+    const td = dayPlan(today);
     // las opciones, en miniatura, para elegir de un vistazo
     const optsSig = outfits.map((x) => x.itemIds.join()).join("|") + "#" + state.sel + JSON.stringify(store.layouts || {}).length;
     const opts = $("#opts", result);
@@ -323,7 +329,7 @@ function tabToday(box) {
       opts.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset?.o) { e.preventDefault(); e.target.click(); } };
     }
     $("#info", result).innerHTML = `
-      ${worn ? `<p class="worn-note">${icon("check")} ${t("today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
+      ${worn ? `<p class="worn-note">${icon("check")} ${t(tomorrow ? "day.readyNote" : "today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
       <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
@@ -334,7 +340,7 @@ function tabToday(box) {
         <button class="btn sm ${fb?.liked === true ? "on" : ""}" type="button" id="like" aria-pressed="${fb?.liked === true}">${icon("up")}${t("today.like")}</button>
         <button class="btn sm ${fb?.liked === false ? "on" : ""}" type="button" id="dislike" aria-pressed="${fb?.liked === false}">${icon("down")}${t("today.dislike")}</button>
         <button class="btn sm ${lookSaved(o.itemIds) ? "on" : ""}" type="button" id="saveLook" aria-pressed="${!!lookSaved(o.itemIds)}">${icon("bookmark")}${t(lookSaved(o.itemIds) ? "looks.saved" : "looks.save")}</button>
-        <button class="btn sm primary" type="button" id="wear" ${isWorn ? "disabled" : ""}>${icon("check")}${t(isWorn ? "today.worn" : "today.wear")}</button>
+        <button class="btn sm primary" type="button" id="wear" ${isWorn ? "disabled" : ""}>${icon("check")}${t(isWorn ? (tomorrow ? "day.ready" : "today.worn") : (tomorrow ? "day.wear" : "today.wear"))}</button>
       </div>
       ${td?.missing ? `<p class="notice">${icon("spark")} ${esc(td.missing)}</p>` : ""}`;
     const info = $("#info", result);
@@ -344,7 +350,7 @@ function tabToday(box) {
         try { await saveFeedback({ itemIds: o.itemIds, liked, title: o.title, plan: td?.plan || "" }); toast(t(liked ? "today.liked" : "today.disliked")); } catch { toast(t("item.saveFail"), "error"); }
       }
       if (e.target.closest("#wear")) {
-        try { await logWear({ itemIds: o.itemIds, title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t("today.wornSaved")); }
+        try { await logWear({ date: today, itemIds: o.itemIds, title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t(tomorrow ? "day.saved" : "today.wornSaved")); }
         catch { toast(t("item.saveFail"), "error"); }
       }
       if (e.target.closest("#saveLook")) {
@@ -370,7 +376,7 @@ function tabToday(box) {
   }
 
   drawResult();
-  const unsub = subscribe(() => { drawResult(); drawWashCheck($("#washCheck", box), today); });
+  const unsub = subscribe(() => { drawResult(); if (!tomorrow) drawWashCheck($("#washCheck", box), today); });
   wireBoardEdit(result, () => toast(t("board.saved")));
   return () => unsub();
 }

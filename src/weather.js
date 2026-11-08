@@ -20,24 +20,26 @@ async function getJson(url) {
 }
 
 /** Tiempo de hoy en un sitio: ahora, máxima/mínima, lluvia, viento y unas horas clave. */
-export async function todayWeather({ lat, lon }) {
+export async function todayWeather({ lat, lon }, offset = 0) {
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=auto&forecast_days=2`
     + "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,is_day"
     + "&hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code"
     + "&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,precipitation_sum,weather_code,wind_speed_10m_max,uv_index_max";
   const d = await getJson(u);
-  const today = d.daily.time[0];
+  const i = Math.min(offset, d.daily.time.length - 1), today = d.daily.time[i];
   const hours = d.hourly.time.map((t, i) => ({ h: +t.slice(11, 13), day: t.slice(0, 10), t: d.hourly.temperature_2m[i], feels: d.hourly.apparent_temperature[i], rain: d.hourly.precipitation_probability[i], code: d.hourly.weather_code[i] }))
     .filter((x) => x.day === today);
   const at = (h) => hours.find((x) => x.h === h);
   const key = [8, 11, 14, 17, 20, 23].map(at).filter(Boolean);
   return {
     date: today,
-    now: { t: Math.round(d.current.temperature_2m), feels: Math.round(d.current.apparent_temperature), code: d.current.weather_code, wind: Math.round(d.current.wind_speed_10m) },
-    min: Math.round(d.daily.temperature_2m_min[0]), max: Math.round(d.daily.temperature_2m_max[0]),
-    feelsMin: Math.round(d.daily.apparent_temperature_min[0]), feelsMax: Math.round(d.daily.apparent_temperature_max[0]),
-    rain: d.daily.precipitation_probability_max[0] ?? 0, rainMm: d.daily.precipitation_sum[0] ?? 0,
-    wind: Math.round(d.daily.wind_speed_10m_max[0]), uv: d.daily.uv_index_max[0], code: d.daily.weather_code[0],
+    // mañana no hay «ahora»: se usa el mediodía
+    now: i === 0 ? { t: Math.round(d.current.temperature_2m), feels: Math.round(d.current.apparent_temperature), code: d.current.weather_code, wind: Math.round(d.current.wind_speed_10m) }
+      : (() => { const n = at(12) || at(14) || hours[0] || {}; return { t: Math.round(n.t ?? d.daily.temperature_2m_max[i]), feels: Math.round(n.feels ?? n.t ?? 0), code: d.daily.weather_code[i], wind: Math.round(d.daily.wind_speed_10m_max[i]) }; })(),
+    min: Math.round(d.daily.temperature_2m_min[i]), max: Math.round(d.daily.temperature_2m_max[i]),
+    feelsMin: Math.round(d.daily.apparent_temperature_min[i]), feelsMax: Math.round(d.daily.apparent_temperature_max[i]),
+    rain: d.daily.precipitation_probability_max[i] ?? 0, rainMm: d.daily.precipitation_sum[i] ?? 0,
+    wind: Math.round(d.daily.wind_speed_10m_max[i]), uv: d.daily.uv_index_max[i], code: d.daily.weather_code[i],
     hours: key.map((x) => ({ h: x.h, t: Math.round(x.t), rain: x.rain, code: x.code })),
   };
 }

@@ -60,6 +60,7 @@ cd worker && npx wrangler deploy
 - `users/{uid}/meta/profile`: `onboarded, sizes{camiseta,camisa,jersey,americana,pantalon,vaquero,calzado}, places[{id,name,region,lat,lon}], activePlace, language`
 - `users/{uid}/wear/{AAAA-MM-DD}`: `date, itemIds[], title, plan, how[], weather{t,min,max,code}`. Al apuntar se suma `wearCount` y `lastWorn` en cada prenda.
 - `users/{uid}/feedback/{ids ordenados}`: `itemIds, liked, title, plan, at` (me gusta / no me gusta).
+- `users/{uid}/meta/tomorrow`: igual que today pero preparadas la noche antes (selector Hoy/Mañana en la pestaña Hoy; data.dayPlan(fecha) busca en los dos; «Me lo pongo mañana» apunta el wear con la fecha de mañana; todayWeather(place, 1)).
 - `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
 - `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
 - `users/{uid}/layouts/{ids ordenados}`: `boxes{itemId:[left,top,width,height,z]}` en % del lienzo 4:5, `at`.

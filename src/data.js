@@ -48,6 +48,7 @@ export function startData() {
   list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   unsubs.push(onSnapshot(userCol("layouts"), (snap) => { store.layouts = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
+  unsubs.push(onSnapshot(metaDoc("tomorrow"), (s) => { store.tomorrow = s.exists() ? s.data() : null; emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("shopping"), (s) => { store.shopping = s.exists() ? s.data() : null; emit(); }, () => {}));
   list("wishlist", "wishlist", (a, b) => (b.addedAt || 0) - (a.addedAt || 0));
   list("looks", "looks", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -56,7 +57,7 @@ export function startData() {
 export function stopData() {
   unsubs.splice(0).forEach((u) => u());
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
-  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = []; store.looks = [];
+  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.tomorrow = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = []; store.looks = [];
 }
 
 /** Acepta prendas guardadas con el formato anterior (colorName/colorHex/shape) y les da la forma nueva. */
@@ -199,7 +200,9 @@ export async function deleteWear(date) {
 export const saveFeedback = ({ itemIds, liked, title, plan }) =>
   setDoc(doc(userCol("feedback"), `${itemIds.slice().sort().join("_")}`.slice(0, 600)), { itemIds, liked, title, plan, at: Date.now() });
 
-export const saveToday = (data) => setDoc(metaDoc("today"), { ...data, updatedAt: Date.now() });
+export const saveToday = (data, which = "today") => setDoc(metaDoc(which), { ...data, updatedAt: Date.now() });
+/** Propuestas guardadas para una fecha (las de hoy o las preparadas la noche antes). */
+export const dayPlan = (date) => [store.today, store.tomorrow].find((d) => d?.date === date) || null;
 
 export async function saveTrip(trip, id) {
   const ref = id ? doc(userCol("trips"), id) : doc(userCol("trips"));

@@ -685,3 +685,5 @@ a.btn { text-decoration: none; color: inherit; }
 .wash-item summary { cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
 .wash-item summary .ic { width: 16px; height: 16px; }
 .wash-item[open] { display: grid; gap: 8px; }
+.day-switch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.day-switch .seg button { min-height: 34px; padding: 0 18px; }
