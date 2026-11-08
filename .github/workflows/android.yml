@@ -52,6 +52,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: Comprobar el APK (firma, SDK mínimo, permisos)
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          ls -la $APK
+          $BT/apksigner verify --verbose --print-certs $APK || echo "::warning::apksigner no da por buena la firma"
+          $BT/aapt2 dump badging $APK | grep -E "^package|sdkVersion|targetSdk|native-code|testOnly|application:" || true
+          grep -n "testOnly\|minSdk\|targetSdk" android/variables.gradle android/app/build.gradle || true
+
       - name: Subir el APK
         uses: actions/upload-artifact@v7
         with:
