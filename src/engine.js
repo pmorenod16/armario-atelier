@@ -82,7 +82,7 @@ export function contextFrom({ weather, plan, style, date = new Date() }) {
   const styleWords = new Set([...(board?.keyPieces || []), ...(board?.keywords || []), ...(board?.formulas || []), ...(board?.mix || []).map((m) => m.name)].flatMap(words));
   const avoidWords = new Set(words(board?.avoid || ""));
   return {
-    temp, rain: weather?.rain ?? 0, season: SEASON_OF_MONTH[date.getMonth()],
+    temp, rain: weather?.rain ?? 0, sunny: [0, 1, 2].includes(weather?.code), season: SEASON_OF_MONTH[date.getMonth()],
     formality: rule ? rule[1] : 2.6, mood: rule ? rule[2] : "diario", plan: plan || "",
     board, palette, styleWords, avoidWords, mix: board?.mix || [],
   };
@@ -243,7 +243,8 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
   // si el armario es pequeño, completar repitiendo
   for (const c of combos) { if (chosen.length >= count) break; if (!chosen.includes(c)) chosen.push(c); }
 
-  const outfits = chosen.map((c, i) => describeOutfit(c, ctx, i));
+  const accs = items.filter((it) => TYPE[it.type]?.g === "complementos");
+  const outfits = chosen.map((c, i) => describeOutfit(addAccessories(c, ctx, accs, sc, i), ctx, i));
   const missing = !shoes.length ? "No tienes calzado en el armario: añádelo para que los outfits estén completos."
     : needWarmth >= 2 && !outers.length ? `Para ${T} °C te vendría bien una chaqueta o un abrigo: no tienes ninguno disponible.` : null;
   return { outfits, missing, engine: true };
@@ -258,11 +259,45 @@ function bestAdd(base, options, sc, ctx) {
   return best;
 }
 
+/* ---------- complementos ---------- */
+const COL_FAMILY = (k) => ["marron", "camel", "beige"].includes(k) ? "marron" : ["negro", "antracita"].includes(k) ? "negro" : k;
+/** Añade al conjunto los complementos del armario que lo rematan (máx. 3) y apunta en c.extras los que le faltarían. */
+function addAccessories(c, ctx, accs, sc, seed) {
+  const f = c.items.reduce((a, it) => a + formalityOf(it), 0) / c.items.length;
+  const T = ctx.temp, has = (t) => c.items.some((it) => it.type === t);
+  const top = c.items.find((it) => ["camisa", "polo"].includes(it.type)), bottom = c.items.find(isKind(BOTTOM)), shoe = c.items.find(isKind(SHOES));
+  const tucked = top && bottom && bottom.type !== "jogger" && f >= 2.8;
+  const want = []; // [tipo, motivo para sugerirlo si no lo tiene]
+  if (f >= 2.2 || ctx.mood === "trabajo" || ctx.mood === "cita") want.push(["reloj", "Reloj de esfera sencilla con correa de piel o metal"]);
+  if (tucked) want.push(["cinturon", `Cinturón de piel ${shoe && COL_FAMILY(mainColor(shoe).k) === "negro" ? "negro" : "marrón"} a juego con los zapatos`]);
+  if (ctx.sunny && T != null && T >= 14) want.push(["gafas", "Gafas de sol de pasta o metal"]);
+  if (T != null && T < 10) want.push(["bufanda", "Bufanda de lana en gris o camel"]);
+  if (T != null && T < 6) want.push(["gorro", "Gorro de punto liso"]);
+  if (ctx.mood === "clase" || ctx.mood === "viaje") want.push(["mochila", "Mochila sencilla de lona o piel"]);
+  if (ctx.mood === "evento" && f >= 4) want.push(["corbata", "Corbata lisa de punto o seda"]);
+  if ((ctx.mood === "noche" || ctx.mood === "cita") && f >= 2.8) want.push(["joya", "Cadena o anillo plateado discreto"]);
+  if (f <= 2.2 && !ctx.rain && (ctx.mood === "relax" || ctx.mood === "deporte" || ctx.mood === "paseo")) want.push(["gorra", "Gorra lisa"]);
+  const added = [], extras = [];
+  for (const [type, suggestion] of want) {
+    if (added.length >= 3) break;
+    const opts = accs.filter((a) => a.type === type && !has(type));
+    if (!opts.length) { if (extras.length < 2) extras.push(suggestion); continue; }
+    // a juego: cinturón del color de los zapatos; si no, el que mejor puntúa
+    opts.sort((a, b) => {
+      const m = (x) => type === "cinturon" && shoe && COL_FAMILY(mainColor(x).k) === COL_FAMILY(mainColor(shoe).k) ? 3 : 0;
+      return (m(b) + (sc.get(b.id) || 0)) - (m(a) + (sc.get(a.id) || 0));
+    });
+    added.push(opts[seed % Math.min(2, opts.length)] || opts[0]);
+  }
+  if (!added.length && !extras.length) return c;
+  return { ...c, items: [...c.items, ...added], ids: [...c.ids, ...added.map((a) => a.id)], extras };
+}
+
 const TITLE_BY_F = [[1.6, ["Cómodo", "Deportivo", "Relajado"]], [2.4, ["Básico", "Diario", "Sin pensar"]], [3.1, ["Casual cuidado", "Smart casual", "Diario arreglado"]], [3.9, ["Arreglado", "Pulido", "Clásico"]], [9, ["Elegante", "De ocasión", "Impecable"]]];
 function describeOutfit(c, ctx, i) {
   const f = c.items.reduce((a, it) => a + formalityOf(it), 0) / c.items.length;
   const base = pick(TITLE_BY_F.find(([lim]) => f <= lim)[1], i);
-  const cols = [...new Set(c.items.map((it) => colorName(mainColor(it).k)).filter(Boolean))];
+  const cols = [...new Set(c.items.filter((it) => TYPE[it.type]?.g !== "complementos").map((it) => colorName(mainColor(it).k)).filter(Boolean))];
   const mixName = nearestMix(c, ctx);
   const title = `${mixName ? `${mixName} · ` : ""}${base}${cols.length ? ` en ${cols.slice(0, 2).join(" y ")}` : ""}`;
   const find = (set) => c.items.find(isKind(set));
@@ -283,7 +318,9 @@ function describeOutfit(c, ctx, i) {
   if (bottom && shoe && ["chino", "pantalon", "traje-pantalon"].includes(bottom.type) && ["mocasines", "zapatillas"].includes(shoe.type) && ctx.temp >= 18) how.push("Bajo del pantalón con una vuelta para que se vea el tobillo.");
   if (outer && ctx.temp != null && ctx.temp < 10) how.push(`Hace frío: ${typeName(outer)} cerrada y, si tienes, bufanda.`);
   if (ctx.rain >= 50) how.push("Llueve: mejor calzado que no sea de ante.");
-  return { title, itemIds: c.ids, why: why.join(", ") + ".", how: how.slice(0, 3), tucked, repeats: [], engine: true };
+  const acc = c.items.filter((it) => TYPE[it.type]?.g === "complementos");
+  if (acc.length) how.push(`Remátalo con ${acc.map((a) => typeName(a)).join(", ").replace(/, ([^,]*)$/, " y $1")}.`);
+  return { title, itemIds: c.ids, why: why.join(", ") + ".", how: how.slice(0, 4), tucked, repeats: [], extras: c.extras || [], engine: true };
 }
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Estética de su mezcla más cercana a este conjunto (por palabras clave de cada estética). */

@@ -257,6 +257,7 @@ function cleanOutfits(r, ids) {
       title: clip(o.title, 60) || "Outfit", itemIds, why: clip(o.why, 300),
       how: (o.how || []).map((x) => clip(x, 160)).slice(0, 4),
       tucked: (o.tucked || []).filter((id) => itemIds.includes(id)), repeats: (o.repeats || []).filter((id) => itemIds.includes(id)),
+      extras: (Array.isArray(o.extras) ? o.extras : []).map((x) => clip(x, 60)).filter(Boolean).slice(0, 2),
     };
   }).filter((o) => o.itemIds.length >= 2);
   if (!outfits.length) throw new HttpError(502, "La IA no ha devuelto outfits válidos. Vuelve a intentarlo.");
@@ -545,13 +546,14 @@ ${exclude?.length ? `No repitas exactamente estas combinaciones: ${exclude.map((
 Propón EXACTAMENTE ${Math.min(4, Math.max(1, count))} outfits claramente distintos entre sí (no cambies solo una prenda: que varíen la idea, la paleta o el nivel de arreglo) usando SOLO ids de su armario. Si el armario es pequeño, repite prendas entre outfits antes que dar menos.
 Reglas:
 - Cada outfit: parte de arriba + parte de abajo (o una pieza entera) + calzado si tiene. Como mucho una prenda de cada capa, salvo capa de abrigo encima.
+- COMPLEMENTOS: añade a itemIds los complementos de su armario que rematen el look (reloj, cinturón si la camisa va por dentro, gafas de sol si hace sol, bufanda o gorro si hace frío, gorra en looks informales, mochila o bandolera según el plan, joyas discretas), como mucho 3 y que pegen con el resto. En "extras" sugiere 1-2 complementos que NO tiene y que le quedarían bien con ese outfit (concretos: tipo + color/material).
 - Adecuado al plan (formalidad, comodidad, actividad) y al tiempo de TODO el día: si hace frío por la mañana y calor a mediodía, propón capas y di cuándo quitarlas. Si llueve, calzado y abrigo que aguanten.
 - Combina colores y estampados con criterio (como mucho un estampado protagonista).
 - No repetir, a medias: evita prendas llevadas en los últimos 3 días SOLO si hay otra prenda adecuada del mismo tipo; si no la hay, repite sin problema y dilo.
 - Tiene en cuenta lo que le gustó y lo que no.${style ? `
 - EL ESTILO ES LO PRIMERO después del plan y el tiempo: cada outfit tiene que parecer sacado de su tablero (paleta, siluetas, fórmulas, materiales). Si su estilo es una mezcla de estéticas, reparte los outfits entre ellas (o fusiónalas) y di en "why" a cuál se acerca. Si con su armario no llega del todo a su estilo, monta lo más cercano y dilo en "missing".` : ""}
 Responde SOLO con JSON:
-{"outfits":[{"title": nombre corto y con gancho, "itemIds":[ids], "why": 1-2 frases de por qué funciona hoy, "how": [2-4 instrucciones concretas de cómo llevarlo: por dentro o por fuera, remangado, abierto o cerrado, cuándo quitarse una capa…], "tucked": [ids de prendas de arriba que van por dentro], "repeats": [ids repetidos de los últimos días, si los hay]}], "missing": si para este plan le falta algo importante en el armario, dilo en una frase; si no, null}`,
+{"outfits":[{"title": nombre corto y con gancho, "itemIds":[ids], "why": 1-2 frases de por qué funciona hoy, "how": [2-4 instrucciones concretas de cómo llevarlo: por dentro o por fuera, remangado, abierto o cerrado, cuándo quitarse una capa…], "tucked": [ids de prendas de arriba que van por dentro], "repeats": [ids repetidos de los últimos días, si los hay], "extras": [complementos que no tiene y le irían]}], "missing": si para este plan le falta algo importante en el armario, dilo en una frase; si no, null}`,
     });
     return cleanOutfits(parseJson(text), ids);
   },

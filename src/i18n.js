@@ -225,6 +225,7 @@ const DICT = {
     "today.optionN": "Opción {n} de {total}",
     "today.more": "Otras ideas",
     "today.how": "Cómo llevarlo",
+    "today.extras": "Le iría bien (no lo tienes)",
     "today.repeats": "Repite {names}: no tienes otra opción igual de buena para hoy.",
     "today.like": "Me gusta",
     "today.dislike": "No me gusta",

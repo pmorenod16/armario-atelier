@@ -200,6 +200,7 @@ function tabToday(box) {
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
+      ${o.extras?.length ? `<h3 class="how-title">${t("today.extras")}</h3><div class="chips">${o.extras.map((x) => `<span class="chip">${icon("bag")}${esc(x)}</span>`).join("")}</div>` : ""}
       ${o.repeats?.length ? `<p class="muted small">${t("today.repeats", { names: esc(o.repeats.map(byId).filter(Boolean).map((i) => i.name).join(", ")) })}</p>` : ""}
       <div class="row wrap look-actions">
         <button class="btn sm ${fb?.liked === true ? "on" : ""}" type="button" id="like" aria-pressed="${fb?.liked === true}">${icon("up")}${t("today.like")}</button>
