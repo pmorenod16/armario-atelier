@@ -202,6 +202,10 @@ function tabToday(box) {
   };
   const saved = dayPlan(today);
   planEl.value = saved?.plan || "";
+  // calendario conectado: si aún no has escrito el plan, se rellena solo con lo de tu calendario
+  if (!planEl.value && store.profile?.calAuto && canCalendar()) {
+    planFromCalendar(new Date(Date.parse(today + "T12:00:00"))).then((p) => { if (p && !planEl.value) { planEl.value = p; say($("#st", box), t("today.calAuto")); } }).catch(() => {});
+  }
   $("#quick", box).onclick = (e) => {
     const b = e.target.closest("[data-q]"); if (!b) return;
     planEl.value = planEl.value.trim() ? `${planEl.value.trim()}, ${b.dataset.q.toLowerCase()}` : b.dataset.q; planEl.focus();

@@ -7,7 +7,7 @@ import { store, saveProfile, WASH_AFTER, washLimit } from "../data.js";
 import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
-import { canNotify, setMorningReminder } from "../native.js";
+import { canNotify, setMorningReminder, canCalendar, planFromCalendar } from "../native.js";
 import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
@@ -96,6 +96,13 @@ export function renderProfile(view) {
     <div class="cards">
       <section class="card" id="cPlaces"><h2 class="display">${t("profile.places")}</h2></section>
       <section class="card span2" id="cSizes"><h2 class="display">${t("profile.sizes")}</h2></section>
+      <section class="card" id="cConn"><h2 class="display">${t("conn.title")}</h2>
+        ${canCalendar() ? `<div class="conn-row">${icon("calendar")}<div class="grow"><b>${t("conn.cal")}</b><small class="muted">${t(store.profile?.calAuto ? "conn.calOn" : "conn.calOff")}</small></div>
+          <button class="btn sm ${store.profile?.calAuto ? "ghost" : "primary"}" type="button" id="calConn">${t(store.profile?.calAuto ? "conn.disconnect" : "conn.connect")}</button></div>` : ""}
+        <div class="conn-row">${icon("pin")}<div class="grow"><b>Pinterest</b><small class="muted">${store.style?.boardUrl ? esc(t("conn.pinOn", { board: store.style.boardUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\/$/, ""), date: new Date(store.style.checkedAt || store.style.analyzedAt || Date.now()).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) })) : t("conn.pinOff")}</small></div>
+          ${store.style?.boardUrl ? `<button class="btn sm ghost" type="button" id="pinNow">${icon("refresh")}${t("conn.checkNow")}</button>` : `<a class="btn sm primary" href="#/estilo">${t("conn.connect")}</a>`}</div>
+        <p class="status" id="connSt" aria-live="polite"></p>
+      </section>
       <a class="card style-link" href="#/estilo">
         <div class="row between"><h2 class="display">${t("style.title")}</h2>${icon("chevron")}</div>
         ${store.style?.summary ? `<b>${esc(store.style.name || "")}</b><p class="muted" style="margin:0">${esc(store.style.summary)}</p>
@@ -155,6 +162,21 @@ export function renderProfile(view) {
       catch { b.disabled = false; toast(t("item.saveFail"), "error"); }
     };
   }
+  const calB = $("#calConn", view);
+  if (calB) calB.onclick = async () => {
+    const st = $("#connSt", view);
+    if (store.profile?.calAuto) { await saveProfile({ calAuto: false }); store.profile.calAuto = false; toast(t("conn.calDisconnected")); location.hash = "#/perfil"; return renderProfile(view); }
+    calB.disabled = true;
+    try { await planFromCalendar(); await saveProfile({ calAuto: true }); store.profile.calAuto = true; toast(t("conn.calConnected")); return renderProfile(view); }
+    catch (e) { calB.disabled = false; say(st, e?.message || t("today.calFail"), "error"); }
+  };
+  const pinB = $("#pinNow", view);
+  if (pinB) pinB.onclick = async () => {
+    pinB.disabled = true; say($("#connSt", view), t("conn.checking"));
+    try { await (await import("../stylesync.js")).autoRefresh({ force: true }); say($("#connSt", view), t("conn.checked"), "ok"); }
+    catch { say($("#connSt", view), t("style.fail"), "error"); }
+    pinB.disabled = false;
+  };
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
   $("#langs", view).onclick = async (e) => {

@@ -42,15 +42,15 @@ export async function analyzePins({ board, pins, why }, { status = () => {} } = 
 }
 
 /** Revisión automática: cada 3 días mira si los tableros tienen pines nuevos y, si los hay, vuelve a sacar el estilo. */
-const EVERY = 3 * 24 * 3600 * 1000;
+const EVERY = 6 * 3600 * 1000; // conectado: mira el tablero cada vez que abres la app (como mucho cada 6 h); solo analiza si hay cambios
 let running = false;
-export async function autoRefresh() {
+export async function autoRefresh({ force = false } = {}) {
   if (running || !navigator.onLine) return;
   running = true;
   try {
     for (const b of boardsOf(store.style)) {
       if (b.source !== "pinterest" || !b.boardUrl || b.autoOff) continue;
-      if (Date.now() - (b.checkedAt || b.analyzedAt || 0) < EVERY) continue;
+      if (!force && Date.now() - (b.checkedAt || b.analyzedAt || 0) < EVERY) continue;
       const read = await readBoardPins(b.boardUrl).catch(() => null);
       if (!read?.pins?.length) { await saveBoard(b.id, { checkedAt: Date.now() }).catch(() => {}); continue; }
       const sig = pinSig(read.pins);
