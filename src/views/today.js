@@ -124,7 +124,7 @@ function tabToday(box) {
       dislikes: store.feedback.filter((f) => !f.liked).slice(0, 10).map((f) => names(f.itemIds)),
       recent: store.wear.filter((w) => w.date >= todayKey(since) && w.date < today).map((w) => ({ date: w.date, itemIds: w.itemIds })),
       exclude: more ? outfitsNow().map((o) => o.itemIds) : [],
-      count: 3,
+      count: 4,
     };
     try {
       const r = await api("/api/outfits", payload);
@@ -149,16 +149,33 @@ function tabToday(box) {
     const isWorn = worn && worn.itemIds.slice().sort().join("_") === key;
     if (!result.querySelector(".look")) {
       result.innerHTML = `
+        <div class="opts-head"><h2 class="display">${t("today.pick")}</h2><span class="muted small" id="optsN"></span></div>
+        <div class="scroller opts" id="opts"></div>
         <section class="look card">
           <div class="look-stage"><div id="stage"></div>${boardTools()}</div>
           <div class="look-info" id="info"></div>
         </section>`;
     }
     const td = store.today;
+    // las opciones, en miniatura, para elegir de un vistazo
+    const optsSig = outfits.map((x) => x.itemIds.join()).join("|") + "#" + state.sel + JSON.stringify(store.layouts || {}).length;
+    const opts = $("#opts", result);
+    if (opts.dataset.sig !== optsSig) {
+      opts.dataset.sig = optsSig;
+      opts.innerHTML = outfits.map((x, i) => `<div class="opt" role="button" tabindex="0" data-o="${i}" aria-pressed="${i === state.sel}" aria-label="${i + 1}. ${esc(x.title)}">
+          ${boardHTML(x.itemIds, { small: true })}<span><b>${i + 1}</b> ${esc(x.title)}</span></div>`).join("")
+        + `<button type="button" class="opt opt-more" id="more">${icon("refresh")}<span>${t("today.more")}</span></button>`;
+      $("#optsN", result).textContent = t("today.options", { n: outfits.length });
+      opts.onclick = async (e) => {
+        const c = e.target.closest("[data-o]");
+        if (c) { state.sel = +c.dataset.o; drawResult(); $("#stage", result)?.scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+        const m = e.target.closest("#more"); if (m) { m.disabled = true; await generate(true); }
+      };
+      opts.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset?.o) { e.preventDefault(); e.target.click(); } };
+    }
     $("#info", result).innerHTML = `
-      <div class="scroller look-pick">${outfits.map((x, i) => `<button type="button" class="chip" data-o="${i}" aria-pressed="${i === state.sel}">${i + 1}. ${esc(x.title)}</button>`).join("")}
-        <button type="button" class="chip" id="more">${icon("refresh")}${t("today.more")}</button></div>
       ${worn ? `<p class="worn-note">${icon("check")} ${t("today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
+      <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
@@ -171,8 +188,6 @@ function tabToday(box) {
       ${td?.missing ? `<p class="notice">${icon("spark")} ${esc(td.missing)}</p>` : ""}`;
     const info = $("#info", result);
     info.onclick = async (e) => {
-      const c = e.target.closest("[data-o]"); if (c) { state.sel = +c.dataset.o; drawResult(); return; }
-      if (e.target.closest("#more")) { e.target.closest("#more").disabled = true; await generate(true); return; }
       if (e.target.closest("#like") || e.target.closest("#dislike")) {
         const liked = !!e.target.closest("#like");
         try { await saveFeedback({ itemIds: o.itemIds, liked, title: o.title, plan: td?.plan || "" }); toast(t(liked ? "today.liked" : "today.disliked")); } catch { toast(t("item.saveFail"), "error"); }

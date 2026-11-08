@@ -439,11 +439,11 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
   },
 
   // Plan del día + tiempo + armario (+ estilo, gustos y lo llevado estos días) → outfits y cómo llevarlos
-  async "/api/outfits"({ wardrobe, plan, weather, style, likes, dislikes, recent, count = 3, exclude }, env) {
+  async "/api/outfits"({ wardrobe, plan, weather, style, likes, dislikes, recent, count = 4, exclude }, env) {
     const ids = new Set((wardrobe || []).map((w) => w.id));
     if (ids.size < 2) throw new HttpError(400, "Añade al menos una prenda de arriba y una de abajo para proponerte outfits.");
     const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 3500,
+      model: MAIN(env), maxTokens: 4500,
       content: `Eres el estilista personal de un hombre joven. Hoy tiene este plan: «${String(plan || "día normal").slice(0, 300)}».
 Tiempo: ${String(weather || "no indicado").slice(0, 600)}
 Estilo que busca (sacado de su Pinterest; lo que dice él manda): ${style ? String(style).slice(0, 2000) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
@@ -456,7 +456,7 @@ No le gustaron: ${listText(dislikes)}
 Lo que ha llevado los últimos días: ${(recent || []).map((r) => `${r.date}: ${(r.itemIds || []).join(", ")}`).join(" | ") || "nada registrado"}
 ${exclude?.length ? `No repitas exactamente estas combinaciones: ${exclude.map((x) => x.join("+")).join(" | ")}` : ""}
 
-Propón ${Math.min(4, Math.max(1, count))} outfits distintos usando SOLO ids de su armario.
+Propón EXACTAMENTE ${Math.min(4, Math.max(1, count))} outfits claramente distintos entre sí (no cambies solo una prenda: que varíen la idea, la paleta o el nivel de arreglo) usando SOLO ids de su armario. Si el armario es pequeño, repite prendas entre outfits antes que dar menos.
 Reglas:
 - Cada outfit: parte de arriba + parte de abajo (o una pieza entera) + calzado si tiene. Como mucho una prenda de cada capa, salvo capa de abrigo encima.
 - Adecuado al plan (formalidad, comodidad, actividad) y al tiempo de TODO el día: si hace frío por la mañana y calor a mediodía, propón capas y di cuándo quitarlas. Si llueve, calzado y abrigo que aguanten.
