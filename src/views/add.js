@@ -7,6 +7,7 @@ import { api, blobToBase64 } from "../api.js";
 import { saveItem, fullImage } from "../data.js";
 import { itemForm } from "./form.js";
 import { base64ToBlob } from "../api.js";
+import { searchWithLens } from "../lens.js";
 import { TYPE, COLOR, label } from "../catalog.js";
 
 const tintFor = (hex) => soften(hex, matchMedia("(prefers-color-scheme: dark)").matches ? 0.72 : 0.8, matchMedia("(prefers-color-scheme: dark)").matches ? 20 : 255);
@@ -49,7 +50,7 @@ export function openAdd(file) {
         <div class="progress" id="prog"><span id="progText">${t("add.cutting")}</span><div class="bar indet"><i></i></div></div></div>
       <p class="status" id="aiStatus" aria-live="polite">${t("add.reading")}</p>
       <button type="button" class="label-btn" id="labelBtn">${icon("tag")}<span><b>${t("item.addLabel")}</b><small>${t("item.labelHint")}</small></span></button>
-      <button type="button" class="link" id="officialBtn">${t("official.find")}</button>
+      ${officialTools()}
       <div id="official"></div>
       <div id="formSlot"></div>`;
     const form = itemForm();
@@ -90,7 +91,7 @@ export function openAdd(file) {
     let official = null;
     const useOfficial = (c, info) => { cut = c; official = info; showCut(root, c); $("#save", root).disabled = false; };
     $("#labelBtn", root).onclick = () => readLabel(form, root, useOfficial);
-    $("#officialBtn", root).onclick = () => findOfficial(form, root, useOfficial);
+    wireOfficial(form, root, useOfficial, async () => photo);
     const doSave = async (again) => {
       const data = form.read();
       if (!data.name) { toast(t("item.needName"), "error"); form.focusName(); return; }
@@ -135,6 +136,39 @@ function showCut(root, c) {
   setHalo(c.tone);
 }
 
+const officialTools = () => `
+  <div class="off-tools">
+    <span class="off-label">${t("official.title")}</span>
+    <div class="row wrap">
+      <button class="btn sm" type="button" id="officialBtn">${icon("search")}${t("official.findShort")}</button>
+      <button class="btn sm" type="button" id="lensBtn">${icon("camera")}Google Lens</button>
+      <button class="btn sm" type="button" id="linkBtn">${icon("copy")}${t("official.paste")}</button>
+    </div>
+    <form class="off-link" id="linkForm" hidden><input class="input" name="url" type="url" inputmode="url" placeholder="${t("official.linkPh")}" aria-label="${t("official.paste")}"><button class="btn sm primary" type="submit">${t("official.go")}</button></form>
+  </div>`;
+
+function wireOfficial(form, root, onPick, getPhoto) {
+  $("#officialBtn", root).onclick = () => findOfficial(form, root, onPick);
+  $("#lensBtn", root).onclick = async () => {
+    const b = await getPhoto(); if (!b) { toast(t("official.noPhoto"), "error"); return; }
+    try { await searchWithLens(b); $("#linkForm", root).hidden = false; say($("#aiStatus", root), t("official.lensHint")); }
+    catch (e) { if (!isCancel(e)) toast(t("official.lensFail"), "error"); }
+  };
+  $("#linkBtn", root).onclick = async () => {
+    const f = $("#linkForm", root); f.hidden = false;
+    try { const txt = await navigator.clipboard.readText(); if (/https?:\/\//.test(txt)) f.url.value = txt.trim(); } catch {}
+    f.url.focus();
+  };
+  $("#linkForm", root).onsubmit = async (e) => {
+    e.preventDefault();
+    const url = e.target.url.value.trim(); if (!url) return;
+    const box = $("#official", root);
+    box.innerHTML = `<div class="official"><p class="status">${t("official.reading")}</p></div>`;
+    try { const res = await api("/api/product", { url }); renderProducts(box, res.products, form, root, onPick); }
+    catch (err) { box.innerHTML = `<div class="official"><p class="status" data-kind="error">${esc(err?.message || t("official.fail"))}</p></div>`; }
+  };
+}
+
 /** Busca la prenda en la web oficial de la marca y deja elegir una de sus fotos para usarla en vez de la tuya. */
 async function findOfficial(form, root, onPick, ref) {
   const d = form.read(), box = $("#official", root);
@@ -148,6 +182,11 @@ async function findOfficial(form, root, onPick, ref) {
     box.innerHTML = `<div class="official"><p class="status">${t(res.reason === "sin-busqueda" ? "official.noSearch" : "official.none")}</p></div>`;
     return;
   }
+  renderProducts(box, res.products, form, root, onPick);
+}
+
+function renderProducts(box, products, form, root, onPick) {
+  const res = { products };
   box.innerHTML = `<div class="official"><div class="row between"><b>${t("official.title")}</b><span class="muted small">${t("official.pick")}</span></div>
     ${res.products.map((p, i) => `<div class="off-prod">
       <div class="off-meta"><span>${esc(p.name || "")}${p.color ? ` · ${esc(p.color)}` : ""}</span>${p.price ? `<span class="muted">${esc(p.price)}</span>` : ""}${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${t("official.view")}</a>` : ""}</div>
@@ -176,8 +215,8 @@ export function openEdit(item) {
     <div class="row wrap" style="margin-top:10px">
       <button class="btn sm" type="button" id="photo">${icon("camera")}${t("item.changePhoto")}</button>
       <button class="btn sm" type="button" id="labelBtn">${icon("tag")}${t("item.addLabel")}</button>
-      <button class="btn sm" type="button" id="officialBtn">${icon("search")}${t("official.findShort")}</button>
     </div>
+    ${officialTools()}
     <p class="status" id="aiStatus" aria-live="polite"></p>
     <div id="official"></div>
     <div id="formSlot"></div>
@@ -204,7 +243,9 @@ export function openEdit(item) {
   let official = null;
   const useOfficial = (c, info) => { cut = c; official = info; showCut(root, c); };
   $("#labelBtn", root).onclick = () => readLabel(form, root, useOfficial);
-  $("#officialBtn", root).onclick = () => findOfficial(form, root, useOfficial);
+  wireOfficial(form, root, useOfficial, async () => {
+    const u = await fullImage(item); return u ? await (await fetch(u)).blob() : null;
+  });
   $("#save", root).onclick = async () => {
     const data = form.read();
     if (!data.name) { toast(t("item.needName"), "error"); return; }

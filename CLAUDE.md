@@ -19,6 +19,7 @@ src/i18n.js             Todos los textos (t("clave")). Idioma nuevo = copiar el 
 src/catalog.js          Tipos, colores, estampados, materiales, ajustes, temporadas, tallas. Se guardan claves; worker CATALOG_FOR_AI debe coincidir
 src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe), normaliza prendas del formato antiguo
 src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/iconos
+src/lens.js             Google Lens sin claves: en Android comparte la foto (@capacitor/share + filesystem) para elegir Lens; en el ordenador abre lens.google.com/v3/upload con la foto. Después el usuario pega el enlace de la tienda → /api/product
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
@@ -54,6 +55,7 @@ cd worker && npx wrangler deploy
 | `/api/classify` | `{image}` JPEG base64 | `{name,type,colors[{k,hex}],pattern,materialKey,fit,seasons,formality,styleTags,brand}` con claves del catálogo |
 | `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn,ref}` |
 | `/api/official` | `{brand, ref, name, type, color}` | `{source, products:[{name,color,ref,price,url,images[]}], reason?}`. Zara: catálogo público `itxrest` de Inditex (tienda 10701 = España; respondió 200 desde un servidor el 8/11/2026, formato de productos sin verificar: se recorre el JSON buscando objetos con `name` + `xmedia`). Otras marcas: búsqueda de Google vía Gemini (necesita crédito) + JSON-LD/og:image de la ficha. H&M, COS y Mango bloquean servidores (403/429) |
+| `/api/product` | `{url}` ficha de producto (p. ej. copiada de Google Lens) | `{source:"enlace", products:[…]}` desde JSON-LD/og:image |
 | `/api/image` | `{url}` | `{image, mime}`: descarga la foto oficial (la app no puede por CORS) |
 | `/api/outfits` | `{wardrobe, style, occasion, weather}` | `{outfits:[{title,itemIds,why,tip}]}` |
 | `/api/style/images` | `{images[]}` | `{style}` |

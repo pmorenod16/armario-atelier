@@ -298,6 +298,14 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
     }
   },
 
+  // Enlace de una ficha de producto (p. ej. copiado de Google Lens) → nombre y fotos oficiales
+  async "/api/product"({ url }) {
+    let u; try { u = new URL(String(url).trim().match(/https?:\/\/\S+/)?.[0] || ""); } catch { throw new HttpError(400, "Ese enlace no es válido. Copia el enlace completo de la prenda."); }
+    const p = await productFromPage(u.href).catch(() => null);
+    if (!p) throw new HttpError(422, "No he podido leer esa página. Algunas tiendas no dejan; prueba con el enlace de otra tienda que la venda.");
+    return { source: "enlace", products: [p] };
+  },
+
   // Descarga una foto oficial (la app no puede por CORS) y la devuelve en base64
   async "/api/image"({ url }) {
     let u; try { u = new URL(url); } catch { throw new HttpError(400, "Enlace no válido."); }

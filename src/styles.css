@@ -381,3 +381,7 @@ body.has-sheet #toast { bottom: calc(96px + var(--safe-b)); }
 .off-imgs img { width: 100%; height: 100%; object-fit: cover; }
 #officialBtn.link { justify-self: start; }
 .add-body { display: grid; gap: 12px; }
+.off-tools { display: grid; gap: 8px; }
+.off-label { font: 650 12px/1 var(--font); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.off-link { display: flex; gap: 8px; }
+.off-link .input { flex: 1; min-height: 40px; padding: 8px 12px; font-size: 15px; }
