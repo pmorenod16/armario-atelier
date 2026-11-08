@@ -42,6 +42,7 @@ jobs:
             mkdir -p ~/.android
             echo "$ANDROID_DEBUG_KEYSTORE" | base64 -d > ~/.android/debug.keystore
             echo "Usando la firma fija del repositorio"
+            keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep -E "Alias|SHA1|SHA-1|Valid" || true
           else
             echo "::warning::Falta el secreto ANDROID_DEBUG_KEYSTORE: entrar con Google no funcionará en este APK"
           fi

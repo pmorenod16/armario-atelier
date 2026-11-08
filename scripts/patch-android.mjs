@@ -35,3 +35,32 @@ if (existsSync(wrapperPath)) {
   writeFileSync(wrapperPath, w);
   console.log("Tiempo de espera de Gradle ampliado");
 }
+
+// Firma: el APK de depuración se firma SIEMPRE con ~/.android/debug.keystore (el del secreto ANDROID_DEBUG_KEYSTORE),
+// con v1+v2+v3, para que cada versión se pueda instalar encima de la anterior y entrar con Google funcione.
+const appGradle = "android/app/build.gradle";
+if (existsSync(appGradle)) {
+  let g = readFileSync(appGradle, "utf8");
+  if (!g.includes("// firma-fija")) {
+    g += `
+// firma-fija
+android {
+    signingConfigs {
+        fija {
+            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+        }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.fija }
+    }
+}
+`;
+    writeFileSync(appGradle, g);
+  }
+}
