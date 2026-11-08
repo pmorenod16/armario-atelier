@@ -48,7 +48,7 @@ Idea: una app propia que reúne lo mejor de Whering (inventario) y Pronti AI (ou
 - **Precio razonable**: acorde a la calidad, al precio de mercado del tipo de prenda y a lo que va a durar (ni camiseta básica de 100 €, ni americana de plástico de 5 €).
 - En su talla.
 - Garantía de compatibilidad: cada recomendación dice con qué prendas suyas combina.
-- **Búsqueda hecha por la app en general, como Pronti AI** (no quiere más claves ni cuentas). Concretar en la fase 4.
+- **Búsqueda hecha por la app en general, como Pronti AI** (no quiere más claves ni cuentas). Concretado en la fase 4: buscador público de Zara + búsqueda de Google de Gemini (con su crédito de Google AI Pro) para el resto de tiendas; siempre hay enlaces al buscador de cada tienda.
 - **Lista de deseos** con precio.
 - **Modo tienda** (foto → ¿encaja?).
 

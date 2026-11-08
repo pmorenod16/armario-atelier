@@ -20,6 +20,7 @@ const listeners = new Set();
 export const store = {
   items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null,
   wear: [], feedback: [], trips: [], today: null, style: null, layouts: {}, // fase 2
+  shopping: null, wishlist: [], // fase 4
 };
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -45,12 +46,14 @@ export function startData() {
   list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   unsubs.push(onSnapshot(userCol("layouts"), (snap) => { store.layouts = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); emit(); }, () => {}));
   unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
+  unsubs.push(onSnapshot(metaDoc("shopping"), (s) => { store.shopping = s.exists() ? s.data() : null; emit(); }, () => {}));
+  list("wishlist", "wishlist", (a, b) => (b.addedAt || 0) - (a.addedAt || 0));
   unsubs.push(onSnapshot(metaDoc("style"), (s) => { store.style = s.exists() ? s.data() : null; emit(); }, () => {}));
 }
 export function stopData() {
   unsubs.splice(0).forEach((u) => u());
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
-  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {};
+  store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = [];
 }
 
 /** Acepta prendas guardadas con el formato anterior (colorName/colorHex/shape) y les da la forma nueva. */
@@ -197,3 +200,14 @@ export function styleText(s, { onlyMain = false } = {}) {
     extra.length && "Usa el tablero cuyo uso encaje con el plan; si ninguno encaja, el principal",
   ].filter(Boolean).join(". ");
 }
+
+/* ---------- Compras (fase 4) ---------- */
+// meta/shopping: {advice, combine[], style[], at, results{gapId:{products,links,searched}}}
+export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, updatedAt: Date.now() }, { merge: true });
+export const saveShopResult = (gapId, result) => setDoc(metaDoc("shopping"), { results: { [gapId]: result }, updatedAt: Date.now() }, { merge: true });
+export async function saveWish(w, id) {
+  id ||= "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  await setDoc(doc(userCol("wishlist"), id), { addedAt: Date.now(), ...w, updatedAt: Date.now() }, { merge: true });
+  return id;
+}
+export const deleteWish = (id) => deleteDoc(doc(userCol("wishlist"), id));

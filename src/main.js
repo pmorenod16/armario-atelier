@@ -10,6 +10,7 @@ import { $, $$, icon, say, topSheet, isNative, setHalo } from "./ui.js";
 import { renderCloset } from "./views/closet.js";
 import { renderToday } from "./views/today.js";
 import { renderStyle } from "./views/style.js";
+import { renderShop } from "./views/shop.js";
 import { renderProfile, runOnboarding } from "./views/profile.js";
 import { openAdd } from "./views/add.js";
 
@@ -68,7 +69,7 @@ let cleanup = null;
 const soon = (k) => (v) => {
   v.innerHTML = `<div class="soon"><div class="soon-card"><div class="soon-orb"></div><span class="pill">${t(`soon.${k}.phase`)}</span><h1 class="display">${t(`soon.${k}.title`)}</h1><p>${t(`soon.${k}.body`)}</p></div></div>`;
 };
-const ROUTES = { hoy: renderToday, armario: renderCloset, compras: soon("shop"), perfil: renderProfile, estilo: renderStyle };
+const ROUTES = { hoy: renderToday, armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
 const DEFAULT = "hoy";
 
 function route() {

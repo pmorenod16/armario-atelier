@@ -8,7 +8,7 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 
 ## Especificación y fases
 **`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
-1. Armario (aprobada el 8/11) · 2. Outfits del día (aprobada el 8/11; extras propuestos aplazados) · 3. Estilo (Pinterest; construida, lectura del tablero comprobada en real el 8/11 —fallaba por perfil privado—; pendiente de su aprobación) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+1. Armario (aprobada el 8/11) · 2. Outfits del día (aprobada el 8/11; extras propuestos aplazados) · 3. Estilo (aprobada el 8/11, con recrear pin, varios tableros y revisión automática) · 4. Compras (construida el 8/11, pendiente de su revisión: dos listas de huecos, modelos reales, lista de deseos, modo tienda).
 Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
 
 ## Estructura
@@ -29,6 +29,7 @@ src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
+src/views/shop.js       Compras (#/compras): pestañas Te falta (/api/gaps → dos listas combine/style; cada hueco «Buscar modelos» → /api/shop, resultados guardados por hueco), Deseos (wishlist; añadir por enlace con /api/product, «Ver precio» vuelve a leer la ficha, «Ya lo tengo» lo abre en Añadir con su foto) y Modo tienda (foto + precio opcional → /api/shop/check). sizeFor(type) saca la talla del perfil
 src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
 src/stylesync.js        Leer tablero + sacar estilo (readBoardPins/analyzePins) y autoRefresh(): cada 3 días (main.js, 6 s tras arrancar) mira si cada tablero tiene pines nuevos (pinSig) y, si cambia, lo vuelve a analizar; se desactiva por tablero con autoOff
 src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): pestañas de tableros (principal + extra con su uso: salir, eventos…); tocar un pin = «Recréame este pin» (/api/style/recreate); enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
@@ -58,7 +59,9 @@ cd worker && npx wrangler deploy
 - `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
 - `users/{uid}/layouts/{ids ordenados}`: `boxes{itemId:[left,top,width,height,z]}` en % del lienzo 4:5, `at`.
 - `users/{uid}/meta/style`: tablero principal en los campos de arriba + `extra[{id,use,…mismos campos}]` (otros tableros; data.boardsOf/saveBoard/addBoard/removeBoard; styleText los manda todos con su uso y la IA elige según el plan) + `pinSig, checkedAt, autoOff` por tablero. Campos: `name, mix[{name,share,look}], summary, keywords[], palette[{name,hex}], keyPieces[], formulas[], fabrics, silhouettes, footwear, avoid, notes (de Polete), source (pinterest|capturas), boardUrl, pins[{img,link}] (URLs de pinimg o miniaturas dataURL), pinCount, analyzed, analyzedAt, match{score,fits[],off[],note,at,items}`.
-- `users/{uid}/meta/shopping`, `outfits/`: de la versión anterior; se rehacen en la fase 4.
+- `users/{uid}/meta/shopping`: `advice, combine[GAP], style[GAP], at, items, results{gapId:{products[],links[],size,searched}}`; GAP = `{id,kind,piece,type,color,colorHex,why,priority,searchTerm,priceMin,priceMax,pairsWith[ids],newOutfits,stores[]}`.
+- `users/{uid}/wishlist/{id}`: `name, store, price, priceNum, oldPrice, url, image (URL o dataURL del modo tienda), color, gap, pairsWith[], verdict (justo|caro|barato), size, bought, boughtAt, addedAt, checkedAt`.
+- `users/{uid}/outfits/`: de la versión anterior, sin uso.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
@@ -77,8 +80,9 @@ cd worker && npx wrangler deploy
 | `/api/style/pins` | `{board, pins[{img,link}], titles}` leídos por el móvil (src/pinterest.js, widget JSONP) | `{style, analyzed}`; si no puede bajar las fotos responde 424 "IMAGENES" y la app las baja ella y usa `/api/style/images` |
 | `/api/style/recreate` | `{image (base64) o url (pinimg), wardrobe, style}` | `{title, look[], itemIds, likeness 0-100, why, how[], missing[{piece,why}]}` |
 | `/api/style/match` | `{style (texto), wardrobe}` | `{score 0-100, fits[], off[], note}` |
-| `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
-| `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → si hay `TAVILY_API_KEY`: Tavily (`include_domains` = tiendas, gratis 1.000/mes) + Gemini sin búsqueda elige productos por índice; si no, Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |
+| `/api/gaps` | `{wardrobe, style (texto), sizes}` | `{advice, combine[GAP], style[GAP]}` (ver meta/shopping); precio razonable min-max por prenda |
+| `/api/shop` | `{piece, searchTerm, color, priceMin, priceMax, stores, size}` → Zara (buscador itxrest, sección hombre) + búsqueda de Google con Gemini para el resto (solo si hay crédito; si no, se ignora) + ficha (productFromPage) para fotos/precio; la IA (FAST) descarta lo que no es esa prenda y ordena; `verdict` por precio: barato (< 0,6·min), caro (> 1,35·max), justo | `{products[{store,name,price,priceNum,color,url,image,verdict}], links[{store,url}] (buscador de cada tienda), size, searched}`. TAVILY ya no se usa |
+| `/api/shop/check` | `{image, price?, wardrobe, style, sizes}` (modo tienda) | `{name,type,verdict si|quizas|no,score,headline,styleFit,outfits[{title,itemIds,how}],similar[],price,priceMin,priceMax,priceNote,check[],size}` |
 
 IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/mes de crédito de Cloud). Modelos en `wrangler.toml`: `MODEL_MAIN` y `MODEL_FAST` = `gemini-3.5-flash`. Llamadas REST a `generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent` con `x-goog-api-key`; JSON forzado con `responseMimeType` salvo en la búsqueda (no se puede combinar con `google_search`). La clave va como secreto `GEMINI_API_KEY`, nunca en el código. **Reserva:** `askAI` prueba Gemini (`askGemini`) y, si no hay clave o falla con 429/5xx, usa NVIDIA (`askNvidia`, `integrate.api.nvidia.com/v1/chat/completions`, formato OpenAI; visión `meta/llama-3.2-90b-vision-instruct` con 1 imagen por petición, texto `meta/llama-3.3-70b-instruct`; secreto `NVIDIA_API_KEY`). La búsqueda en tiendas (`search: true`) no tiene reserva y **no funciona en el plan gratuito de Gemini** (429 RESOURCE_EXHAUSTED, comprobado el 6/11/2026): necesita facturación/créditos; si falla devuelve SEARCH_UNAVAILABLE y la app muestra los enlaces de las tiendas. Probado en real: `/api/gaps` funciona con Gemini gratis. Tiendas: zara, massimo, hm, mango, pull, bershka, uniqlo, cos (todas con tiendas físicas en España); los ids coinciden en `worker/src/index.js` (STORE_DOMAINS).
 
@@ -94,5 +98,5 @@ IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/me
 Para probar la interfaz en local sin cuenta: un vite.config aparte con un plugin `resolveId` que sustituya `firebase.js` y `api.js` por versiones en memoria (ver historial). No dejar ese archivo en el repo.
 
 ## Estado
-Fase 3 construida y probada con datos simulados (8/11/2026). Fase 2 construida y probada con datos simulados (8/11/2026). Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
+Fase 4 (Compras) construida y probada con datos simulados (8/11/2026); /api/shop probado con respuestas simuladas de Zara. Sin probar en real: el formato de la búsqueda de Zara y la búsqueda de Google con Gemini (necesita crédito). Fase 3 construida y probada con datos simulados (8/11/2026). Fase 2 construida y probada con datos simulados (8/11/2026). Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
 Funciona de antes: login con Google en web, `/api/gaps` con Gemini, APK firmado en Actions, web en https://pmorenod16.github.io/armario-atelier/.

@@ -110,6 +110,33 @@ function inditexProducts(data, base) {
   return out;
 }
 const OFFICIAL = { zara };
+/** "29,95 €" / "29.95 EUR" / 2995 → 29.95 */
+function priceNumber(p) {
+  if (typeof p === "number") return p;
+  const m = String(p || "").replace(/\s/g, "").match(/(\d{1,4}(?:[.,]\d{3})*(?:[.,]\d{1,2})?)/);
+  if (!m) return null;
+  let x = m[1];
+  if (/[.,]\d{1,2}$/.test(x)) x = x.replace(/[.,](?=\d{3}\b)/g, "").replace(",", ".");
+  else x = x.replace(/[.,]/g, "");
+  const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
+}
+/** Productos reales de otras tiendas con la búsqueda de Google de Gemini (necesita crédito o facturación en Gemini). */
+async function googleProducts(env, { piece, term, color, priceMin, priceMax, keys }) {
+  const domains = keys.map((k) => STORE_DOMAINS[k]);
+  const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
+  const { text, sources } = await askAI(env, {
+    model: MAIN(env), maxTokens: 2500, search: true,
+    content: `Busca en Google productos de HOMBRE a la venta ahora en las webs españolas de: ${keys.map((k) => `${STORE_NAMES[k]} (${STORE_DOMAINS[k]})`).join(", ")}.
+Prenda: "${clip(piece, 120)}"${color ? `, color ${color}` : ""}. Búsqueda: "${term}". Precio razonable ${priceMin || "?"}-${priceMax || "?"} €.
+Hasta 6 productos distintos. Solo datos que aparezcan en los resultados; si no ves el precio, deja "price" vacío. No inventes productos ni enlaces.
+Responde al final SOLO con JSON: {"products":[{"store": nombre de la tienda, "name": nombre del producto, "price": "29,95 €", "url": enlace a la ficha, "color": color}]}`,
+  });
+  const r = parseJson(text);
+  return (r.products || []).map((p) => {
+    let ok = false; try { const u = new URL(p.url); ok = u.protocol === "https:" && okHost(u.hostname); } catch {}
+    return ok ? { store: clip(p.store, 30), name: p.name, price: p.price, url: p.url, color: p.color, via: "google" } : null;
+  }).filter(Boolean);
+}
 
 /** Ficha de producto de cualquier web: nombre e imágenes desde JSON-LD u og:image. */
 const MOBILE = { ...BROWSER, "user-agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36" };
@@ -601,89 +628,115 @@ Valora de 0 a 100 cuánto se parece el armario a ese estilo. Responde SOLO con J
     return { score: Math.max(0, Math.min(100, Math.round(+r.score || 0))), fits: ok(r.fits), off: ok(r.off), note: String(r.note || "").slice(0, 400) };
   },
 
-  // Armario + estilo → qué falta comprar
-  async "/api/gaps"({ wardrobe, style, budget, section }, env) {
+  // Armario + estilo → qué falta comprar, en dos listas: (a) para combinar mejor lo que tiene; (b) para llegar a su estilo
+  async "/api/gaps"({ wardrobe, style, sizes }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
     const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 2500,
-      content: `Eres estilista y personal shopper en España. Compara el armario con el estilo objetivo y decide qué falta comprar para crear más outfits de ese estilo con lo que ya hay. Prioriza básicos versátiles que combinen con muchas prendas existentes. Presupuesto: ${budget || "medio"}. Sección: ${section || "cualquiera"}.
-Tiendas posibles (todas con tiendas físicas en España): ${Object.keys(STORE_DOMAINS).join(", ")}. Elige 2-3 por prenda según encaje de estilo y presupuesto.
+      model: MAIN(env), maxTokens: 5000,
+      content: `Eres estilista y personal shopper de HOMBRE en España. Analiza su armario y decide qué le falta comprar.
+Su estilo (de su Pinterest; lo que dice él manda): ${String(style || "aún no definido: actual, cuidado y sencillo").slice(0, 3500)}
+Sus tallas: ${Object.entries(sizes || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(", ") || "sin indicar"}
+Su armario (id | nombre | tipo | colores | estampado | material | ajuste | formalidad | temporadas | estilo | usos):
+${itemsText(wardrobe) || "(vacío)"}
 
-Estilo objetivo:
-${styleText(style)}
-
-Armario (id | nombre | tipo/forma | color | temporada | formalidad | estilo):
-${wardrobeText(wardrobe) || "(vacío)"}
-
-Responde SOLO con JSON: {"advice": 2 frases de consejo general, "gaps":[{"piece": prenda concreta, "category": top|outer|bottom|dress|shoes|accessory, "why": 1-2 frases, "priority": "alta"|"media"|"baja", "searchTerm": término corto para buscar en la tienda, "colorHex": "#rrggbb", "priceRange": rango en euros, "stores": [ids de tienda], "combinesWith": [ids de prendas del armario]}]} con 4-7 prendas ordenadas por prioridad.`,
+Haz DOS listas, sin repetir prendas entre ellas ni proponer algo que ya tenga (mira tipo + color):
+- "combine": 3-6 prendas que más outfits NUEVOS desbloquean con lo que YA tiene (básicos puente, un calzado que falta, una capa para entretiempo…). Piensa en prendas suyas que hoy casi no puede combinar.
+- "style": 3-6 prendas que le acercan a su estilo de Pinterest (si es una mezcla de estéticas, cubre las dos) y que además combinen con su armario.
+Para cada prenda: algo concreto y comprable (tipo + color + material/ajuste), no genérico.
+Precio razonable en euros: acorde a la calidad que pide esa prenda, al precio de mercado en España y a lo que va a durar (ni camiseta básica de 100 €, ni americana de 15 € de plástico). Da un rango min-max.
+Tiendas: elige 2-4 de ${Object.keys(STORE_DOMAINS).join(", ")} donde suela haber esa prenda en ese rango y estilo.
+Responde SOLO con JSON: {"advice": 1-2 frases de diagnóstico de su armario, "combine": [GAP], "style": [GAP]} con GAP = {"piece": nombre corto (ej. "Chino beige de corte recto"), "type": tipo del catálogo (${CATALOG_FOR_AI.split("\n")[0].replace("tipo: ", "")}), "color": color en español, "colorHex": "#rrggbb", "why": 1-2 frases de por qué, "priority": "alta"|"media"|"baja", "searchTerm": 2-5 palabras para el buscador de una tienda (ej. "chino recto beige"), "priceMin": número, "priceMax": número, "pairsWith": [ids de SUS prendas con las que combina, 3-6], "newOutfits": número aproximado de outfits nuevos que permite, "stores": [ids de tienda]}`,
     });
     const r = parseJson(text);
-    r.gaps = (r.gaps || []).slice(0, 8).map((g) => ({
-      ...g, priority: ["alta", "media", "baja"].includes(g.priority) ? g.priority : "media",
-      stores: (g.stores || []).filter((k) => STORE_DOMAINS[k]), colorHex: /^#[0-9a-f]{6}$/i.test(g.colorHex || "") ? g.colorHex : "#888888",
-    }));
-    return r;
+    const seen = new Set();
+    const clean = (list, kind) => (Array.isArray(list) ? list : []).filter((g) => g?.piece).slice(0, 6).map((g, i) => {
+      const lo = Math.max(1, Math.round(+g.priceMin || 0)), hi = Math.max(lo, Math.round(+g.priceMax || 0));
+      return {
+        id: `${kind}-${i}-${clip(g.piece, 40).toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-")}`,
+        kind, piece: clip(g.piece, 70), type: clip(g.type, 20), color: clip(g.color, 30), colorHex: /^#[0-9a-f]{6}$/i.test(g.colorHex || "") ? g.colorHex : "#8a8f98",
+        why: clip(g.why, 300), priority: ["alta", "media", "baja"].includes(g.priority) ? g.priority : "media",
+        searchTerm: clip(g.searchTerm || g.piece, 60), priceMin: lo || null, priceMax: hi || null,
+        pairsWith: [...new Set((g.pairsWith || []).filter((id) => ids.has(id)))].slice(0, 6), newOutfits: Math.max(0, Math.round(+g.newOutfits || 0)) || null,
+        stores: [...new Set((g.stores || []).filter((k) => STORE_DOMAINS[k]))].slice(0, 4),
+      };
+    }).filter((g) => { const k = g.piece.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    return { advice: clip(r.advice, 400), combine: clean(r.combine, "combine"), style: clean(r.style, "style") };
   },
 
-  // Una prenda → modelos reales ahora mismo en las webs de las tiendas (búsqueda web de Claude)
-  async "/api/shop"({ piece, searchTerm, colorHint, section, budget, stores }, env) {
+  // Una prenda que falta → modelos reales a la venta (Zara directo + búsqueda de Google si hay crédito), con precio juzgado
+  async "/api/shop"({ piece, searchTerm, color, priceMin, priceMax, stores, size }, env) {
+    const term = clip(searchTerm || piece, 80);
+    if (!term) throw new HttpError(400, "Falta qué buscar.");
     const keys = (stores || []).filter((k) => STORE_DOMAINS[k]);
-    const use = keys.length ? keys : ["zara", "massimo", "hm", "mango"];
-    const domains = Object.values(STORE_DOMAINS);
-    const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
-    const okUrl = (url) => { try { const u = new URL(url); return u.protocol === "https:" && okHost(u.hostname); } catch { return false; } };
-    const storeOf = (url) => { try { const h = new URL(url).hostname; const k = Object.keys(STORE_DOMAINS).find((k) => h === STORE_DOMAINS[k] || h.endsWith("." + STORE_DOMAINS[k])); return STORE_NAMES[k] || h; } catch { return ""; } };
-    const term = String(searchTerm || piece).slice(0, 80);
-
-    // 1) Gratis: Tavily busca solo en las webs de las tiendas y la IA (sin búsqueda) extrae los productos
-    // Limpia la clave: espacios, saltos de línea o comillas que se cuelan al copiarla
-    const tavilyKey = String(env.TAVILY_API_KEY || "").replace(/[\s"'`]/g, "");
-    if (tavilyKey) {
-      if (!tavilyKey.startsWith("tvly-")) throw new HttpError(500, "La clave de Tavily no tiene el formato correcto (debe empezar por tvly-). Vuelve a copiarla de app.tavily.com y guárdala otra vez en TAVILY_API_KEY.");
-      const res = await fetch("https://api.tavily.com/search", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${tavilyKey}` },
-        body: JSON.stringify({
-          query: `${term} ${section === "mujer" ? "mujer" : section === "hombre" ? "hombre" : ""} comprar`.trim(),
-          include_domains: use.map((k) => STORE_DOMAINS[k]), max_results: 12, search_depth: "basic", country: "spain", language: "es",
-        }),
-      });
-      if (res.status === 401 || res.status === 403) {
-        console.warn("Tavily", res.status, `clave ${tavilyKey.slice(0, 9)}… (${tavilyKey.length} caracteres)`, (await res.text()).slice(0, 300));
-        throw new HttpError(500, `Tavily ha rechazado la clave (empieza por ${tavilyKey.slice(0, 9)}… y tiene ${tavilyKey.length} caracteres). Comprueba en app.tavily.com que coincide y guárdala de nuevo en TAVILY_API_KEY.`);
-      }
-      if (res.status === 429 || res.status === 432 || res.status === 433) throw new HttpError(429, "Se han acabado las búsquedas gratuitas de este mes. Usa los botones de las tiendas.");
-      if (!res.ok) { console.warn("Tavily", res.status, (await res.text()).slice(0, 300)); throw new HttpError(502, "El buscador de tiendas no responde ahora. Usa los botones de las tiendas."); }
-      const found = ((await res.json()).results || []).filter((x) => okUrl(x.url)).slice(0, 12);
-      if (!found.length) return { products: [] };
-      const list = found.map((x, i) => `[${i}] ${storeOf(x.url)} | ${x.title} | ${x.url}\n${String(x.content || "").slice(0, 400)}`).join("\n\n");
-      const r = parseJson(await askAI(env, {
-        model: FAST(env), maxTokens: 1500,
-        content: `Estos son resultados de búsqueda en webs de tiendas de ropa. Elige hasta 6 que sean fichas de producto (no categorías ni ayuda) y encajen con: "${String(piece).slice(0, 120)}" (color orientativo ${colorHint || "libre"}, presupuesto ${budget || "medio"}).
-Usa solo datos que aparezcan en el texto; si no aparece el precio, deja "price" vacío. No inventes nada.
-Responde SOLO con JSON: {"products":[{"i": número del resultado, "name": nombre del producto, "price": "29,95 €", "color": color si aparece}]}
-
-${list}`,
-      }));
-      return {
-        products: (r.products || []).map((p) => { const x = found[Number(p.i)]; return x ? { store: storeOf(x.url), name: String(p.name || x.title).slice(0, 120), price: String(p.price || ""), color: String(p.color || ""), url: x.url } : null; })
-          .filter(Boolean).slice(0, 6),
-      };
+    const use = keys.length ? keys : ["zara", "massimo", "mango", "uniqlo"];
+    const found = [], notes = [];
+    const tasks = [];
+    // 1) Zara: su buscador público (sección hombre) devuelve productos con precio y fotos
+    tasks.push(zara(term).then((l) => found.push(...l.map((p) => ({ ...p, store: "Zara", via: "zara" })))).catch((e) => notes.push("zara: " + e.message)));
+    // 2) Búsqueda de Google con Gemini (solo si la cuenta tiene crédito/facturación): el resto de tiendas
+    const others = use.filter((k) => k !== "zara");
+    if (others.length) tasks.push(googleProducts(env, { piece, term, color, priceMin, priceMax, keys: others }).then((l) => found.push(...l)).catch((e) => notes.push("google: " + (e.status || "") + " " + e.message)));
+    await Promise.all(tasks);
+    // completar con la ficha (foto y precio) lo que llega sin foto
+    await Promise.all(found.filter((p) => !p.images?.length && p.url).slice(0, 6).map(async (p) => {
+      try { const f = await productFromPage(p.url); p.images = f.images; p.price ||= f.price; p.name ||= f.name; } catch {}
+    }));
+    let products = found.filter((p) => p.url && p.name).map((p) => {
+      const n = priceNumber(p.price);
+      const verdict = !n || !priceMin ? null : n < priceMin * 0.6 ? "barato" : n > (priceMax || priceMin) * 1.35 ? "caro" : "justo";
+      return { store: p.store, name: clip(p.name, 120), price: p.price || "", priceNum: n, color: clip(p.color, 40), url: p.url, image: p.images?.[0] || null, verdict };
+    });
+    // la IA descarta lo que no es esa prenda (el buscador de la tienda trae de todo) y ordena
+    if (products.length > 3) {
+      try {
+        const list = products.map((p, i) => `[${i}] ${p.store} | ${p.name} | ${p.color} | ${p.price || "sin precio"}`).join("\n");
+        const r = parseJson(await askAI(env, {
+          model: FAST(env), maxTokens: 900,
+          content: `Busco para un hombre: "${clip(piece, 120)}"${color ? ` en color ${color}` : ""}, precio razonable ${priceMin || "?"}-${priceMax || "?"} €. De estos productos reales, quédate con los que SÍ son esa prenda (tipo y color parecidos) y ordénalos de mejor a peor (encaje, color, precio razonable). Máximo 8.
+${list}
+Responde SOLO con JSON: {"keep": [números]}`,
+        }));
+        const keep = (r.keep || []).map(Number).filter((i) => products[i]);
+        if (keep.length) products = [...new Set(keep)].map((i) => products[i]);
+      } catch (e) { console.warn("orden de productos", e.message); }
     }
+    const seenUrl = new Set();
+    products = products.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 8);
+    const q = encodeURIComponent(`${term} hombre`);
+    const links = use.map((k) => ({
+      store: STORE_NAMES[k],
+      url: k === "zara" ? `https://www.zara.com/es/es/search?searchTerm=${encodeURIComponent(term)}&section=MAN`
+        : k === "hm" ? `https://www2.hm.com/es_es/search-results.html?q=${q}`
+        : `https://www.google.com/search?q=${q}+site%3A${STORE_DOMAINS[k]}`,
+    }));
+    if (notes.length) console.warn("tiendas", notes.join(" · "));
+    return { products, links, size: clip(size, 10) || null, searched: Date.now() };
+  },
 
-    // 2) Con facturación en Gemini: búsqueda de Google integrada
-    const { text, sources } = await askAI(env, {
-      model: MAIN(env), maxTokens: 2500, search: true,
-      content: `Busca en Google productos a la venta ahora en las webs españolas de estas tiendas: ${use.map((k) => `${STORE_NAMES[k]} (${STORE_DOMAINS[k]})`).join(", ")}. Solo de esos dominios: ${domains.join(", ")}.
-Prenda: "${String(piece).slice(0, 120)}". Búsqueda sugerida: "${term}". Color orientativo ${colorHint || "libre"}, sección ${section || "cualquiera"}, presupuesto ${budget || "medio"}.
-Devuelve hasta 6 productos distintos. Usa solo nombres, precios y enlaces que aparezcan en los resultados; si no ves el precio, deja "price" vacío. No inventes productos.
-Responde al final SOLO con JSON: {"products":[{"store": nombre de la tienda, "name": nombre del producto, "price": "29,95 €", "url": enlace a la ficha, "color": color si aparece}]}`,
+  // Modo tienda: foto de una prenda en la tienda → ¿encaja con su armario y su estilo? ¿con qué la combina?
+  async "/api/shop/check"({ image, price, wardrobe, style, sizes }, env) {
+    if (!image) throw new HttpError(400, "Haz una foto de la prenda.");
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    const text = await askAI(env, {
+      model: MAIN(env), maxTokens: 3500,
+      content: [imageBlock(cleanImg(image)), textBlock(`Está en una tienda y ha hecho esta foto a una prenda (puede verse la etiqueta o el precio). Eres su personal shopper: dile con honestidad si le compensa.
+Su estilo: ${String(style || "no definido").slice(0, 3000)}
+Sus tallas: ${Object.entries(sizes || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(", ") || "sin indicar"}
+${price ? `Precio que ha visto: ${clip(price, 20)} €` : "Si se ve el precio en la foto, úsalo."}
+Su armario (id | nombre | tipo | colores | estampado | material | ajuste | formalidad | temporadas | estilo | usos):
+${itemsText(wardrobe) || "(vacío)"}
+
+Valora: encaje con su estilo, cuántos outfits nuevos le da con lo que tiene, si ya tiene algo casi igual (no compres repetido), calidad aparente y si el precio es razonable para esa calidad y lo que va a durar.
+Responde SOLO con JSON: {"name": qué prenda es (tipo + color + material si se ve), "type": tipo del catálogo, "verdict": "si"|"quizas"|"no", "score": 0-100, "headline": 1 frase directa con la decisión, "styleFit": 1-2 frases sobre su estilo, "outfits": [{"title": nombre corto, "itemIds": [ids de SUS prendas que van con ella, 2-4], "how": 1 frase}] (2-3 outfits), "similar": [ids de prendas suyas casi iguales], "price": precio en euros si se sabe (número) o null, "priceMin": precio razonable mínimo, "priceMax": máximo, "priceNote": 1 frase sobre el precio, "check": [2-3 cosas que mirar en el probador o la etiqueta: tejido, costuras, largo de manga…], "size": talla que debería probarse según sus tallas o null}`)],
     });
     const r = parseJson(text);
-    const sourceFor = (store) => sources.find((w) => domains.some((d) => (w.title || "").includes(d)) && (w.title || "").toLowerCase().includes(String(STORE_DOMAINS[Object.keys(STORE_NAMES).find((k) => STORE_NAMES[k] === store)] || "~").split(".")[0]));
-    r.products = (r.products || []).map((p) => {
-      if (okUrl(p.url)) return p;
-      const src = sourceFor(p.store); return src ? { ...p, url: src.uri } : null;
-    }).filter(Boolean).slice(0, 6);
-    return r;
+    const ok = (l) => [...new Set((l || []).filter((id) => ids.has(id)))];
+    return {
+      name: clip(r.name, 80) || "Prenda", type: clip(r.type, 20), verdict: ["si", "quizas", "no"].includes(r.verdict) ? r.verdict : "quizas",
+      score: Math.max(0, Math.min(100, Math.round(+r.score || 0))), headline: clip(r.headline, 200), styleFit: clip(r.styleFit, 300),
+      outfits: (r.outfits || []).map((o) => ({ title: clip(o.title, 50), itemIds: ok(o.itemIds).slice(0, 4), how: clip(o.how, 160) })).filter((o) => o.itemIds.length).slice(0, 3),
+      similar: ok(r.similar).slice(0, 4), price: +r.price || null, priceMin: +r.priceMin || null, priceMax: +r.priceMax || null,
+      priceNote: clip(r.priceNote, 200), check: (r.check || []).map((x) => clip(x, 120)).slice(0, 3), size: r.size ? clip(r.size, 10) : null,
+    };
   },
 };
