@@ -333,7 +333,7 @@ function tabToday(box) {
       opts.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset?.o) { e.preventDefault(); e.target.click(); } };
     }
     $("#info", result).innerHTML = `
-      ${worn ? `<p class="worn-note">${icon("check")} ${t(tomorrow ? "day.readyNote" : "today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
+      ${worn ? `<p class="worn-note">${icon("check")} ${t(tomorrow ? "day.readyNote" : "today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })} <button class="linklike" type="button" id="unwear2">${t("today.cancelWear")}</button></p>` : ""}
       <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
@@ -344,7 +344,9 @@ function tabToday(box) {
         <button class="btn sm ${fb?.liked === true ? "on" : ""}" type="button" id="like" aria-pressed="${fb?.liked === true}">${icon("up")}${t("today.like")}</button>
         <button class="btn sm ${fb?.liked === false ? "on" : ""}" type="button" id="dislike" aria-pressed="${fb?.liked === false}">${icon("down")}${t("today.dislike")}</button>
         <button class="btn sm ${lookSaved(o.itemIds) ? "on" : ""}" type="button" id="saveLook" aria-pressed="${!!lookSaved(o.itemIds)}">${icon("bookmark")}${t(lookSaved(o.itemIds) ? "looks.saved" : "looks.save")}</button>
-        <button class="btn sm primary" type="button" id="wear" ${isWorn ? "disabled" : ""}>${icon("check")}${t(isWorn ? (tomorrow ? "day.ready" : "today.worn") : (tomorrow ? "day.wear" : "today.wear"))}</button>
+        ${isWorn
+          ? `<button class="btn sm ghost" type="button" id="unwear">${icon("close")}${t(tomorrow ? "day.unwear" : "today.unwear")}</button>`
+          : `<button class="btn sm primary" type="button" id="wear">${icon("check")}${t(tomorrow ? "day.wear" : "today.wear")}</button>`}
       </div>
       ${td?.missing ? `<p class="notice">${icon("spark")} ${esc(td.missing)}</p>` : ""}`;
     const info = $("#info", result);
@@ -356,6 +358,9 @@ function tabToday(box) {
       if (e.target.closest("#wear")) {
         try { await logWear({ date: today, itemIds: o.itemIds, title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t(tomorrow ? "day.saved" : "today.wornSaved")); }
         catch { toast(t("item.saveFail"), "error"); }
+      }
+      if (e.target.closest("#unwear") || e.target.closest("#unwear2")) {
+        try { await deleteWear(today); toast(t("today.wearCancelled")); } catch { toast(t("item.saveFail"), "error"); }
       }
       if (e.target.closest("#saveLook")) {
         const ex = lookSaved(o.itemIds);

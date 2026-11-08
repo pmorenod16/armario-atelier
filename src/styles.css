@@ -690,3 +690,5 @@ a.btn { text-decoration: none; color: inherit; }
 .conn-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
 .conn-row > .ic { width: 22px; height: 22px; flex: none; }
 .conn-row .grow { display: grid; min-width: 160px; flex: 1; }
+/* botón con aspecto de enlace (Cancelar el «me lo pongo») */
+.linklike { background: none; border: 0; padding: 0 2px; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }

@@ -135,15 +135,17 @@ export async function logWear({ date = todayKey(), itemIds, title = "", plan = "
   const added = itemIds.filter((id) => !prev?.itemIds?.includes(id)), removed = (prev?.itemIds || []).filter((id) => !itemIds.includes(id));
   // con «preguntarme al día siguiente» (por defecto) no se marca nada aquí: se decide en la revisión de Hoy
   const auto = store.profile?.autoDirty !== false && store.profile?.washCheck === false;
+  const madeDirty = (prev?.madeDirty || []).filter((id) => itemIds.includes(id));
   for (const id of added) {
     const it = store.items.find((i) => i.id === id); if (!it) continue;
     const upd = { wearCount: increment(1), lastWorn: date, wearsSinceWash: increment(1) };
     // ropa sucia automática: después de X usos según el tipo (la camiseta 1, el vaquero 6…); abrigos, calzado y complementos nunca
     const lim = itemWashLimit(it);
-    if (auto && lim && (it.wearsSinceWash || 0) + 1 >= lim && it.status === "disponible") upd.status = isDryClean(it) ? "tintoreria" : "sucia";
+    if (auto && lim && (it.wearsSinceWash || 0) + 1 >= lim && it.status === "disponible") { upd.status = isDryClean(it) ? "tintoreria" : "sucia"; madeDirty.push(id); }
     b.update(doc(itemsRef(), id), upd);
   }
-  for (const id of removed) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1), wearsSinceWash: increment(-1) });
+  b.set(doc(userCol("wear"), date), { madeDirty }, { merge: true });
+  for (const id of removed) undoWearOn(b, id, date, prev);
   await b.commit();
 }
 /** Usos antes de ir a lavar, por tipo de prenda. */
@@ -188,11 +190,21 @@ export async function saveLook(look, id) {
 }
 export const deleteLook = (id) => deleteDoc(doc(userCol("looks"), id));
 export const lookSaved = (ids) => { const k = ids.slice().sort().join(); return store.looks.find((l) => l.itemIds.slice().sort().join() === k); };
+/** Deshace en una prenda el uso de ese día: usos, último día puesto y, si se marcó sucia sola por ese uso, la vuelve a disponible. */
+function undoWearOn(b, id, date, w) {
+  const it = store.items.find((i) => i.id === id); if (!it) return;
+  const upd = { wearCount: increment(-1), updatedAt: Date.now() };
+  if ((it.wearsSinceWash || 0) > 0) upd.wearsSinceWash = increment(-1);
+  if (it.lastWorn === date) upd.lastWorn = store.wear.filter((x) => x.date !== date && x.date < date && x.itemIds?.includes(id)).map((x) => x.date).sort().pop() || null;
+  if (w?.madeDirty?.includes(id) && (it.status === "sucia" || it.status === "tintoreria")) upd.status = "disponible";
+  b.update(doc(itemsRef(), id), upd);
+}
+/** Cancela el outfit apuntado ese día (el «me lo pongo»): lo borra del calendario y deja las prendas como estaban. */
 export async function deleteWear(date) {
   const prev = store.wear.find((w) => w.date === date); if (!prev) return;
   const b = writeBatch(fs);
   b.delete(doc(userCol("wear"), date));
-  for (const id of prev.itemIds || []) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1) });
+  for (const id of prev.itemIds || []) undoWearOn(b, id, date, prev);
   await b.commit();
 }
 
