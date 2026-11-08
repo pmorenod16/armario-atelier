@@ -10,6 +10,11 @@ const DICT = {
     "nav.closet": "Armario",
     "nav.add": "Añadir",
     "nav.shop": "Compras",
+    "nav.looks": "Outfits",
+    "nav.style": "Estilo",
+    "profile.tab.me": "Tú",
+    "profile.tab.settings": "Ajustes",
+    "profile.tab.account": "Cuenta",
     "nav.profile": "Perfil",
 
     "auth.google": "Entrar con Google",

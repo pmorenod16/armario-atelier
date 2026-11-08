@@ -83,6 +83,7 @@ function placesBlock(p, change) {
 }
 
 /* ---------- pestaña Perfil ---------- */
+let ptab = "me"; // pestaña de Perfil (se recuerda al volver)
 export function renderProfile(view) {
   const p = structuredClone(store.profile);
   let saveTimer, pending = {};
@@ -93,26 +94,21 @@ export function renderProfile(view) {
   const user = auth.currentUser;
   view.innerHTML = `
     <header class="head"><div><h1 class="display">${t("profile.title")}</h1><div class="sub">${esc(user?.displayName || user?.email || "")}</div></div></header>
+    <div class="seg ptabs" role="tablist">${["me", "settings", "account"].map((k) => `<button type="button" role="tab" data-pt="${k}" aria-pressed="${ptab === k}">${t("profile.tab." + k)}</button>`).join("")}</div>
     <div class="cards">
-      <section class="card" id="cPlaces"><h2 class="display">${t("profile.places")}</h2></section>
-      <section class="card span2" id="cSizes"><h2 class="display">${t("profile.sizes")}</h2></section>
-      <section class="card" id="cConn"><h2 class="display">${t("conn.title")}</h2>
+      <section class="card" data-pt="me" id="cPlaces"><h2 class="display">${t("profile.places")}</h2></section>
+      <section class="card span2" data-pt="me" id="cSizes"><h2 class="display">${t("profile.sizes")}</h2></section>
+      <section class="card" data-pt="settings" id="cConn"><h2 class="display">${t("conn.title")}</h2>
         ${canCalendar() ? `<div class="conn-row">${icon("calendar")}<div class="grow"><b>${t("conn.cal")}</b><small class="muted">${t(store.profile?.calAuto ? "conn.calOn" : "conn.calOff")}</small></div>
           <button class="btn sm ${store.profile?.calAuto ? "ghost" : "primary"}" type="button" id="calConn">${t(store.profile?.calAuto ? "conn.disconnect" : "conn.connect")}</button></div>` : ""}
         <div class="conn-row">${icon("pin")}<div class="grow"><b>Pinterest</b><small class="muted">${store.style?.boardUrl ? esc(t("conn.pinOn", { board: store.style.boardUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\/$/, ""), date: new Date(store.style.checkedAt || store.style.analyzedAt || Date.now()).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) })) : t("conn.pinOff")}</small></div>
           ${store.style?.boardUrl ? `<button class="btn sm ghost" type="button" id="pinNow">${icon("refresh")}${t("conn.checkNow")}</button>` : `<a class="btn sm primary" href="#/estilo">${t("conn.connect")}</a>`}</div>
         <p class="status" id="connSt" aria-live="polite"></p>
       </section>
-      <a class="card style-link" href="#/estilo">
-        <div class="row between"><h2 class="display">${t("style.title")}</h2>${icon("chevron")}</div>
-        ${store.style?.summary ? `<b>${esc(store.style.name || "")}</b><p class="muted" style="margin:0">${esc(store.style.summary)}</p>
-          <div class="palette mini-pal">${(store.style.palette || []).map((c) => `<i style="background:${c.hex}" title="${esc(c.name)}"></i>`).join("")}</div>`
-        : `<p class="muted" style="margin:0">${t("style.emptyBody")}</p>`}
-      </a>
-      ${canNotify() ? `<section class="card"><h2 class="display">${t("remind.title")}</h2>
+            ${canNotify() ? `<section class="card" data-pt="settings"><h2 class="display">${t("remind.title")}</h2>
         <label class="auto-row"><input type="checkbox" id="remOn" ${store.profile?.reminder ? "checked" : ""}><span>${t("remind.on")}</span></label>
         <label class="field"><span>${t("remind.time")}</span><input class="input" type="time" id="remAt" value="${esc(store.profile?.reminder || "08:00")}"></label></section>` : ""}
-      <section class="card"><h2 class="display">${t("profile.wash")}</h2>
+      <section class="card" data-pt="settings"><h2 class="display">${t("profile.wash")}</h2>
         <label class="auto-row"><input type="checkbox" id="washCheck" ${store.profile?.washCheck === false ? "" : "checked"}><span>${t("wash.check")}<small class="muted"> · ${t("wash.checkHint")}</small></span></label>
         <label class="auto-row" id="autoRow" ${store.profile?.washCheck === false ? "" : "hidden"}><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}</span></label>
         <details class="wash-edit"><summary>${t("wash.edit")}</summary>
@@ -120,25 +116,31 @@ export function renderProfile(view) {
           <div class="wash-grid">${Object.keys(WASH_AFTER).filter((k) => TYPE[k]).map((k) => `<label><span>${esc(label(TYPE[k]))}</span><input class="input" type="number" min="0" max="30" inputmode="numeric" data-wash="${k}" value="${washLimit(k)}"></label>`).join("")}</div>
           <button class="btn sm ghost" type="button" id="washReset">${icon("refresh")}${t("wash.reset")}</button>
         </details></section>
-      <section class="card" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
+      <section class="card" data-pt="settings" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
         <p class="muted small" style="margin:0">${t("recut.body")}</p>
         <div class="row wrap"><button class="btn sm primary" type="button" id="recut">${icon("spark")}${t("recut.go", { n: store.items.filter((i) => i.hasImage).length })}</button><button class="btn sm ghost" type="button" id="unrecut">${icon("refresh")}${t("recut.undo")}</button></div>
         <div class="bar" id="recutBar" hidden><i></i></div>
         <p class="status" id="recutSt" aria-live="polite"></p></section>
-      <section class="card"><h2 class="display">${t("profile.section")}</h2>
+      <section class="card" data-pt="me"><h2 class="display">${t("profile.section")}</h2>
         <div class="seg" id="section">${["hombre", "mujer"].map((k) => `<button type="button" data-sec="${k}" aria-pressed="${(store.profile?.section || "hombre") === k}">${t("section." + k)}</button>`).join("")}</div>
         <p class="muted small" style="margin:0">${t("profile.sectionHint")}</p></section>
-      <section class="card"><h2 class="display">${t("profile.language")}</h2>
+      <section class="card" data-pt="me"><h2 class="display">${t("profile.language")}</h2>
         <div class="seg" id="langs">${LANGUAGES.map((l) => `<button type="button" data-lang="${l.k}" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
         <p class="status" id="langSt" aria-live="polite"></p>
         <p class="muted small" style="margin:0">${t("profile.language.note")}</p></section>
-      ${isAdmin() ? `<section class="card span2" id="cAccess"><h2 class="display">${t("access.title")}</h2><p class="muted small" style="margin:0">${t("access.adminHint")}</p><div id="accList"><p class="muted">${t("common.loading")}</p></div></section>` : ""}
-      <section class="card span2"><h2 class="display">${t("profile.account")}</h2>
+      ${isAdmin() ? `<section class="card span2" data-pt="account" id="cAccess"><h2 class="display">${t("access.title")}</h2><p class="muted small" style="margin:0">${t("access.adminHint")}</p><div id="accList"><p class="muted">${t("common.loading")}</p></div></section>` : ""}
+      <section class="card span2" data-pt="account"><h2 class="display">${t("profile.account")}</h2>
         <div class="field"><span>${t("profile.uid")}</span><div class="row"><code class="uid" style="flex:1">${esc(user?.uid || "")}</code><button class="btn sm" type="button" id="copy">${icon("copy")}${t("profile.copy")}</button></div></div>
         <div class="field"><span>${t("profile.version")}</span><div class="row"><code class="uid" style="flex:1">${esc(BUILD)}${isNative ? ` · ${esc(location.host)}` : ""}</code><button class="btn sm" type="button" id="upd">${icon("refresh")}${t("profile.checkUpdate")}</button></div></div>
         <div class="row wrap"><button class="btn" type="button" id="install" hidden>${t("common.install")}</button><button class="btn danger" type="button" id="out">${icon("logout")}${t("profile.signOut")}</button></div>
       </section>
     </div>`;
+  const showTab = () => {
+    $$(".ptabs [data-pt]", view).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.pt === ptab)));
+    $$(".cards > [data-pt]", view).forEach((c) => (c.hidden = c.dataset.pt !== ptab));
+  };
+  $(".ptabs", view).onclick = (e) => { const b = e.target.closest("[data-pt]"); if (b) { ptab = b.dataset.pt; showTab(); } };
+  showTab();
   $("#cPlaces", view).append(placesBlock(p, change));
   $("#cSizes", view).append(sizesBlock(p, change));
   let unsubAcc = null;

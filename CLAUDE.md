@@ -13,8 +13,8 @@ Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo
 
 ## Estructura
 ```
-index.html              Carcasa: acceso, navegación (abajo en el móvil, lateral en el ordenador), #view, #onboarding
-src/main.js             Arranque, acceso, bienvenida, rutas por hash (#/hoy #/armario #/compras #/perfil), botón atrás de Android
+index.html              Carcasa: acceso, navegación de 7 botones (Hoy, Armario, Outfits, +, Estilo, Compras, Perfil; abajo y fija en el móvil, lateral en el ordenador), #view, #onboarding. html/body con overflow-x: clip: nada puede desplazar la pantalla de lado
+src/main.js             Arranque, acceso, bienvenida, rutas por hash (#/hoy #/outfits #/armario #/estilo #/compras #/perfil; #/outfits = renderToday(v, "outfits")), botón atrás de Android
 src/i18n.js             Todos los textos (t("clave")). Idioma nuevo = copiar el bloque es
 src/catalog.js          Tipos, colores, estampados, materiales, ajustes, temporadas, tallas. Se guardan claves; worker CATALOG_FOR_AI debe coincidir
 src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe), normaliza prendas del formato antiguo
@@ -35,7 +35,7 @@ src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/shop.js       Compras (#/compras): pestañas Te falta (/api/gaps → dos listas combine/style; cada hueco «Buscar modelos» → /api/shop, resultados guardados por hueco), Deseos (wishlist; añadir por enlace con /api/product, «Ver precio» vuelve a leer la ficha, «Ya lo tengo» lo abre en Añadir con su foto) y Modo tienda (foto + precio opcional → /api/shop/check). sizeFor(type) saca la talla del perfil
 src/storesearch.js      Buscar modelos en muchas tiendas DESDE EL MÓVIL (solo APK, CapacitorHttp): DuckDuckGo html (o Bing) con site: de las tiendas → fichas de producto (patrón de URL por tienda) → JSON-LD/og/product:price → nombre, foto, precio; ordena por palabras en común. Las tiendas bloquean servidores pero no móviles. shop.js lo mezcla con Zara (/api/shop) intercalando tiendas
-src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
+src/views/profile.js    Perfil y bienvenida. Pestañas (data-pt): Tú (ubicaciones, tallas, sección, idioma), Ajustes (conexiones, aviso, ropa sucia, recortes) y Cuenta (quién usa la app, versión, salir)
 src/stylesync.js        Leer tablero + sacar estilo (readBoardPins/analyzePins) y autoRefresh({force}): al abrir la app, como mucho cada 6 h (main.js, 6 s tras arrancar; «Revisar ahora» en Perfil → Conexiones) mira si cada tablero tiene pines nuevos (pinSig) y, si cambia, lo vuelve a analizar; se desactiva por tablero con autoOff
 src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): pestañas de tableros (principal + extra con su uso: salir, eventos…); tocar un pin = «Recréame este pin» (/api/style/recreate); enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
 src/views/board.js      Outfit = lienzo limpio (estilo Whering) con las fotos de las prendas, rectas y de la cabeza a los pies (autoLayout por capa). Modo "Colocar a mi gusto": arrastrar, tamaño (esquina, pellizco, rueda), traer al frente; se guarda en users/{uid}/layouts/{ids ordenados} {boxes:{id:[l,t,w,h,z]}}. Sin maniquí por decisión de Polete (8/11/2026); el 3D quedó en el historial de git

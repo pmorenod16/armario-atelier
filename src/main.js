@@ -71,7 +71,7 @@ let cleanup = null;
 const soon = (k) => (v) => {
   v.innerHTML = `<div class="soon"><div class="soon-card"><div class="soon-orb"></div><span class="pill">${t(`soon.${k}.phase`)}</span><h1 class="display">${t(`soon.${k}.title`)}</h1><p>${t(`soon.${k}.body`)}</p></div></div>`;
 };
-const ROUTES = { hoy: renderToday, armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
+const ROUTES = { hoy: (v) => renderToday(v), outfits: (v) => renderToday(v, "outfits"), armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
 const DEFAULT = "hoy";
 
 function route() {
@@ -79,7 +79,7 @@ function route() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const r = ROUTES[name] ? name : DEFAULT;
   if (!ROUTES[name]) history.replaceState(null, "", `#/${DEFAULT}`);
-  const navR = r === "estilo" ? "perfil" : r;
+  const navR = r;
   $$("#nav a").forEach((a) => (a.dataset.route === navR ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   if (cleanup) cleanup();
   setHalo(null);

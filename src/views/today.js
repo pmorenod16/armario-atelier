@@ -27,10 +27,13 @@ const since = (ts) => { const n = Math.max(0, Math.round((Date.now() - (ts || Da
 const fmtDate = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-ES", o);
 const byId = (id) => store.items.find((i) => i.id === id);
 
-export function renderToday(view) {
-  view.innerHTML = `
-    <header class="head"><div><h1 class="display">${t("today.title")}</h1><div class="sub">${fmtDate(todayKey(), { weekday: "long", day: "numeric", month: "long" })}</div></div></header>
-    <div class="seg tabs" role="tablist">${["hoy", "outfits", "calendario", "maleta"].map((k) => `<button type="button" role="tab" data-tab="${k}" aria-pressed="${state.tab === k}">${icon({ hoy: "sun", outfits: "bookmark", calendario: "calendar", maleta: "bag" }[k])}<span>${t("today.tab." + k)}</span></button>`).join("")}</div>
+export function renderToday(view, only = null) {
+  // «Outfits» tiene su propio botón en la barra de abajo (#/outfits); Hoy se queda con hoy, calendario y maleta
+  if (only) state.tab = only; else if (state.tab === "outfits") state.tab = "hoy";
+  view.innerHTML = only
+    ? `<header class="head"><div><h1 class="display">${t("looks.title")}</h1><div class="sub">${t("looks.sub")}</div></div></header><div id="tab" class="only-looks"></div>`
+    : `<header class="head"><div><h1 class="display">${t("today.title")}</h1><div class="sub">${fmtDate(todayKey(), { weekday: "long", day: "numeric", month: "long" })}</div></div></header>
+    <div class="seg tabs" role="tablist">${["hoy", "calendario", "maleta"].map((k) => `<button type="button" role="tab" data-tab="${k}" aria-pressed="${state.tab === k}">${icon({ hoy: "sun", calendario: "calendar", maleta: "bag" }[k])}<span>${t("today.tab." + k)}</span></button>`).join("")}</div>
     <div id="tab"></div>`;
   let cleanupTab = null;
   const show = () => {
@@ -39,7 +42,7 @@ export function renderToday(view) {
     const box = $("#tab", view);
     cleanupTab = { hoy: tabToday, outfits: tabLooks, calendario: tabCalendar, maleta: tabTrip }[state.tab](box) || null;
   };
-  $(".tabs", view).onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { state.tab = b.dataset.tab; show(); } };
+  if (!only) $(".tabs", view).onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { state.tab = b.dataset.tab; show(); } };
   view.addEventListener("click", (e) => { const m = e.target.closest("[data-item]"); if (m) openItem(m.dataset.item); });
   show();
   return () => cleanupTab?.();
