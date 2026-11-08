@@ -165,7 +165,7 @@ export function renderProfile(view) {
   const calB = $("#calConn", view);
   if (calB) calB.onclick = async () => {
     const st = $("#connSt", view);
-    if (store.profile?.calAuto) { await saveProfile({ calAuto: false }); store.profile.calAuto = false; toast(t("conn.calDisconnected")); location.hash = "#/perfil"; return renderProfile(view); }
+    if (store.profile?.calAuto) { await saveProfile({ calAuto: false }); store.profile.calAuto = false; toast(t("conn.calDisconnected")); return renderProfile(view); }
     calB.disabled = true;
     try { await planFromCalendar(); await saveProfile({ calAuto: true }); store.profile.calAuto = true; toast(t("conn.calConnected")); return renderProfile(view); }
     catch (e) { calB.disabled = false; say(st, e?.message || t("today.calFail"), "error"); }
