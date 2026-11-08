@@ -19,6 +19,7 @@ src/i18n.js             Todos los textos (t("clave")). Idioma nuevo = copiar el 
 src/catalog.js          Tipos, colores, estampados, materiales, ajustes, temporadas, tallas. Se guardan claves; worker CATALOG_FOR_AI debe coincidir
 src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe), normaliza prendas del formato antiguo
 src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/iconos
+src/pinterest.js        Lee el tablero desde el dispositivo con el widget público de Pinterest (JSONP widgets.pinterest.com/v3/pidgets/boards/{u}/{t}/pins/): Pinterest bloquea a los servidores. Orden en style.js: móvil lee → /api/style/pins → (si falla la descarga) el móvil baja las fotos → /api/style/images → (si el widget falla) /api/style/pinterest en el servidor
 src/lens.js             Google Lens sin claves: en Android comparte la foto (@capacitor/share + filesystem) para elegir Lens; en el ordenador abre lens.google.com/v3/upload con la foto. Después el usuario pega el enlace de la tienda → /api/product
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
 src/views/today.js      Hoy (tiempo + plan → /api/outfits, outfit con las fotos (board.js), cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
@@ -71,6 +72,8 @@ cd worker && npx wrangler deploy
 | `/api/packing` | `{wardrobe, destination, days, plan, weather, style}` | `{pack[], days[{day,title,itemIds,how}], tips[], missing}` |
 | `/api/style/images` | `{images[]}` (hasta 12) | `{style}` |
 | `/api/style/pinterest` | `{url}` tablero público (también pin.it) → widget público `widgets.pinterest.com/v3/pidgets/boards/{u}/{t}/pins/` (hasta 50) y, si falla, `{u}/{t}.rss`; analiza 16 pines repartidos | `{style, pins[{img,link}], pinCount, analyzed, board}`. Sin probar en real desde un servidor |
+| `/api/style/resolve` | `{url}` pin.it | `{url}` del tablero |
+| `/api/style/pins` | `{board, pins[{img,link}], titles}` leídos por el móvil (src/pinterest.js, widget JSONP) | `{style, analyzed}`; si no puede bajar las fotos responde 424 "IMAGENES" y la app las baja ella y usa `/api/style/images` |
 | `/api/style/match` | `{style (texto), wardrobe}` | `{score 0-100, fits[], off[], note}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
 | `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → si hay `TAVILY_API_KEY`: Tavily (`include_domains` = tiendas, gratis 1.000/mes) + Gemini sin búsqueda elige productos por índice; si no, Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |

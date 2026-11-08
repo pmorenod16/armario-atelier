@@ -185,6 +185,14 @@ async function fetchImageBlock(src) {
     return imageBlock(b64(buf), type);
   } catch { return null; }
 }
+async function analyzeStyle(env, blocks, titles = "") {
+  const text = await askAI(env, {
+    model: MAIN(env), maxTokens: 2200,
+    content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar.${titles ? ` Títulos y descripciones: ${String(titles).slice(0, 1500)}` : ""}
+Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora pines que no sean de ropa. ${STYLE_FORMAT}`)],
+  });
+  return cleanStyle(parseJson(text));
+}
 function cleanStyle(s) {
   const arr = (x, n, m = 120) => (Array.isArray(x) ? x : []).map((v) => clip(v, m)).filter(Boolean).slice(0, n);
   return {
@@ -492,12 +500,30 @@ Responde SOLO con JSON:
     const sample = spread(pins, 16);
     const blocks = (await Promise.all(sample.map((p) => fetchImageBlock(p.img)))).filter(Boolean);
     if (!blocks.length) throw new HttpError(502, "No he podido descargar las imágenes de los pines. Prueba subiendo capturas.");
-    const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 2200,
-      content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Títulos y descripciones: ${titles.slice(0, 1500)}
-Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora pines que no sean de ropa. ${STYLE_FORMAT}`)],
-    });
-    return { style: cleanStyle(parseJson(text)), pins: pins.slice(0, 40), pinCount: pins.length, analyzed: blocks.length, board };
+    const style = await analyzeStyle(env, blocks, titles);
+    return { style, pins: pins.slice(0, 40), pinCount: pins.length, analyzed: blocks.length, board };
+  },
+
+  // Enlace corto pin.it → enlace completo del tablero
+  async "/api/style/resolve"({ url }) {
+    const u = String(url || "").trim().match(/https?:\/\/\S+/)?.[0] || "";
+    if (!/pin\.it\//i.test(u)) throw new HttpError(400, "Ese enlace no es de Pinterest.");
+    let final = u;
+    try { const r = await fetch(u, { headers: UA_MOBILE, redirect: "follow" }); final = r.url || u; } catch {}
+    // a veces la redirección termina en una página intermedia que lleva el destino en un parámetro
+    try { const q = new URL(final); const inner = q.searchParams.get("url") || q.searchParams.get("next"); if (inner) final = new URL(inner, "https://www.pinterest.com").href; } catch {}
+    if (/pin\.it\//i.test(final)) throw new HttpError(422, "No he podido abrir ese enlace corto. En Pinterest abre el tablero en el navegador y copia el enlace largo (pinterest.com/usuario/tablero).");
+    return { url: final };
+  },
+
+  // Pines leídos por el móvil → el servidor descarga sus fotos y analiza el estilo
+  async "/api/style/pins"({ board, pins, titles }, env) {
+    const list = (pins || []).filter((p) => /^https:\/\/i\.pinimg\.com\//.test(p?.img || ""));
+    if (!list.length) throw new HttpError(400, "El tablero no tiene pines con foto.");
+    const blocks = (await Promise.all(spread(list, 16).map((p) => fetchImageBlock(p.img)))).filter(Boolean);
+    if (blocks.length < 3) throw new HttpError(424, "IMAGENES"); // la app las descargará ella y usará /api/style/images
+    const style = await analyzeStyle(env, blocks, String(titles || "").slice(0, 1500));
+    return { style, analyzed: blocks.length, board };
   },
 
   // Estilo + armario → cuánto encaja y qué prendas lo representan mejor

@@ -6,6 +6,7 @@ import { api, blobToBase64 } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
 import { store, subscribe, saveStyle, styleText } from "../data.js";
 import { tintFor } from "./add.js";
+import { boardFromUrl, boardPins, pinToBase64 } from "../pinterest.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmt = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -36,12 +37,33 @@ export function renderStyle(view) {
 
   async function fromBoard() {
     if (busy) return;
-    const url = $("#url", view).value.trim();
-    if (!url) { say($("#st", view), t("style.needUrl"), "error"); return; }
+    const raw = $("#url", view).value.trim();
+    if (!raw) { say($("#st", view), t("style.needUrl"), "error"); return; }
     setBusy(true, t("style.reading"));
+    const st = (m) => say($("#st", view), m);
     try {
-      const r = await api("/api/style/pinterest", { url });
-      await saveStyle({ ...r.style, notes: store.style?.notes || "", source: "pinterest", boardUrl: r.board || url, pins: r.pins, pinCount: r.pinCount, analyzed: r.analyzed, analyzedAt: Date.now(), match: null });
+      const board = await boardFromUrl(raw);
+      let r, pins;
+      // 1) el móvil lee el tablero (Pinterest bloquea a los servidores)
+      try { pins = await boardPins(board); } catch (e) { console.warn("widget", e); pins = null; }
+      if (pins?.length) {
+        st(t("style.analyzing", { n: pins.length }));
+        const titles = pins.map((p) => p.title).filter(Boolean).join(" · ");
+        try { r = await api("/api/style/pins", { board: board.url, pins, titles }); }
+        catch (e) {
+          if (e?.message !== "IMAGENES") throw e;
+          // 2) el servidor no pudo descargar las fotos: las descarga el móvil
+          const sample = pins.length <= 12 ? pins : Array.from({ length: 12 }, (_, i) => pins[Math.floor(i * pins.length / 12)]);
+          const images = (await Promise.all(sample.map((p) => pinToBase64(p.img).catch(() => null)))).filter(Boolean);
+          if (images.length < 3) throw new Error(t("style.noImages"));
+          r = await api("/api/style/images", { images });
+        }
+        r = { ...r, pins: pins.slice(0, 40), pinCount: pins.length };
+      } else {
+        // 3) último intento: que lo lea el servidor
+        r = await api("/api/style/pinterest", { url: board.url });
+      }
+      await saveStyle({ ...r.style, notes: store.style?.notes || "", source: "pinterest", boardUrl: board.url, pins: r.pins, pinCount: r.pinCount, analyzed: r.analyzed || null, analyzedAt: Date.now(), match: null });
       toast(t("style.done", { n: r.pinCount }));
       setTimeout(runMatch, 300);
     } catch (e) { setBusy(false, ""); say($("#st", view), e?.message || t("style.fail"), "error"); return; }

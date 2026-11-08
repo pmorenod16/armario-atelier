@@ -246,6 +246,8 @@ const DICT = {
     "style.reading": "Leyendo tu tablero y analizando los pines…",
     "style.readingShots": "Analizando {n} imágenes…",
     "style.done": "Estilo sacado de {n} pines",
+    "style.analyzing": "He leído {n} pines. Analizando tu estilo…",
+    "style.noImages": "He leído el tablero pero no he podido descargar las fotos de los pines. Prueba con capturas.",
     "style.fail": "No se ha podido analizar. Inténtalo de nuevo.",
     "style.emptyTitle": "Aún no sé qué estilo buscas",
     "style.emptyBody": "Pega el enlace de tu tablero de Pinterest y la app sacará tu estilo: colores, prendas clave y fórmulas de outfit.",
