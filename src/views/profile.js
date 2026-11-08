@@ -2,10 +2,11 @@
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
 import { t, LANGUAGES, getLanguage } from "../i18n.js";
 import { SIZE_KEYS } from "../catalog.js";
-import { $, $$, esc, icon, toast, say } from "../ui.js";
+import { $, $$, esc, icon, toast, say, isNative } from "../ui.js";
 import { store, saveProfile } from "../data.js";
 import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
+import { BUILD, checkUpdate } from "../updater.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
 const sizePh = (k) => t(`size.placeholder.${k}`) !== `size.placeholder.${k}` ? t(`size.placeholder.${k}`) : SIZE_PH[k] || "";
@@ -104,6 +105,7 @@ export function renderProfile(view) {
         <p class="muted small" style="margin:0">${t("profile.language.soon")}</p></section>
       <section class="card span2"><h2 class="display">${t("profile.account")}</h2>
         <div class="field"><span>${t("profile.uid")}</span><div class="row"><code class="uid" style="flex:1">${esc(user?.uid || "")}</code><button class="btn sm" type="button" id="copy">${icon("copy")}${t("profile.copy")}</button></div></div>
+        <div class="field"><span>${t("profile.version")}</span><div class="row"><code class="uid" style="flex:1">${esc(BUILD)}${isNative ? ` · ${esc(location.host)}` : ""}</code><button class="btn sm" type="button" id="upd">${icon("refresh")}${t("profile.checkUpdate")}</button></div></div>
         <div class="row wrap"><button class="btn" type="button" id="install" hidden>${t("common.install")}</button><button class="btn danger" type="button" id="out">${icon("logout")}${t("profile.signOut")}</button></div>
       </section>
     </div>`;
@@ -111,6 +113,7 @@ export function renderProfile(view) {
   $("#cSizes", view).append(sizesBlock(p, change));
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
+  $("#upd", view).onclick = () => checkUpdate({ manual: true });
   const inst = $("#install", view);
   if (window.__installEvt) { inst.hidden = false; inst.onclick = () => { window.__installEvt.prompt(); window.__installEvt = null; inst.hidden = true; }; }
   return () => { clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };

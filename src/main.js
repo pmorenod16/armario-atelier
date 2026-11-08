@@ -13,6 +13,7 @@ import { renderStyle } from "./views/style.js";
 import { renderShop } from "./views/shop.js";
 import { renderProfile, runOnboarding } from "./views/profile.js";
 import { openAdd } from "./views/add.js";
+import { startUpdater } from "./updater.js";
 
 translateDom();
 $$("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
@@ -132,3 +133,6 @@ if (isNative) {
 /* ---------- web instalable ---------- */
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.__installEvt = e; });
 if (!isNative && import.meta.env.PROD && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+
+/* ---------- actualizaciones ---------- */
+startUpdater();
