@@ -2,16 +2,17 @@
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, toast, say, setHalo, tilt } from "../ui.js";
 import { api } from "../api.js";
 import {
-  store, subscribe, saveProfile, fullImage, logWear, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
+  store, subscribe, saveProfile, logWear, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
 import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
+import { boardHTML, hydrateBoard } from "./board.js";
 
 const state = { tab: "hoy", sel: 0, month: null, trip: null };
 const HALO = { sun: ["#f3c26b", "#f2a476"], cloudsun: ["#e9cf98", "#b9c6d6"], cloud: ["#b9c2cd", "#d3d6db"], rain: ["#7fa2c8", "#9cb2c9"], snow: ["#dde6f2", "#c5d3e6"], storm: ["#6f7b9a", "#8d88a8"], fog: ["#c7ccd2", "#d9dadc"] };
@@ -19,7 +20,6 @@ const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
 const since = (ts) => { const n = Math.max(0, Math.round((Date.now() - (ts || Date.now())) / 864e5)); return n === 0 ? t("cal.today") : n === 1 ? t("cal.yesterday") : t("cal.since", { n }); };
 const fmtDate = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-ES", o);
 const byId = (id) => store.items.find((i) => i.id === id);
-const thumbs = (ids, cls = "") => ids.map(byId).filter(Boolean).map((it) => `<button type="button" class="mini ${cls}" data-item="${it.id}" title="${esc(it.name)}" style="--tint:${tintFor(it.tone) || "var(--surface-solid)"}">${it.thumb ? `<img src="${it.thumb}" alt="${esc(it.name)}">` : ""}</button>`).join("");
 
 export function renderToday(view) {
   view.innerHTML = `
@@ -96,7 +96,6 @@ function tabToday(box) {
   loadWeather();
 
   // --- propuestas ---
-  let viewer = null, viewerP = null;
   const result = $("#result", box);
   const outfitsNow = () => {
     const td = store.today?.date === today ? store.today : null;
@@ -141,7 +140,7 @@ function tabToday(box) {
     const outfits = outfitsNow();
     if (!outfits.length) {
       if (!result.querySelector(".thinking")) result.innerHTML = store.items.length < 2 ? `<div class="card"><p class="muted">${t("today.needItems")}</p></div>` : "";
-      viewer?.dispose(); viewer = null; viewerP = null; shown = ""; return;
+      shown = ""; return;
     }
     state.sel = Math.min(state.sel, outfits.length - 1);
     const o = outfits[state.sel], worn = store.wear.find((w) => w.date === today);
@@ -150,7 +149,7 @@ function tabToday(box) {
     if (!result.querySelector(".look")) {
       result.innerHTML = `
         <section class="look card">
-          <div class="look-stage stage" id="stage" tabindex="0" aria-label="${t("body.preview")}"><span class="stage-hint">${t("body.preview")}</span></div>
+          <div class="look-stage" id="stage"></div>
           <div class="look-info" id="info"></div>
         </section>`;
     }
@@ -161,7 +160,6 @@ function tabToday(box) {
       ${worn ? `<p class="worn-note">${icon("check")} ${t("today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
-      <div class="look-items">${thumbs(o.itemIds)}</div>
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
       ${o.repeats?.length ? `<p class="muted small">${t("today.repeats", { names: esc(o.repeats.map(byId).filter(Boolean).map((i) => i.name).join(", ")) })}</p>` : ""}
       <div class="row wrap look-actions">
@@ -183,25 +181,25 @@ function tabToday(box) {
         catch { toast(t("item.saveFail"), "error"); }
       }
     };
-    dressMannequin(o);
+    showBoard(o);
   }
 
+  // el outfit, montado con las fotos de las prendas (solo se rehace si cambian las prendas)
   let shown = "";
-  async function dressMannequin(o) {
+  function showBoard(o) {
     const stage = $("#stage", result); if (!stage) return;
-    viewerP ||= import("../viewer.js").then(({ createViewer }) => {
-      const v = createViewer(stage); if (!v) return null;
-      v.resize(); v.setBody({ heightCm: store.profile.heightCm, build: store.profile.build }); return v;
-    });
-    viewer = await viewerP; if (!viewer) return;
-    const sig = o.itemIds.join() + "|" + (o.tucked || []).join();
+    const sig = o.itemIds.join();
     if (sig === shown) return; shown = sig;
-    viewer.show(o.itemIds.map(byId).filter(Boolean), fullImage, { tucked: new Set(o.tucked || []) });
+    stage.innerHTML = boardHTML(o.itemIds);
+    hydrateBoard(stage);
+    const tones = o.itemIds.map(byId).filter(Boolean).map((i) => i.tone).filter(Boolean);
+    if (tones.length) setHalo(tones[0], tones[1] || tones[0]);
   }
 
   drawResult();
   const unsub = subscribe(drawResult);
-  return () => { unsub(); viewer?.dispose(); };
+  tilt(result, ".board", 5);
+  return () => unsub();
 }
 
 const styleText = (s) => s ? [s.summary, s.keywords?.length ? `Palabras clave: ${s.keywords.join(", ")}` : "", s.palette?.length ? `Paleta: ${s.palette.map((p) => p.name).join(", ")}` : "", s.avoid ? `Evitar: ${s.avoid}` : ""].filter(Boolean).join(". ") : null;
@@ -253,7 +251,7 @@ function openDay(date) {
     ${w ? `
       ${w.title ? `<p><b>${esc(w.title)}</b>${w.plan ? ` · <span class="muted">${esc(w.plan)}</span>` : ""}</p>` : ""}
       ${w.weather ? `<p class="muted small">${icon(describe(w.weather.code).icon)} ${describe(w.weather.code).text} · ${w.weather.min}–${w.weather.max} °C</p>` : ""}
-      <div class="look-items">${thumbs(w.itemIds)}</div>
+      ${boardHTML(w.itemIds, { small: true })}
       ${w.how?.length ? `<ol class="how">${w.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
       <div class="sheet-foot"><button class="btn danger" type="button" id="del">${icon("trash")}${t("cal.delete")}</button><button class="btn" type="button" id="edit">${icon("edit")}${t("cal.change")}</button></div>`
     : `<p class="muted">${t("cal.empty")}</p><div class="sheet-foot"><button class="btn primary" type="button" id="edit">${icon("plus")}${t("cal.log")}</button></div>`}`,
@@ -347,7 +345,7 @@ function tabTrip(box) {
       </section>
       <section class="card">
         <h2 class="display">${t("trip.daysTitle")}</h2>
-        ${(tr.outfits || []).map((d) => `<div class="trip-day"><b>${t("trip.day", { n: d.day })} · ${esc(d.title)}</b><div class="look-items">${thumbs(d.itemIds)}</div>${d.how?.length ? `<ul class="how">${d.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
+        ${(tr.outfits || []).map((d) => `<div class="trip-day"><b>${t("trip.day", { n: d.day })} · ${esc(d.title)}</b>${boardHTML(d.itemIds, { small: true })}${d.how?.length ? `<ul class="how">${d.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
       </section>
       ${(tr.tips || []).length || tr.missing ? `<section class="card">${(tr.tips || []).length ? `<h2 class="display">${t("trip.tips")}</h2><ul class="how">${tr.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${tr.missing ? `<p class="notice">${icon("spark")} ${esc(tr.missing)}</p>` : ""}</section>` : ""}`;
     $("#back", box).onclick = () => { state.trip = null; drawForm(); };

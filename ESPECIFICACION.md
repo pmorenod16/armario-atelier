@@ -5,16 +5,14 @@ Decidida con Polete el 7/11/2026. Es la referencia para todas las fases: si algo
 Idea: una app propia que reúne lo mejor de Whering (inventario) y Pronti AI (outfits y compras), adaptada a sus gustos. Diseño, nombre y aspecto propios: no se copian logos, nombres ni pantallas de esas apps.
 
 ## Uso principal
-1. **Por la mañana:** escribe qué va a hacer hoy → la app mira el tiempo de su ubicación → propone outfits con su ropa, al estilo de su Pinterest, y explica **cómo llevarlos** (camisa por dentro, abrigo puesto o como capa…). Se ven en un maniquí 3D que gira.
+1. **Por la mañana:** escribe qué va a hacer hoy → la app mira el tiempo de su ubicación → propone outfits con su ropa, al estilo de su Pinterest, y explica **cómo llevarlos** (camisa por dentro, abrigo puesto o como capa…). Se ven como una composición con las fotos de sus prendas (sin maniquí: decidido el 8/11/2026).
 2. **De compras:** sabe qué le falta y dónde encontrarlo. **Modo tienda:** foto a una prenda que ve → ¿encaja con mi armario y mi estilo? ¿con qué la combino?
 3. **Añadir ropa:** sencillo y rápido, pero con ficha completa (marca, material…) leída de la imagen y editable.
 
 ## Usuarios
-- Solo Polete de momento. Más adelante su pareja (sección de mujer, maniquí de mujer). Todo por usuario desde el principio.
+- Solo Polete de momento. Más adelante su pareja (sección de mujer). Todo por usuario desde el principio.
 
 ## Perfil (se pregunta la primera vez, editable siempre)
-- Maniquí: hombre (seleccionable más adelante).
-- Medidas aproximadas: altura y complexión, para las proporciones del maniquí.
 - Tallas: camiseta, camisa, pantalón, calzado (y las que hagan falta).
 - Ubicaciones: GPS del móvil, Girona por defecto, varias guardadas y se elige cuál.
 - Idioma: castellano de entrada; más adelante seleccionable (catalán, inglés, alemán…). Todos los textos centralizados desde el principio.
@@ -32,7 +30,7 @@ Idea: una app propia que reúne lo mejor de Whering (inventario) y Pronti AI (ou
 - Combinaciones solo con su ropa, al estilo de su Pinterest.
 - Según el tiempo (ubicación elegida) y el plan del día.
 - Cómo llevarlo (por dentro, capa, remangado…).
-- Maniquí 3D rotable con sus proporciones.
+- Se muestran con las fotos de las prendas compuestas como un flat lay (el maniquí 3D se probó y se descartó el 8/11/2026).
 - **Me gusta / no me gusta** para aprender sus gustos.
 - **No repetir, a medias:** evitar lo llevado hace pocos días **solo si hay otra ropa válida** para la ocasión.
 - **Calendario de estilo:** registrar qué se pone cada día y ver su evolución.
@@ -61,6 +59,6 @@ Idea: una app propia que reúne lo mejor de Whering (inventario) y Pronti AI (ou
 
 ## Fases (cada una usable y revisada por Polete antes de seguir)
 1. **Armario:** perfil inicial, añadir prendas (foto + etiqueta), ficha editable, filtros, estado, móvil y ordenador.
-2. **Outfits del día:** plan + tiempo + estilo, cómo llevarlo, maniquí 3D, me gusta, no repetir, calendario, prendas sin usar, maleta.
+2. **Outfits del día:** plan + tiempo + estilo, cómo llevarlo, composición con las fotos de las prendas, me gusta, no repetir, calendario, prendas sin usar, maleta.
 3. **Estilo:** Pinterest.
 4. **Compras:** dos listas de huecos, recomendaciones reales con precio razonable y talla, compatibilidad, lista de deseos, modo tienda, añadir desde enlace/foto de tienda.

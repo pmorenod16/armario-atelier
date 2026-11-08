@@ -1,6 +1,6 @@
 # Armario Atelier — guía para Claude Code
 
-App personal de Polete (estudiante de ingeniería, Girona) para clasificar su armario, montar outfits en un maniquí 3D con las fotos reales de sus prendas, sacar su estilo de un tablero de Pinterest y decidir qué comprar y dónde. Funciona como **APK de Android** (Capacitor) y como **PWA instalable en el ordenador** (GitHub Pages), con el mismo código.
+App personal de Polete (estudiante de ingeniería, Girona) para clasificar su armario, montar outfits con las fotos reales de sus prendas, sacar su estilo de un tablero de Pinterest y decidir qué comprar y dónde. Funciona como **APK de Android** (Capacitor) y como **PWA instalable en el ordenador** (GitHub Pages), con el mismo código.
 
 ## Idioma y tono
 - Toda la interfaz, los mensajes de error y los comentarios del código en **español**.
@@ -8,7 +8,7 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 
 ## Especificación y fases
 **`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
-1. Armario (aprobada el 8/11) · 2. Outfits del día (construida, pendiente de su revisión) (tiempo, plan, cómo llevarlo, calendario, maniquí 3D, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+1. Armario (aprobada el 8/11) · 2. Outfits del día (construida, pendiente de su revisión) (tiempo, plan, cómo llevarlo, calendario, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
 Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
 
 ## Estructura
@@ -21,15 +21,15 @@ src/data.js             Firestore: prendas, imágenes, perfil (store + subscribe
 src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/iconos
 src/lens.js             Google Lens sin claves: en Android comparte la foto (@capacitor/share + filesystem) para elegir Lens; en el ordenador abre lens.google.com/v3/upload con la foto. Después el usuario pega el enlace de la tienda → /api/product
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
-src/views/today.js      Hoy (tiempo + plan → /api/outfits, maniquí vestido, cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
+src/views/today.js      Hoy (tiempo + plan → /api/outfits, outfit con las fotos (board.js), cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
 src/views/picker.js     Elegir prendas del armario (apuntar lo que llevaste)
 src/weather.js          Open-Meteo sin clave: hoy por horas, viaje (previsión ≤16 días; más lejos, mismos días del año pasado con archive-api)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
-src/views/profile.js    Perfil y bienvenida: cuerpo (maniquí 3D), tallas, ubicaciones, idioma, cuenta
-src/viewer.js           Maniquí three.js. Ropa = "fundas" hechas con los vértices del cuerpo de cada zona (zoneFor por tipo: largo, manga con el atributo _armt del glb, por dentro/fuera), separadas unos mm y con caída recta desde pecho/rodilla; tela = trozo central de la foto repetido en espejo. Carga public/models/maniqui.glb (cuerpo masculino realista de la malla base CC0 de MakeHuman, brazos bajados, morph targets delgada/atletica/robusta; lo genera scripts/mh2glb.py). setBody({heightCm, build}), autoRotate, show(items). Si el modelo no carga, usa un maniquí sencillo de formas
+src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
+src/views/board.js      Outfit = composición (flat lay) con las fotos recortadas de las prendas: posición por capa (abrigo, arriba, abajo, calzado, complementos). Sin maniquí por decisión de Polete (8/11/2026); el maniquí 3D quedó en el historial de git (commit anterior a "Quita el maniquí")
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
 worker/src/index.js     Cloudflare Worker (ver API)
@@ -48,7 +48,7 @@ cd worker && npx wrangler deploy
 ## Modelo de datos (Firestore)
 - `users/{uid}/items/{id}`: `name, type (clave de catalog.js), layer, colors[{k,hex}], pattern, brand, size, material (texto de la etiqueta), materialKey, fit, seasons[], formality 1-5, styleTags[], care, notes, status (disponible|sucia|prestada), thumb (dataURL webp ~10 KB), tone (#hex), hasImage, aspect, imageVersion, cutMethod, createdAt, updatedAt`. Las prendas antiguas (category/shape/colorHex) se adaptan al leer (data.js normalizeItem).
 - `users/{uid}/images/{id}`: `data` (WebP en base64), `mime, width, height`. **Límite de 1 MiB por documento**: recorte ≤600 KB y se rechaza base64 > 980 000.
-- `users/{uid}/meta/profile`: `onboarded, mannequin, heightCm, build, sizes{camiseta,camisa,jersey,americana,pantalon,vaquero,calzado}, places[{id,name,region,lat,lon}], activePlace, language`
+- `users/{uid}/meta/profile`: `onboarded, sizes{camiseta,camisa,jersey,americana,pantalon,vaquero,calzado}, places[{id,name,region,lat,lon}], activePlace, language`
 - `users/{uid}/wear/{AAAA-MM-DD}`: `date, itemIds[], title, plan, how[], weather{t,min,max,code}`. Al apuntar se suma `wearCount` y `lastWorn` en cada prenda.
 - `users/{uid}/feedback/{ids ordenados}`: `itemIds, liked, title, plan, at` (me gusta / no me gusta).
 - `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
@@ -79,7 +79,7 @@ IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/me
 - `ALLOWED_UIDS` vacío = el Worker rechaza a todos (a propósito). El usuario copia su uid desde Perfil → Cuenta.
 - Las fotos van siempre por `shrinkPhoto` antes de procesarlas o enviarlas.
 - `@imgly/background-removal` es AGPL-3.0: bien para uso personal; avisar si se plantea publicar la app.
-- Antes de dar algo por terminado: `npm run build` sin errores y, si tocas `viewer.js`, comprobar el maniquí de frente, de lado y de espaldas.
+- Antes de dar algo por terminado: `npm run build` sin errores y mirar las pantallas tocadas en móvil y ordenador, claro y oscuro.
 
 ## Pruebas sin conexión a Firebase
 Para probar la interfaz en local sin cuenta: un vite.config aparte con un plugin `resolveId` que sustituya `firebase.js` y `api.js` por versiones en memoria (ver historial). No dejar ese archivo en el repo.

@@ -1,7 +1,7 @@
 // Perfil y bienvenida: cuerpo (maniquí con tus proporciones), tallas, ubicaciones, idioma y cuenta.
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
 import { t, LANGUAGES, getLanguage } from "../i18n.js";
-import { BUILDS, SIZE_KEYS } from "../catalog.js";
+import { SIZE_KEYS } from "../catalog.js";
 import { $, $$, esc, icon, toast, say } from "../ui.js";
 import { store, saveProfile } from "../data.js";
 import { locate, placeName, searchCity } from "../places.js";
@@ -9,44 +9,6 @@ import { auth, logOut } from "../firebase.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
 const sizePh = (k) => t(`size.placeholder.${k}`) !== `size.placeholder.${k}` ? t(`size.placeholder.${k}`) : SIZE_PH[k] || "";
-
-/* ---------- cuerpo ---------- */
-function bodyBlock(p, change) {
-  const el = document.createElement("div");
-  el.className = "stack";
-  el.innerHTML = `
-    <div class="body-row">
-      <div class="stack">
-        <div class="field"><span>${t("body.mannequin")}</span>
-          <div class="seg"><button type="button" aria-pressed="true">${t("body.mannequin.hombre")}</button><button type="button" disabled title="${t("body.mannequin.mujer")}">${t("body.mannequin.mujer")}</button></div></div>
-        <label class="field"><span>${t("body.height")} <b class="big-num" id="hv" style="margin-left:auto"></b></span><input type="range" id="h" min="150" max="205" step="1"></label>
-      </div>
-      <div class="stage" id="stage" tabindex="0" aria-label="${t("body.preview")}"><span class="stage-hint">${t("body.preview")}</span></div>
-    </div>
-    <div class="field"><span>${t("body.build")}</span><div class="seg" id="build">${BUILDS.map((b) => `<button type="button" data-b="${b}">${t("body.build." + b)}</button>`).join("")}</div></div>`;
-  const h = $("#h", el), hv = $("#hv", el);
-  let viewer = null;
-  const paint = () => {
-    h.value = p.heightCm; hv.textContent = `${p.heightCm} cm`;
-    $$("#build button", el).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.b === p.build)));
-    viewer?.setBody({ heightCm: p.heightCm, build: p.build });
-  };
-  h.oninput = () => { p.heightCm = +h.value; paint(); };
-  h.onchange = () => change({ heightCm: p.heightCm });
-  $("#build", el).onclick = (e) => { const b = e.target.closest("button"); if (!b) return; p.build = b.dataset.b; paint(); change({ build: p.build }); };
-  paint();
-  // el maniquí 3D se carga aparte para que el resto aparezca al instante
-  requestAnimationFrame(async () => {
-    try {
-      const { createViewer } = await import("../viewer.js");
-      viewer = createViewer($("#stage", el), { onError: () => {} });
-      if (!viewer) return;
-      viewer.resize(); viewer.setBody({ heightCm: p.heightCm, build: p.build }); viewer.autoRotate(true);
-    } catch (e) { console.warn(e); }
-  });
-  el.dispose = () => viewer?.dispose();
-  return el;
-}
 
 /* ---------- tallas ---------- */
 function sizesBlock(p, change) {
@@ -129,7 +91,6 @@ export function renderProfile(view) {
   view.innerHTML = `
     <header class="head"><div><h1 class="display">${t("profile.title")}</h1><div class="sub">${esc(user?.displayName || user?.email || "")}</div></div></header>
     <div class="cards">
-      <section class="card" id="cBody"><h2 class="display">${t("profile.body")}</h2></section>
       <section class="card" id="cPlaces"><h2 class="display">${t("profile.places")}</h2></section>
       <section class="card span2" id="cSizes"><h2 class="display">${t("profile.sizes")}</h2></section>
       <section class="card"><h2 class="display">${t("soon.style.title")}</h2><p class="muted" style="margin:0">${t("soon.style.body")}</p><span class="pill" style="justify-self:start">${t("soon.style.phase")}</span></section>
@@ -141,21 +102,19 @@ export function renderProfile(view) {
         <div class="row wrap"><button class="btn" type="button" id="install" hidden>${t("common.install")}</button><button class="btn danger" type="button" id="out">${icon("logout")}${t("profile.signOut")}</button></div>
       </section>
     </div>`;
-  const body = bodyBlock(p, change);
-  $("#cBody", view).append(body);
   $("#cPlaces", view).append(placesBlock(p, change));
   $("#cSizes", view).append(sizesBlock(p, change));
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
   const inst = $("#install", view);
   if (window.__installEvt) { inst.hidden = false; inst.onclick = () => { window.__installEvt.prompt(); window.__installEvt = null; inst.hidden = true; }; }
-  return () => { body.dispose?.(); clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };
+  return () => { clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };
 }
 
 /* ---------- bienvenida (primer uso) ---------- */
 export function runOnboarding(host, done) {
   const p = structuredClone(store.profile);
-  const steps = ["welcome", "body", "sizes", "places"];
+  const steps = ["welcome", "sizes", "places"];
   let i = 0, current = null;
   host.hidden = false;
   host.innerHTML = `<div class="onb-inner"><div class="steps">${steps.map(() => "<i></i>").join("")}</div><div id="step"></div></div>
@@ -168,7 +127,7 @@ export function runOnboarding(host, done) {
     if (k === "welcome") box.innerHTML = `<p class="muted small" style="margin:0">${t("onb.step", { n: 1, total: steps.length })}</p><h1 class="display">${t("onb.welcome.title")}</h1><p class="lead">${t("onb.welcome.body")}</p>`;
     else {
       box.innerHTML = `<p class="muted small" style="margin:0">${t("onb.step", { n: i + 1, total: steps.length })}</p><h1 class="display">${t(`onb.${k}.title`)}</h1><p class="lead">${t(`onb.${k}.body`)}</p>`;
-      current = (k === "body" ? bodyBlock : k === "sizes" ? sizesBlock : placesBlock)(p, () => {});
+      current = (k === "sizes" ? sizesBlock : placesBlock)(p, () => {});
       box.append(current);
     }
     $("#step", host).replaceChildren(box);
@@ -183,9 +142,9 @@ export function runOnboarding(host, done) {
     if (i < steps.length - 1) { i++; show(); return; }
     $("#next", host).disabled = true;
     current?.dispose?.();
-    const { heightCm, build, sizes, places, activePlace, mannequin } = p;
+    const { sizes, places, activePlace } = p;
     // sin esperar al servidor: Firestore lo aplica al momento en el móvil y lo sube cuando haya conexión
-    saveProfile({ heightCm, build, sizes, places, activePlace, mannequin, onboarded: true }).catch(() => toast(t("item.saveFail"), "error"));
+    saveProfile({ sizes, places, activePlace, onboarded: true }).catch(() => toast(t("item.saveFail"), "error"));
     host.hidden = true; host.innerHTML = ""; done();
   };
   show();

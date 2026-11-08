@@ -29,7 +29,7 @@ const DICT = {
     "auth.notConfigured": "Falta la configuración de Firebase en src/config.js.",
 
     "onb.welcome.title": "Vamos a conocerte",
-    "onb.welcome.body": "Tres preguntas rápidas para que el maniquí tenga tus proporciones, las recomendaciones sean de tu talla y el tiempo sea el de donde estás. Puedes cambiarlo todo después en Perfil.",
+    "onb.welcome.body": "Dos preguntas rápidas para que las recomendaciones sean de tu talla y el tiempo sea el de donde estás. Puedes cambiarlo todo después en Perfil.",
     "onb.start": "Empezar",
     "onb.next": "Siguiente",
     "onb.back": "Atrás",
@@ -275,7 +275,7 @@ const DICT = {
     "trip.tips": "Consejos",
 
     "soon.today.title": "Tus outfits del día",
-    "soon.today.body": "Escribirás qué vas a hacer hoy y la app mirará el tiempo para proponerte outfits con tu ropa, al estilo de tu Pinterest, explicándote cómo llevarlos, en el maniquí 3D. También el calendario de estilo y la maleta.",
+    "soon.today.body": "Escribirás qué vas a hacer hoy y la app mirará el tiempo para proponerte outfits con tu ropa, al estilo de tu Pinterest, explicándote cómo llevarlos.",
     "soon.today.phase": "Llega en la fase 2",
     "soon.shop.title": "Compras inteligentes",
     "soon.shop.body": "Lo que te falta para combinar mejor y para llegar a tu estilo, con prendas reales a precio razonable y en tu talla, la lista de deseos y el modo tienda: haz una foto y te dice si encaja.",
