@@ -4,19 +4,21 @@ import { API_URL } from "./config.js";
 export const apiConfigured = !API_URL.includes("TU-SUBDOMINIO");
 
 /** Llama al Worker con el token de Firebase. Lanza {message, status} con texto listo para mostrar. */
-export async function api(path, body) {
+export async function api(path, body, { timeout = 0 } = {}) {
   if (!apiConfigured) throw { message: "Falta poner la URL del servidor en src/config.js." };
   const token = await auth.currentUser.getIdToken();
   let res;
+  const ctrl = new AbortController(), timer = timeout ? setTimeout(() => ctrl.abort(), timeout) : null;
   try {
     res = await fetch(API_URL + path, {
-      method: "POST",
+      method: "POST", signal: ctrl.signal,
       headers: { "content-type": "application/json", authorization: "Bearer " + token },
       body: JSON.stringify(body),
     });
-  } catch {
+  } catch (e) {
+    if (ctrl.signal.aborted) throw { status: 504, message: "La IA está tardando demasiado." };
     throw { message: "No hay conexión con el servidor. Comprueba tu internet." };
-  }
+  } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw { status: res.status, message: data.error || "El servidor no ha podido responder. Inténtalo de nuevo." };
   return data;

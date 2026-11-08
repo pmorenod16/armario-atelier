@@ -642,3 +642,5 @@ body.no-select, .board.editing { user-select: none; -webkit-user-select: none; }
 .gap-head .pill { flex: none; }
 @media (max-width: 420px) { .shop-tabs .ic { display: none; } .shop-tabs button { font-size: 13px; } }
 a.btn { text-decoration: none; color: inherit; }
+.engine-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.engine-seg button { min-height: 30px; padding: 0 12px; font-size: 13px; }

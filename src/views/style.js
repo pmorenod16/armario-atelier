@@ -10,6 +10,7 @@ import { tintFor } from "./add.js";
 import { pinToBase64 } from "../pinterest.js";
 import { readBoardPins, analyzePins } from "../stylesync.js";
 import { boardHTML, hydrateBoard } from "./board.js";
+import { matchStyle } from "../engine.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmt = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -125,7 +126,9 @@ export function renderStyle(view) {
     if (!avail.length) return;
     const box = $("#match", view); if (box) box.innerHTML = `<p class="muted">${t("style.matching")}</p>`;
     try {
-      const r = await api("/api/style/match", { style: styleText(s, { onlyMain: true }), wardrobe: wardrobeFor(avail) });
+      let r;
+      try { r = await api("/api/style/match", { style: styleText(s, { onlyMain: true }), wardrobe: wardrobeFor(avail) }, { timeout: 30000 }); }
+      catch (e) { console.warn("IA no disponible, encaje calculado por la app", e); r = matchStyle({ items: avail, style: s }); }
       await saveStyle({ match: { ...r, at: Date.now(), items: avail.length } });
     } catch (e) { if (box) box.innerHTML = `<p class="status" data-kind="error">${esc(e?.message || t("style.fail"))}</p>`; }
   }

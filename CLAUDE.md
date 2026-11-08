@@ -23,6 +23,7 @@ src/pinterest.js        Lee el tablero desde el dispositivo. En el APK: tablero 
 src/lens.js             Google Lens sin claves: en Android comparte la foto (@capacitor/share + filesystem) para elegir Lens; en el ordenador abre lens.google.com/v3/upload con la foto. Después el usuario pega el enlace de la tienda → /api/product
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
 src/views/today.js      Hoy (tiempo + plan → /api/outfits, outfit con las fotos (board.js), cómo llevarlo, me gusta, "me lo pongo"), Calendario (wear por día, sin estrenar) y Maleta (/api/packing)
+src/engine.js           Motor propio SIN IA (reglas de estilismo + puntuación): suggestOutfits (tiempo, plan→formalidad, color/estampados, estilo por paleta y palabras clave, uso reciente, me gusta), packTrip, findGaps (básicos + prendas clave del estilo), matchStyle. Perfil `engine`: «ia» (Gemini con timeout; si falla, el motor) o «app» (solo el motor). Lo de visión (clasificar, etiqueta, estilo desde fotos, recrear pin, modo tienda) sigue necesitando la IA
 src/views/picker.js     Elegir prendas del armario (apuntar lo que llevaste)
 src/weather.js          Open-Meteo sin clave: hoy por horas, viaje (previsión ≤16 días; más lejos, mismos días del año pasado con archive-api)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula

@@ -13,6 +13,10 @@ import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
+import { suggestOutfits, packTrip } from "../engine.js";
+
+/** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
+export const engineMode = () => store.profile?.engine === "app" ? "app" : "ia";
 
 const state = { tab: "hoy", sel: 0, month: null, trip: null };
 const HALO = { sun: ["#f3c26b", "#f2a476"], cloudsun: ["#e9cf98", "#b9c6d6"], cloud: ["#b9c2cd", "#d3d6db"], rain: ["#7fa2c8", "#9cb2c9"], snow: ["#dde6f2", "#c5d3e6"], storm: ["#6f7b9a", "#8d88a8"], fog: ["#c7ccd2", "#d9dadc"] };
@@ -48,6 +52,7 @@ function tabToday(box) {
       <section class="card plan">
         <label class="field"><span>${t("today.plan")}</span><textarea id="plan" rows="2" maxlength="300" placeholder="${t("today.planPh")}"></textarea></label>
         <div class="chips" id="quick">${t("today.quick").split("|").map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+        <div class="engine-row"><span class="muted small">${t("engine.label")}</span><div class="seg engine-seg" id="engine">${["ia", "app"].map((k) => `<button type="button" data-e="${k}" aria-pressed="${engineMode() === k}">${t("engine." + k)}</button>`).join("")}</div></div>
         <button class="btn primary block" type="button" id="go">${icon("spark")}${t("today.go")}</button>
         <p class="status" id="st" aria-live="polite"></p>
         ${store.style?.summary ? `<a class="style-chip" href="#/estilo">${icon("spark")}${t("today.styleOn", { name: esc(store.style.name || t("style.title")) })}</a>` : `<a class="style-chip off" href="#/estilo">${icon("pin")}${t("today.styleOff")}</a>`}
@@ -55,6 +60,12 @@ function tabToday(box) {
     </div>
     <div id="result"></div>`;
   const planEl = $("#plan", box);
+  $("#engine", box).onclick = (e) => {
+    const b = e.target.closest("[data-e]"); if (!b) return;
+    store.profile.engine = b.dataset.e; saveProfile({ engine: b.dataset.e }).catch(() => {});
+    $$("#engine button", box).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    say($("#st", box), t(b.dataset.e === "app" ? "engine.appHint" : "engine.iaHint"));
+  };
   const saved = store.today?.date === today ? store.today : null;
   planEl.value = saved?.plan || "";
   $("#quick", box).onclick = (e) => {
@@ -126,12 +137,22 @@ function tabToday(box) {
       exclude: more ? outfitsNow().map((o) => o.itemIds) : [],
       count: 4,
     };
+    const local = () => suggestOutfits({
+      items: avail, weather: wx, plan, style: store.style, wear: store.wear, feedback: store.feedback,
+      exclude: payload.exclude, count: 4,
+    });
     try {
-      const r = await api("/api/outfits", payload);
+      let r, note = "";
+      if (engineMode() === "app") r = local();
+      else {
+        try { r = await api("/api/outfits", payload, { timeout: 30000 }); }
+        catch (e) { console.warn("IA no disponible, uso el motor de la app", e); r = local(); note = t("engine.fallback"); }
+      }
+      if (!r.outfits?.length) throw { message: r.missing || t("today.fail") };
       const outfits = more ? [...outfitsNow(), ...r.outfits] : r.outfits;
       state.sel = more ? outfitsNow().length : 0;
       await saveToday({ date: today, plan: planEl.value.trim(), placeId: place?.id || null, weather: wx ? { t: wx.now.t, min: wx.min, max: wx.max, code: wx.code } : null, outfits, missing: r.missing || null });
-      say(st, "");
+      say(st, note);
     } catch (e) { say(st, e?.message || t("today.fail"), "error"); if (!more) result.innerHTML = ""; }
     $("#go", box).disabled = false;
   }
@@ -175,7 +196,7 @@ function tabToday(box) {
     }
     $("#info", result).innerHTML = `
       ${worn ? `<p class="worn-note">${icon("check")} ${t("today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })}</p>` : ""}
-      <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}</span>
+      <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
@@ -334,10 +355,14 @@ function tabTrip(box) {
         const w = await tripWeather(form.dest, form.start, form.days);
         say(st, t("trip.thinking"));
         const wText = (w.source === "año-pasado" ? "(referencia: mismos días del año pasado) " : "") + w.days.map((d, i) => `Día ${i + 1} (${d.date}): ${describe(d.code).text.toLowerCase()}, ${d.min}–${d.max} °C${d.rain != null ? `, lluvia ${d.rain}%` : ""}`).join("; ");
-        const r = await api("/api/packing", {
+        const items = avail;
+        const localPack = () => packTrip({ items, weather: w, plan: form.plan, style: store.style, days: form.days });
+        let r;
+        if (engineMode() === "app") r = localPack();
+        else try { r = await api("/api/packing", {
           wardrobe: avail.map((i) => ({ id: i.id, name: i.name, type: label(TYPE[i.type]) || i.type, colors: (i.colors || []).map((c) => label(COLOR[c.k]) || c.k), pattern: label(PATTERN[i.pattern]), material: i.material || label(MATERIAL[i.materialKey]), formality: i.formality, seasons: i.seasons, styleTags: i.styleTags })),
           destination: `${form.dest.name} (${form.dest.region || ""})`, days: form.days, plan: form.plan, weather: wText, style: styleText(store.style),
-        });
+        }, { timeout: 40000 }); } catch (e) { console.warn("IA no disponible, maleta de la app", e); r = localPack(); toast(t("engine.fallback")); }
         const trip = { dest: form.dest, start: form.start, days: form.days, plan: form.plan, weather: w, pack: r.pack, outfits: r.days, tips: r.tips, missing: r.missing, packed: [] };
         trip.id = await saveTrip(trip);
         state.trip = trip; drawTrip();

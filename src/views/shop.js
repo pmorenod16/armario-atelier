@@ -8,6 +8,7 @@ import { shrinkPhoto } from "../cutout.js";
 import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, deleteWish } from "../data.js";
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
+import { findGaps } from "../engine.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -89,7 +90,7 @@ export function renderShop(view) {
     };
     pane.innerHTML = `
       <section class="card shop-advice"><div class="row between"><span class="kicker">${t("shop.diagnosis")}</span><button class="btn sm ghost" type="button" id="analyze">${icon("refresh")}${t("shop.reanalyze")}</button></div>
-        <p class="lead">${esc(sh.advice || "")}</p><p class="muted small" style="margin:0">${t("shop.analyzedAt", { date: fmtDate(sh.at), n: sh.items || store.items.length })}${sh.items && sh.items !== store.items.length ? ` · ${t("shop.stale")}` : ""}</p>
+        <p class="lead">${esc(sh.advice || "")}</p>${sh.engine ? `<p class="muted small" style="margin:0">${t("engine.gapsByApp")}</p>` : ""}<p class="muted small" style="margin:0">${t("shop.analyzedAt", { date: fmtDate(sh.at), n: sh.items || store.items.length })}${sh.items && sh.items !== store.items.length ? ` · ${t("shop.stale")}` : ""}</p>
         <p class="status" id="st" aria-live="polite"></p></section>
       <h2 class="display shop-h">${t("shop.listCombine")}</h2><p class="muted shop-hsub">${t("shop.listCombineSub")}</p>
       <div class="gaps">${(sh.combine || []).map(card).join("")}</div>
@@ -122,9 +123,13 @@ export function renderShop(view) {
     const st = $("#st", view), b = $("#analyze", view); if (b) b.disabled = true;
     say(st, t("shop.analyzing"));
     try {
-      const r = await api("/api/gaps", { wardrobe: wardrobe(), style: styleText(store.style), sizes: store.profile?.sizes || {} });
+      let r;
+      const local = () => findGaps({ items: store.items, style: store.style });
+      if (store.profile?.engine === "app") r = local();
+      else try { r = await api("/api/gaps", { wardrobe: wardrobe(), style: styleText(store.style), sizes: store.profile?.sizes || {} }, { timeout: 45000 }); }
+      catch (e) { console.warn("IA no disponible, huecos de la app", e); r = local(); toast(t("engine.fallback")); }
       open.clear();
-      await saveShopping({ ...r, at: Date.now(), items: store.items.length, results: {} });
+      await saveShopping({ ...r, engine: !!r.engine, at: Date.now(), items: store.items.length, results: {} });
       busy = false; draw();
     } catch (e) { busy = false; if (b) b.disabled = false; say(st, e?.message || t("shop.fail"), "error"); }
   }
