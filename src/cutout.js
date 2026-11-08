@@ -101,34 +101,106 @@ export function toneOf(canvas) {
   return `#${hex(r)}${hex(gg)}${hex(b)}`;
 }
 
+/** Deja solo la prenda: quita motas y trozos de fondo sueltos (se queda con la pieza más grande y las que se le parecen
+ * en tamaño, p. ej. los dos zapatos), y endurece el borde. Devuelve la fracción opaca. */
+export function cleanMask(canvas) {
+  const ctx = canvas.getContext("2d"), { width: w, height: h } = canvas;
+  const id = ctx.getImageData(0, 0, w, h), d = id.data, n = w * h;
+  const solid = new Uint8Array(n);
+  for (let p = 0; p < n; p++) {
+    const a = d[p * 4 + 3];
+    if (a < 40) d[p * 4 + 3] = 0; else if (a > 215) d[p * 4 + 3] = 255;
+    solid[p] = d[p * 4 + 3] >= 128 ? 1 : 0;
+  }
+  // componentes conexas de lo opaco
+  const label = new Int32Array(n), sizes = [0];
+  const stack = new Int32Array(n);
+  for (let p = 0; p < n; p++) {
+    if (!solid[p] || label[p]) continue;
+    const id2 = sizes.length; let top = 0, size = 0;
+    stack[top++] = p; label[p] = id2;
+    while (top) {
+      const q = stack[--top]; size++;
+      const x = q % w;
+      if (x > 0 && solid[q - 1] && !label[q - 1]) { label[q - 1] = id2; stack[top++] = q - 1; }
+      if (x < w - 1 && solid[q + 1] && !label[q + 1]) { label[q + 1] = id2; stack[top++] = q + 1; }
+      if (q >= w && solid[q - w] && !label[q - w]) { label[q - w] = id2; stack[top++] = q - w; }
+      if (q < n - w && solid[q + w] && !label[q + w]) { label[q + w] = id2; stack[top++] = q + w; }
+    }
+    sizes.push(size);
+  }
+  const biggest = Math.max(0, ...sizes);
+  if (!biggest) return 0;
+  const keep = sizes.map((s) => s >= biggest * 0.15);
+  // lo semitransparente se queda solo si toca una pieza que se conserva (borde suave)
+  let opaque = 0;
+  for (let p = 0; p < n; p++) {
+    const l = label[p];
+    if (l) { if (!keep[l]) d[p * 4 + 3] = 0; else opaque++; continue; }
+    if (!d[p * 4 + 3]) continue;
+    const x = p % w;
+    const near = (x > 0 && keep[label[p - 1]] && label[p - 1]) || (x < w - 1 && keep[label[p + 1]] && label[p + 1]) || (p >= w && keep[label[p - w]] && label[p - w]) || (p < n - w && keep[label[p + w]] && label[p + w]);
+    if (!near) d[p * 4 + 3] = 0;
+  }
+  ctx.putImageData(id, 0, 0);
+  return opaque / n;
+}
+
+/** Recorta la foto a la caja de la prenda (box = [ymin, xmin, ymax, xmax] de 0 a 1000) con un pequeño margen. */
+async function cropToBox(photo, box) {
+  const img = await loadImage(photo), W = img.naturalWidth, H = img.naturalHeight;
+  const [y0, x0, y1, x1] = box.map((v) => Math.max(0, Math.min(1000, +v)) / 1000);
+  const m = 0.04;
+  const sx = Math.max(0, (x0 - m) * W), sy = Math.max(0, (y0 - m) * H), ex = Math.min(W, (x1 + m) * W), ey = Math.min(H, (y1 + m) * H);
+  const c = canvasFor(Math.round(ex - sx), Math.round(ey - sy));
+  c.getContext("2d").drawImage(img, sx, sy, ex - sx, ey - sy, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+}
+const validBox = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => Number.isFinite(+v)) && (b[2] - b[0]) * (b[3] - b[1]) > 0.04 * 1e6 && (b[2] - b[0]) * (b[3] - b[1]) < 0.985 * 1e6;
+
 /**
- * Quita el fondo. onProgress(texto, fracción 0..1).
- * Devuelve {blob, width, height, aspect, method: "ia"|"fondo-liso"|"sin-recorte"}.
+ * Quita el fondo y deja SOLO la prenda. onProgress(texto, fracción 0..1).
+ * locate (opcional): async (foto) => caja de la prenda [ymin,xmin,ymax,xmax] 0-1000 (la da la IA); con ella se recorta antes
+ * para que no se cuele nada más (percha, cama, otra ropa).
+ * Devuelve {blob, width, height, aspect, tone, thumb, method: "ia"|"fondo-liso"|"sin-recorte"}.
  */
-export async function makeCutout(photo, onProgress = () => {}) {
-  // 1) modelo de IA en el dispositivo
+export async function makeCutout(photo, onProgress = () => {}, { locate } = {}) {
+  // 0) dónde está la prenda
+  let src = photo;
+  if (locate) {
+    try {
+      onProgress("Buscando la prenda en la foto…", 0);
+      const box = await locate(photo);
+      if (validBox(box)) src = await cropToBox(photo, box);
+    } catch (e) { console.warn("Sin caja de la prenda:", e); }
+  }
+  // 1) modelo de recorte en el dispositivo + limpieza (solo la prenda)
   try {
     onProgress("Preparando el recorte…", 0);
     lib ??= await import("@imgly/background-removal");
-    const png = await lib.removeBackground(photo, {
-      model: "isnet_quint8",
-      output: { format: "image/png" },
+    const run = (model) => lib.removeBackground(src, {
+      model, output: { format: "image/png" },
       progress: (key, cur, total) => {
         if (key.startsWith("fetch")) onProgress("Descargando el modelo de recorte (solo la primera vez)…", total ? cur / total : 0);
         else onProgress("Recortando la prenda…", 0.95);
       },
     });
+    let png;
+    try { png = await run("isnet_fp16"); } catch (e) { console.warn("isnet_fp16 no disponible, uso el ligero", e); png = await run("isnet_quint8"); }
     const img = await loadImage(png);
     const c = canvasFor(img.naturalWidth, img.naturalHeight);
     c.getContext("2d").drawImage(img, 0, 0);
-    const res = await trimToWebp(c);
-    if (res) return { ...res, method: "ia" };
+    const frac = cleanMask(c);
+    if (frac > 0.03 && frac < 0.96) {
+      const res = await trimToWebp(c);
+      if (res) return { ...res, method: "ia" };
+    }
   } catch (e) {
     console.warn("Recorte IA no disponible:", e);
   }
   // 2) recorte por color de fondo
   onProgress("Recortando por color de fondo…", 0.9);
-  const img = await loadImage(photo);
+  const img = await loadImage(src);
   const k = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const c = canvasFor(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
   const ctx = c.getContext("2d");
@@ -137,10 +209,11 @@ export async function makeCutout(photo, onProgress = () => {}) {
   const removed = floodCutout(id);
   if (removed > 0.08 && removed < 0.95) {
     ctx.putImageData(id, 0, 0);
+    cleanMask(c);
     const res = await trimToWebp(c);
     if (res) return { ...res, method: "fondo-liso" };
   }
-  // 3) sin recorte: la foto tal cual
+  // 3) sin recorte: la foto (ya encuadrada en la prenda si la IA la encontró)
   const plain = canvasFor(c.width, c.height);
   plain.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
   const res = await trimToWebp(plain);

@@ -429,6 +429,20 @@ const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywor
 /* ---------- rutas ---------- */
 const ROUTES = {
   // Foto de una prenda → datos para el armario (claves del catálogo de src/catalog.js)
+  // Dónde está la prenda principal en la foto (caja 0-1000) para recortar solo eso
+  async "/api/locate"({ image }, env) {
+    const text = await askAI(env, {
+      model: FAST(env), maxTokens: 400,
+      content: [imageBlock(cleanImg(image)), textBlock(`Localiza la prenda de ropa (o el par de zapatos) principal de la foto, la que alguien quiere guardar en su armario digital. No incluyas la percha, el gancho, la mano, el cuerpo de la persona, los muebles ni otras prendas del fondo; si la lleva puesta una persona, solo la prenda.
+Responde SOLO con JSON: {"box_2d": [ymin, xmin, ymax, xmax] en escala 0-1000 sobre la imagen, "what": qué prenda es en 2-4 palabras}`)],
+    });
+    const r = parseJson(text);
+    const b = (r.box_2d || r.box || []).map(Number);
+    if (b.length !== 4 || b.some((v) => !Number.isFinite(v))) throw new HttpError(502, "No he encontrado la prenda en la foto.");
+    const [y0, x0, y1, x1] = b.map((v) => Math.max(0, Math.min(1000, v)));
+    return { box: [Math.min(y0, y1), Math.min(x0, x1), Math.max(y0, y1), Math.max(x0, x1)], what: clip(r.what, 40) };
+  },
+
   async "/api/classify"({ image }, env) {
     const text = await askAI(env, {
       model: FAST(env), maxTokens: 700,

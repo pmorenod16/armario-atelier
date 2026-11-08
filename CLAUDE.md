@@ -36,7 +36,7 @@ src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
 src/stylesync.js        Leer tablero + sacar estilo (readBoardPins/analyzePins) y autoRefresh(): cada 3 días (main.js, 6 s tras arrancar) mira si cada tablero tiene pines nuevos (pinSig) y, si cambia, lo vuelve a analizar; se desactiva por tablero con autoOff
 src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): pestañas de tableros (principal + extra con su uso: salir, eventos…); tocar un pin = «Recréame este pin» (/api/style/recreate); enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
 src/views/board.js      Outfit = lienzo limpio (estilo Whering) con las fotos de las prendas, rectas y de la cabeza a los pies (autoLayout por capa). Modo "Colocar a mi gusto": arrastrar, tamaño (esquina, pellizco, rueda), traer al frente; se guarda en users/{uid}/layouts/{ids ordenados} {boxes:{id:[l,t,w,h,z]}}. Sin maniquí por decisión de Polete (8/11/2026); el 3D quedó en el historial de git
-src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
+src/cutout.js           Deja SOLO la prenda: (0) /api/locate da la caja de la prenda y se recorta la foto a ella (fuera percha, cama, otra ropa); (1) @imgly isnet_fp16 (si falla, isnet_quint8); (2) cleanMask: se queda con la pieza más grande y las de ≥15 % de su tamaño (dos zapatos), quita motas y sombras sueltas y endurece el borde; (3) si no sale bien, recorte por color de fondo; (4) en último caso la foto encuadrada. Devuelve también tone y thumb
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
 worker/src/index.js     Cloudflare Worker (ver API)
 ```
@@ -69,6 +69,7 @@ cd worker && npx wrangler deploy
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
 | Ruta | Entrada | Salida |
 |---|---|---|
+| `/api/locate` | `{image}` | `{box:[ymin,xmin,ymax,xmax] 0-1000, what}` de la prenda principal (sin percha ni persona) |
 | `/api/classify` | `{image}` JPEG base64 | `{name,type,colors[{k,hex}],pattern,materialKey,fit,seasons,formality,styleTags,brand}` con claves del catálogo |
 | `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn,ref}` |
 | `/api/official` | `{brand, ref, name, type, color}` | `{source, products:[{name,color,ref,price,url,images[]}], reason?}`. Zara: catálogo público `itxrest` de Inditex (tienda 10701 = España; respondió 200 desde un servidor el 8/11/2026, formato de productos sin verificar: se recorre el JSON buscando objetos con `name` + `xmedia`). Otras marcas: búsqueda de Google vía Gemini (necesita crédito) + JSON-LD/og:image de la ficha. H&M, COS y Mango bloquean servidores (403/429) |

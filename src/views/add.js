@@ -18,6 +18,12 @@ async function choosePhoto() {
 }
 
 /** Hoja de nueva prenda. `file` opcional (si viene de arrastrar/pegar). */
+/** La IA dice dónde está la prenda en la foto (para recortar solo eso). Si tarda o falla, se recorta sin caja. */
+async function locateGarment(blob) {
+  const small = await shrinkPhoto(blob, 768);
+  return (await api("/api/locate", { image: await blobToBase64(small) }, { timeout: 12000 })).box;
+}
+
 export function openAdd(file) {
   const sheet = openSheet(`
     <div class="sheet-head"><h2 class="display">${t("add.title")}</h2><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div>
@@ -92,7 +98,7 @@ export function openAdd(file) {
     const cutting = makeCutout(photo, (text, frac) => {
       $("#progText", root).textContent = /Descargando/.test(text) ? t("add.downloading") : t("add.cutting");
       const bar = $(".bar", root); if (frac > 0 && frac < 0.95) { bar.classList.remove("indet"); bar.firstElementChild.style.width = `${Math.round(frac * 100)}%`; } else bar.classList.add("indet");
-    }).then((c) => {
+    }, { locate: locateGarment }).then((c) => {
       cut = c;
       const pv = $("#pv", root);
       pv.innerHTML = `<img src="${URL.createObjectURL(c.blob)}" alt="">`;
@@ -269,7 +275,7 @@ export function openEdit(item) {
     const f = await choosePhoto(); if (!f) return;
     const st = $("#aiStatus", root); say(st, t("add.cutting")); $("#save", root).disabled = true;
     try {
-      cut = await makeCutout(await shrinkPhoto(f, 1400));
+      cut = await makeCutout(await shrinkPhoto(f, 1400), () => {}, { locate: locateGarment });
       $("#pv", root).innerHTML = `<img src="${URL.createObjectURL(cut.blob)}" alt="">`;
       $("#pv", root).style.setProperty("--tint", tintFor(cut.tone));
       say(st, t(cut.method === "ia" ? "add.cutIa" : cut.method === "fondo-liso" ? "add.cutFlat" : "add.cutNone"), "ok");
