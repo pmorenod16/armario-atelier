@@ -113,10 +113,40 @@ export function tilt(root, selector, max = 7) {
 }
 
 /* ---------- halo: el fondo toma los colores de lo que se ve ---------- */
-export function setHalo(a, b) {
-  const s = document.documentElement.style;
-  if (!a) { s.removeProperty("--halo-a"); s.removeProperty("--halo-b"); return; }
-  s.setProperty("--halo-a", a); s.setProperty("--halo-b", b || a);
+// Color secundario (--glow): sale del color más vivo de lo que se ve y brilla alrededor de tarjetas, botones,
+// la barra de navegación y el borde de la pantalla. Sin nada concreto en pantalla, la paleta de tu estilo (setHaloBase).
+let base = null;
+const hex2rgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h || "").trim()); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+function rgb2hsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, s, l];
+}
+const hsl = (h, s, l) => `hsl(${h.toFixed(0)} ${(s * 100).toFixed(0)}% ${(l * 100).toFixed(0)}%)`;
+/** El color más vivo de la lista, ajustado para que se vea en claro y en oscuro. */
+export function glowOf(colors) {
+  const hs = colors.map(hex2rgb).filter(Boolean).map(rgb2hsl);
+  if (!hs.length) return null;
+  const [h, s0] = hs.sort((x, y) => y[1] * (1 - Math.abs(2 * y[2] - 1)) - x[1] * (1 - Math.abs(2 * x[2] - 1)))[0];
+  const s = s0 < 0.12 ? s0 * 0.6 : Math.max(0.42, Math.min(0.85, s0)); // neutros (negro, blanco, gris) se quedan neutros
+  return { light: hsl(h, s, 0.5), dark: hsl(h, s, 0.66) };
+}
+function paint(a, b) {
+  const st = document.documentElement.style;
+  if (!a) { ["--halo-a", "--halo-b", "--glow-l", "--glow-d"].forEach((k) => st.removeProperty(k)); return; }
+  st.setProperty("--halo-a", a); st.setProperty("--halo-b", b || a);
+  const g = glowOf([a, b]);
+  if (g) { st.setProperty("--glow-l", g.light); st.setProperty("--glow-d", g.dark); }
+}
+let specific = false;
+export function setHalo(a, b) { specific = !!a; if (a) paint(a, b); else paint(base?.[0], base?.[1]); }
+/** Colores de fondo cuando la pantalla no enseña nada concreto (la paleta de tu estilo). */
+export function setHaloBase(a, b) {
+  base = a ? [a, b || a] : null;
+  if (!specific) paint(base?.[0], base?.[1]);
 }
 
 /** Mezcla un color con blanco/negro (para fondos suaves de tarjeta). */

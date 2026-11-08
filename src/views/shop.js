@@ -50,6 +50,8 @@ export function renderShop(view) {
     view.querySelector(".shop-tabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b && b.dataset.tab !== tab) { tab = b.dataset.tab; draw(); } };
     const pane = $("#pane", view);
     if (tab === "gaps") drawGaps(pane); else if (tab === "wish") drawWish(pane); else drawStore(pane);
+    const gc = tab === "gaps" ? [...(store.shopping?.combine || []), ...(store.shopping?.style || [])].map((g) => g.colorHex).filter(Boolean) : [];
+    setHalo(gc[0] || null, gc[1] || gc[0]);
   }
 
   /* ---------- Te falta ---------- */

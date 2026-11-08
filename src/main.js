@@ -7,7 +7,7 @@ import { t, translateDom, setLanguage, getLanguage, ensureLanguage } from "./i18
 import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle, auth, logOut } from "./firebase.js";
 import { watchAccess } from "./access.js";
 import { store, subscribe, startData, stopData } from "./data.js";
-import { $, $$, icon, say, topSheet, isNative, setHalo } from "./ui.js";
+import { $, $$, icon, say, topSheet, isNative, setHalo, setHaloBase } from "./ui.js";
 import { renderCloset } from "./views/closet.js";
 import { renderToday } from "./views/today.js";
 import { renderStyle } from "./views/style.js";
@@ -129,7 +129,11 @@ watchAuth((user) => {
 function openApp() {
   startData();
   let started = false;
+  let baseKey = "";
   unsubStore = subscribe(() => {
+    // color secundario de fondo: la paleta de tu estilo (si no hay, el gris de serie)
+    const pal = store.style?.palette || [], k = pal.slice(0, 3).map((p) => p.hex).join();
+    if (k !== baseKey) { baseKey = k; setHaloBase(pal[0]?.hex, pal[1]?.hex || pal[2]?.hex); }
     if (!store.ready.profile) return;
     setLanguage(store.profile.language || "es"); translateDom();
     if (getLanguage() !== "es" && !window.__i18nChecked) { window.__i18nChecked = true; ensureLanguage(getLanguage()).then((n) => { if (n) { setLanguage(getLanguage()); translateDom(); route(); } }).catch(() => {}); }

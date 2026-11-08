@@ -64,7 +64,8 @@ export function renderCloset(view) {
     if (e.target.closest("#clearF")) { clearFilters(); draw(); }
   };
   grid.addEventListener("pointerover", (e) => { const tl = e.target.closest(".tile"); if (tl) setHalo(tl.dataset.tone); });
-  grid.addEventListener("pointerleave", () => setHalo(null));
+  let tops = null;
+  grid.addEventListener("pointerleave", () => setHalo(...(tops || [null])));
   tilt(grid, ".tile");
 
   function draw() {
@@ -89,6 +90,12 @@ export function renderCloset(view) {
     const list = base.filter((it) => !state.group || groupOf(it.type).k === state.group).sort(SORTS[state.sort]);
     if (!list.length) { grid.innerHTML = `<div class="empty"><p>${t("closet.noMatch")}</p><button class="btn" id="clearF" type="button">${t("closet.clearFilters")}</button></div>`; return; }
     grid.innerHTML = `<div class="grid">${list.map((it, i) => tile(it, i)).join("")}</div>`;
+    // el color secundario toma los colores que más se repiten en lo que estás viendo
+    const cnt = new Map(); list.forEach((it) => (it.colors || []).slice(0, 2).forEach((c, j) => c?.hex && cnt.set(c.hex, (cnt.get(c.hex) || 0) + (j ? 1 : 2))));
+    const top = [...cnt].sort((a, b) => b[1] - a[1]).map(([h]) => h);
+    const vivid = top.slice(0, 6).sort((a, b) => chroma(b) - chroma(a))[0]; // el más vivo de los habituales, para que no salga siempre gris
+    tops = top.length ? [top[0], vivid || top[1] || top[0]] : null;
+    setHalo(...(tops || [null]));
   }
   draw();
   return subscribe(draw);
@@ -153,3 +160,6 @@ function openSort(onChange) {
     if (e.target.closest("[data-close]")) sheet.close();
   };
 }
+
+/** Lo vivo que es un color (#rrggbb): 0 gris, 255 muy saturado. */
+function chroma(hex) { const n = parseInt(String(hex).slice(1), 16); if (isNaN(n)) return 0; const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]; return Math.max(...c) - Math.min(...c); }
