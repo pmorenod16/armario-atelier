@@ -12,5 +12,9 @@
         "google.com"
       ]
     }
+  },
+  "server": {
+    "url": "https://pmorenod16.github.io/armario-atelier/",
+    "errorPath": "offline.html"
   }
 }
