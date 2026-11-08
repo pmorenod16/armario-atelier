@@ -132,13 +132,14 @@ export async function logWear({ date = todayKey(), itemIds, title = "", plan = "
   const b = writeBatch(fs);
   b.set(doc(userCol("wear"), date), { date, itemIds, title, plan, how, weather, createdAt: Date.now() });
   const added = itemIds.filter((id) => !prev?.itemIds?.includes(id)), removed = (prev?.itemIds || []).filter((id) => !itemIds.includes(id));
-  const auto = store.profile?.autoDirty !== false;
+  // con «preguntarme al día siguiente» (por defecto) no se marca nada aquí: se decide en la revisión de Hoy
+  const auto = store.profile?.autoDirty !== false && store.profile?.washCheck === false;
   for (const id of added) {
     const it = store.items.find((i) => i.id === id); if (!it) continue;
     const upd = { wearCount: increment(1), lastWorn: date, wearsSinceWash: increment(1) };
     // ropa sucia automática: después de X usos según el tipo (la camiseta 1, el vaquero 6…); abrigos, calzado y complementos nunca
-    const lim = washLimit(it.type);
-    if (auto && lim && (it.wearsSinceWash || 0) + 1 >= lim && it.status === "disponible") upd.status = "sucia";
+    const lim = itemWashLimit(it);
+    if (auto && lim && (it.wearsSinceWash || 0) + 1 >= lim && it.status === "disponible") upd.status = isDryClean(it) ? "tintoreria" : "sucia";
     b.update(doc(itemsRef(), id), upd);
   }
   for (const id of removed) if (store.items.some((i) => i.id === id)) b.update(doc(itemsRef(), id), { wearCount: increment(-1), wearsSinceWash: increment(-1) });
@@ -147,10 +148,31 @@ export async function logWear({ date = todayKey(), itemIds, title = "", plan = "
 /** Usos antes de ir a lavar, por tipo de prenda. */
 /** Usos antes de lavar para este tipo: lo que haya puesto en Perfil o el de serie (0 = nunca). */
 export const washLimit = (type) => { const v = store.profile?.washAfter?.[type]; return v == null ? WASH_AFTER[type] || 0 : +v || 0; };
-export const WASH_AFTER = { camiseta: 1, "camiseta-ml": 1, polo: 1, tirantes: 1, camisa: 2, "camisa-mc": 1, sobrecamisa: 4, jersey: 3, cardigan: 3, sudadera: 3, "sudadera-capucha": 3, "chaleco-punto": 4, pantalon: 4, chino: 4, vaquero: 6, "traje-pantalon": 4, jogger: 2, bermuda: 3, falda: 3, vestido: 2, mono: 2 };
+export const WASH_AFTER = { camiseta: 1, "camiseta-ml": 1, polo: 1, tirantes: 1, camisa: 2, "camisa-mc": 1, sobrecamisa: 4, jersey: 3, cardigan: 3, sudadera: 3, "sudadera-capucha": 3, "chaleco-punto": 4, pantalon: 4, chino: 4, vaquero: 6, "traje-pantalon": 4, jogger: 2, bermuda: 3, falda: 3, vestido: 2, mono: 2,
+  // chaquetas y abrigos: a la tintorería de vez en cuando
+  cazadora: 20, chaqueta: 20, americana: 15, abrigo: 30, gabardina: 25, plumifero: 30, parka: 30, chaleco: 25 };
+const DRY_CLEAN = new Set(["americana", "abrigo", "gabardina", "chaqueta", "traje-pantalon"]);
+/** Usos antes de lavar de una prenda concreta: lo suyo propio, si no lo del tipo (0 = nunca). */
+export const itemWashLimit = (it) => (it?.washAfter != null ? +it.washAfter || 0 : washLimit(it?.type));
+/** ¿Va a la tintorería en vez de a la lavadora? (lo dice la prenda; por defecto americanas, abrigos y trajes, o si la etiqueta lo pide) */
+export const isDryClean = (it) => it?.dryClean ?? (DRY_CLEAN.has(it?.type) || ["cuero", "ante"].includes(it?.materialKey)
+  || (["cazadora", "chaqueta", "chaleco"].includes(it?.type) && ["lana", "cachemira"].includes(it?.materialKey))
+  || /tintorer|limpieza en seco|dry clean|\bP\b en círculo|no lavar/i.test(it?.care || ""));
+/** Cambia datos sueltos de una prenda (lavado). */
+export const updateItem = (id, patch) => updateDoc(doc(itemsRef(), id), { ...patch, updatedAt: Date.now() });
+/** Revisión del día siguiente: decide qué va a lavar o a la tintorería de lo que te pusiste. decisions {id: "limpia"|"sucia"|"tintoreria"}. */
+export async function reviewWear(date, decisions) {
+  const b = writeBatch(fs);
+  for (const [id, d] of Object.entries(decisions)) {
+    if (!store.items.some((i) => i.id === id)) continue;
+    if (d === "sucia" || d === "tintoreria") b.update(doc(itemsRef(), id), { status: d, updatedAt: Date.now() });
+  }
+  b.set(doc(userCol("wear"), date), { reviewed: true, reviewedAt: Date.now() }, { merge: true });
+  await b.commit();
+}
 /** Todo lo sucio, lavado. */
 export async function washAll() {
-  const dirty = store.items.filter((i) => i.status === "sucia"); if (!dirty.length) return 0;
+  const dirty = store.items.filter((i) => i.status === "sucia" || i.status === "tintoreria"); if (!dirty.length) return 0;
   const b = writeBatch(fs);
   dirty.forEach((i) => b.update(doc(itemsRef(), i.id), { status: "disponible", wearsSinceWash: 0, updatedAt: Date.now() }));
   await b.commit(); return dirty.length;

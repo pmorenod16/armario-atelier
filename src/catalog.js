@@ -131,7 +131,7 @@ export const FITS = [
 ];
 
 export const SEASONS = ["primavera", "verano", "otono", "invierno"];
-export const STATUSES = ["disponible", "sucia", "prestada"];
+export const STATUSES = ["disponible", "sucia", "tintoreria", "prestada"];
 export const BUILDS = ["delgada", "media", "atletica", "robusta"];
 export const SIZE_KEYS = ["camiseta", "camisa", "jersey", "americana", "pantalon", "vaquero", "calzado"];
 

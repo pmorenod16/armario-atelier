@@ -6,7 +6,7 @@ import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
-  saveLook, deleteLook, lookSaved,
+  saveLook, deleteLook, lookSaved, reviewWear, itemWashLimit, isDryClean,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
@@ -43,6 +43,53 @@ export function renderToday(view) {
   view.addEventListener("click", (e) => { const m = e.target.closest("[data-item]"); if (m) openItem(m.dataset.item); });
   show();
   return () => cleanupTab?.();
+}
+
+/* =================== REVISIÓN DE LA ROPA (al día siguiente) =================== */
+// Lo que te pusiste ayer (o hace poco): ¿va a lavar, a la tintorería o sigue limpio?
+function drawWashCheck(host, today) {
+  if (!host || store.profile?.washCheck === false) return;
+  const wear = store.wear.find((w) => w.date < today && !w.reviewed && (Date.parse(today) - Date.parse(w.date)) / 864e5 <= 3);
+  const sig = wear ? wear.date + (wear.itemIds || []).join() : "";
+  if (host.dataset.sig === sig) return; // no rehacer mientras eliges
+  host.dataset.sig = sig;
+  if (!wear) { host.innerHTML = ""; return; }
+  const items = (wear.itemIds || []).map(byId).filter((it) => it && it.status === "disponible" && !["complementos", "calzado"].includes(TYPE[it.type]?.g));
+  if (!items.length) { reviewWear(wear.date, {}).catch(() => {}); return; }
+  const dec = {};
+  for (const it of items) {
+    const lim = itemWashLimit(it), n = it.wearsSinceWash || 0;
+    dec[it.id] = lim && n >= lim ? (isDryClean(it) ? "tintoreria" : "sucia") : "limpia";
+  }
+  const when = (Date.parse(today) - Date.parse(wear.date)) / 864e5 === 1 ? t("washc.yesterday") : fmtDate(wear.date, { weekday: "long" });
+  const draw = () => {
+    host.innerHTML = `<section class="card wash-check">
+      <div class="row between"><h2 class="display">${icon("wash")}${t("washc.title", { when })}</h2><button class="btn sm ghost" type="button" id="wcSkip">${t("washc.skip")}</button></div>
+      <p class="muted small" style="margin:0">${t("washc.sub")}</p>
+      <div class="wc-list">${items.map((it) => {
+        const lim = itemWashLimit(it), dry = isDryClean(it);
+        return `<div class="wc-row">
+          <span class="mini" style="--tint:${tintFor(it.tone) || "var(--surface-solid)"}">${it.thumb ? `<img src="${it.thumb}" alt="">` : ""}</span>
+          <div class="grow"><b>${esc(it.name)}</b><small class="muted">${lim ? t("washc.uses", { n: it.wearsSinceWash || 0, max: lim }) : t("washc.usesFree", { n: it.wearsSinceWash || 0 })}</small></div>
+          <div class="seg wc-seg" data-id="${it.id}">
+            <button type="button" data-d="limpia" aria-pressed="${dec[it.id] === "limpia"}">${t("washc.clean")}</button>
+            <button type="button" data-d="${dry ? "tintoreria" : "sucia"}" aria-pressed="${dec[it.id] !== "limpia"}">${t(dry ? "washc.dry" : "washc.wash")}</button>
+          </div></div>`;
+      }).join("")}</div>
+      <button class="btn primary" type="button" id="wcOk">${icon("check")}${t("washc.ok")}</button>
+    </section>`;
+    host.querySelector(".wc-list").onclick = (e) => {
+      const b = e.target.closest("[data-d]"); if (!b) return;
+      const seg = b.closest("[data-id]"); dec[seg.dataset.id] = b.dataset.d;
+      seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    };
+    $("#wcOk", host).onclick = async () => {
+      try { await reviewWear(wear.date, dec); const n = Object.values(dec).filter((d) => d !== "limpia").length; toast(n ? t("washc.done", { n }) : t("washc.allClean")); host.innerHTML = ""; }
+      catch { toast(t("item.saveFail"), "error"); }
+    };
+    $("#wcSkip", host).onclick = async () => { try { await reviewWear(wear.date, {}); host.innerHTML = ""; } catch {} };
+  };
+  draw();
 }
 
 /* =================== MIS OUTFITS (guardados y hechos a mano) =================== */
@@ -113,6 +160,7 @@ function openLook(id) {
 function tabToday(box) {
   const today = todayKey();
   box.innerHTML = `
+    <div id="washCheck"></div>
     <div class="today-grid">
       <section class="wx card" id="wx"><p class="muted">${t("today.wx.loading")}</p></section>
       <section class="card plan">
@@ -125,6 +173,7 @@ function tabToday(box) {
       </section>
     </div>
     <div id="result"></div>`;
+  drawWashCheck($("#washCheck", box), today);
   const planEl = $("#plan", box);
   const addPlan = (txt) => { if (txt) planEl.value = planEl.value.trim() ? `${planEl.value.trim()}. ${txt}` : txt; };
   const calB = $("#cal", box), micB = $("#mic", box);
@@ -321,7 +370,7 @@ function tabToday(box) {
   }
 
   drawResult();
-  const unsub = subscribe(drawResult);
+  const unsub = subscribe(() => { drawResult(); drawWashCheck($("#washCheck", box), today); });
   wireBoardEdit(result, () => toast(t("board.saved")));
   return () => unsub();
 }

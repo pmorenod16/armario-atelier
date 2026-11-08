@@ -70,7 +70,7 @@ export function renderCloset(view) {
   function draw() {
     const all = store.items;
     $("#count", view).textContent = all.length === 1 ? t("closet.countOne") : t("closet.count", { n: all.length });
-    const dirty = store.items.filter((i) => i.status === "sucia").length, wb = $("#wash", view);
+    const dirty = store.items.filter((i) => i.status === "sucia" || i.status === "tintoreria").length, wb = $("#wash", view);
     wb.hidden = !dirty; wb.lastChild.textContent = t("wash.all", { n: dirty });
     $("#notice", view).innerHTML = store.error ? `<div class="notice">${t("common.loadFail")}</div>` : store.offline && all.length ? `<div class="notice">${t("common.offline")}</div>` : "";
     const n = activeCount(); $("#fdot", view).hidden = !n; $("#fdot", view).textContent = n;

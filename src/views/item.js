@@ -2,7 +2,7 @@
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, setHalo } from "../ui.js";
-import { store, subscribe, fullImage, setItemStatus, deleteItem, washLimit } from "../data.js";
+import { store, subscribe, fullImage, setItemStatus, deleteItem, itemWashLimit, isDryClean, updateItem, washLimit } from "../data.js";
 import { openEdit, tintFor } from "./add.js";
 
 export function openItem(id) {
@@ -38,7 +38,14 @@ export function openItem(id) {
           <div class="seg" role="group" aria-label="${t("item.status")}">${STATUSES.map((s) => `<button type="button" data-s="${s}" aria-pressed="${item.status === s}">${t("status." + s)}</button>`).join("")}</div>
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
           <button class="btn primary" type="button" id="combine">${icon("spark")}${t("combine.title")}</button>
-          ${item.status === "disponible" && washLimit(item.type) ? `<p class="muted small" style="margin:0">${t("wash.count", { n: item.wearsSinceWash || 0, max: washLimit(item.type) })}</p>` : ""}
+          <details class="wash-item"><summary>${icon("wash")}${t("wash.itemTitle")}<small class="muted"> · ${itemWashLimit(item) ? t("wash.itemEvery", { n: itemWashLimit(item) }) : t("wash.never")}${isDryClean(item) ? ` · ${t("washc.dry")}` : ""}</small></summary>
+            <div class="row wrap" style="align-items:end">
+              <label class="field" style="max-width:150px"><span>${t("wash.itemUses")}</span><input class="input" type="number" min="0" max="60" inputmode="numeric" id="wAfter" value="${itemWashLimit(item)}"></label>
+              <label class="auto-row"><input type="checkbox" id="wDry" ${isDryClean(item) ? "checked" : ""}><span>${t("wash.itemDry")}</span></label>
+            </div>
+            <p class="muted small" style="margin:0">${t("wash.itemHint", { n: item.wearsSinceWash || 0 })} ${item.washAfter != null ? `<button class="link" type="button" id="wDefault">${t("wash.itemDefault")}</button>` : ""}</p>
+          </details>
+          ${false && item.status === "disponible" && washLimit(item.type) ? `<p class="muted small" style="margin:0">${t("wash.count", { n: item.wearsSinceWash || 0, max: washLimit(item.type) })}</p>` : ""}
           <div class="row wrap">
             <button class="btn" type="button" id="edit">${icon("edit")}${t("item.edit")}</button>
             <button class="btn danger" type="button" id="del">${icon("trash")}<span>${t("item.delete")}</span></button>
@@ -52,6 +59,9 @@ export function openItem(id) {
       try { await setItemStatus(item.id, b.dataset.s); } catch { toast(t("item.saveFail"), "error"); }
     }));
     $("#edit", root).onclick = () => openEdit(item);
+    $("#wAfter", root).onchange = (e) => { const v = Math.max(0, Math.min(60, Math.round(+e.target.value || 0))); e.target.value = v; updateItem(item.id, { washAfter: v }).then(() => toast(t("profile.saved"))).catch(() => toast(t("item.saveFail"), "error")); };
+    $("#wDry", root).onchange = (e) => updateItem(item.id, { dryClean: e.target.checked }).then(() => toast(t("profile.saved"))).catch(() => toast(t("item.saveFail"), "error"));
+    const wd = $("#wDefault", root); if (wd) wd.onclick = () => updateItem(item.id, { washAfter: null }).catch(() => {});
     $("#combine", root).onclick = async () => (await import("./combine.js")).openCombine(item);
     let armed = 0;
     $("#del", root).onclick = async (e) => {

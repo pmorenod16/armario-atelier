@@ -106,7 +106,8 @@ export function renderProfile(view) {
         <label class="auto-row"><input type="checkbox" id="remOn" ${store.profile?.reminder ? "checked" : ""}><span>${t("remind.on")}</span></label>
         <label class="field"><span>${t("remind.time")}</span><input class="input" type="time" id="remAt" value="${esc(store.profile?.reminder || "08:00")}"></label></section>` : ""}
       <section class="card"><h2 class="display">${t("profile.wash")}</h2>
-        <label class="auto-row"><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}</span></label>
+        <label class="auto-row"><input type="checkbox" id="washCheck" ${store.profile?.washCheck === false ? "" : "checked"}><span>${t("wash.check")}<small class="muted"> · ${t("wash.checkHint")}</small></span></label>
+        <label class="auto-row" id="autoRow" ${store.profile?.washCheck === false ? "" : "hidden"}><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}</span></label>
         <details class="wash-edit"><summary>${t("wash.edit")}</summary>
           <p class="muted small">${t("wash.editHint")}</p>
           <div class="wash-grid">${Object.keys(WASH_AFTER).filter((k) => TYPE[k]).map((k) => `<label><span>${esc(label(TYPE[k]))}</span><input class="input" type="number" min="0" max="30" inputmode="numeric" data-wash="${k}" value="${washLimit(k)}"></label>`).join("")}</div>
@@ -172,6 +173,7 @@ export function renderProfile(view) {
     change({ section: b.dataset.sec });
   };
   $("#autoDirty", view).onchange = (e) => change({ autoDirty: e.target.checked });
+  $("#washCheck", view).onchange = (e) => { $("#autoRow", view).hidden = e.target.checked; change({ washCheck: e.target.checked }); };
   view.querySelector(".wash-grid").onchange = (e) => {
     const k = e.target.dataset?.wash; if (!k) return;
     const v = Math.max(0, Math.min(30, Math.round(+e.target.value || 0))); e.target.value = v;
