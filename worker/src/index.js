@@ -65,6 +65,72 @@ async function verifyUser(req, env) {
   return payload;
 }
 
+/* ---------- fotos oficiales ---------- */
+const BROWSER = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36", "accept-language": "es-ES,es;q=0.9" };
+const norm = (x) => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+function parseJsonLoose(text) { try { return JSON.parse(String(text).replace(/^[^{]*/, "").replace(/[^}]*$/, "")); } catch { return null; } }
+
+// Zara (catálogo de Inditex). El formato de la respuesta no está documentado: se recorre buscando productos con fotos.
+async function zara(q) {
+  const u = `https://www.zara.com/itxrest/1/search/store/10701/query?query=${encodeURIComponent(q)}&locale=es_ES&deviceType=desktop&deviceOs=Windows&deviceOsVersion=10&catalogue=0&session=armario&offset=0&limit=12&scope=default&origin=default&section=MAN`;
+  const r = await fetch(u, { headers: { ...BROWSER, accept: "application/json" } });
+  if (!r.ok) throw new Error("zara " + r.status);
+  return inditexProducts(await r.json(), "https://www.zara.com/es/es/");
+}
+function inditexImage(m) {
+  if (m?.url) return m.url.replace("{width}", "1024").replace(/&?w=\{?width\}?/, "");
+  if (m?.path && m?.name) return `https://static.zara.net/photos///${m.path}/w/1024/${m.name}.jpg?ts=${m.timestamp || ""}`;
+  return null;
+}
+function inditexProducts(data, base) {
+  const out = [], seen = new Set();
+  const walk = (o, depth = 0) => {
+    if (!o || typeof o !== "object" || depth > 9) return;
+    if (Array.isArray(o)) return o.forEach((x) => walk(x, depth + 1));
+    const c = o.content && typeof o.content === "object" ? o.content : o;
+    if (typeof c.name === "string" && (c.xmedia || c.detail?.colors)) {
+      const colors = c.detail?.colors?.length ? c.detail.colors : [{ name: c.colorName || "", xmedia: c.xmedia }];
+      for (const col of colors) {
+        const media = col.xmedia || c.xmedia || [];
+        const images = media.map(inditexImage).filter(Boolean).slice(0, 8);
+        const id = `${c.id}-${col.id || col.name}`;
+        if (!images.length || seen.has(id)) continue;
+        seen.add(id);
+        out.push({
+          name: c.name, color: col.name || "", ref: c.detail?.displayReference || col.reference || null,
+          price: (col.price ?? c.price) ? `${((col.price ?? c.price) / 100).toFixed(2).replace(".", ",")} €` : null,
+          url: c.seo?.keyword ? `${base}${c.seo.keyword}-p${c.seo.seoProductId || ""}.html` : null, images,
+        });
+      }
+      return;
+    }
+    Object.values(o).forEach((v) => walk(v, depth + 1));
+  };
+  walk(data);
+  return out;
+}
+const OFFICIAL = { zara };
+
+/** Ficha de producto de cualquier web: nombre e imágenes desde JSON-LD u og:image. */
+async function productFromPage(url) {
+  const r = await fetch(url, { headers: BROWSER, redirect: "follow" });
+  if (!r.ok) return null;
+  const html = (await r.text()).slice(0, 1_500_000);
+  const images = new Set(); let name = null, price = null;
+  for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const j = parseJsonLoose(m[1]); const list = [].concat(j?.["@graph"] || j || []);
+    for (const x of list) if (/Product/i.test([].concat(x?.["@type"]).join())) {
+      name ||= x.name; [].concat(x.image || []).forEach((i) => images.add(typeof i === "string" ? i : i?.url));
+      const off = [].concat(x.offers || [])[0]; if (off?.price) price ||= `${off.price} ${off.priceCurrency || "€"}`;
+    }
+  }
+  const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i)?.[1];
+  if (og) images.add(og.replace(/&amp;/g, "&"));
+  name ||= html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] || null;
+  const imgs = [...images].filter(Boolean).map((i) => new URL(i, url).href).slice(0, 8);
+  return imgs.length ? { name, color: "", ref: null, price, url, images: imgs } : null;
+}
+
 /* ---------- utilidades ---------- */
 const json = (data, status, headers) => new Response(JSON.stringify(data), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
 const imageBlock = (data, mime_type = "image/jpeg") => ({ inline_data: { mime_type, data } });
@@ -201,9 +267,47 @@ Responde SOLO con JSON:
     const text = await askAI(env, {
       model: FAST(env), maxTokens: 500,
       content: [imageBlock(cleanImg(image)), textBlock(`La imagen es la etiqueta interior de una prenda (marca, talla, composición, lavado). Lee solo lo que se vea; lo que no se lea, null. Claves de material: ${MATERIAL_KEYS}.
-Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M", "42", "W32 L32") o null, "material": composición en español tal cual (ej. "98% algodón, 2% elastano") o null, "materialKey": clave del material mayoritario o null, "care": instrucciones de lavado en español resumidas a partir de los símbolos o el texto (ej. "Lavar a 30 °C, no usar secadora, planchar a temperatura baja") o null, "madeIn": país de fabricación o null}`)],
+Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M", "42", "W32 L32") o null, "material": composición en español tal cual (ej. "98% algodón, 2% elastano") o null, "materialKey": clave del material mayoritario o null, "care": instrucciones de lavado en español resumidas a partir de los símbolos o el texto (ej. "Lavar a 30 °C, no usar secadora, planchar a temperatura baja") o null, "madeIn": país de fabricación o null, "ref": referencia o modelo del producto tal cual si aparece (ej. "1234/567/800", "MOD 0123/456") o null}`)],
     });
     return parseJson(text);
+  },
+
+  // Marca + referencia/nombre → productos de la web oficial con sus fotos
+  async "/api/official"({ brand, ref, name, type, color }, env) {
+    const b = norm(brand);
+    const terms = [ref && String(ref).replace(/^(ref|mod)\.?\s*/i, "").trim(), [name || type, color].filter(Boolean).join(" ")].filter(Boolean);
+    if (!terms.length) throw new HttpError(400, "Faltan datos para buscar la prenda.");
+    const shop = Object.entries(OFFICIAL).find(([k]) => b.includes(k))?.[1];
+    if (shop) {
+      for (const q of terms) {
+        const found = await shop(q).catch((e) => { console.warn("tienda", brand, e.message); return []; });
+        if (found.length) return { source: "tienda", products: found.slice(0, 6) };
+      }
+    }
+    // otras marcas: búsqueda de Google a través de Gemini (necesita crédito en la cuenta de Gemini)
+    try {
+      const { text, sources } = await askGemini(env, {
+        model: env.MODEL_SEARCH_FALLBACK || FAST(env), maxTokens: 800, search: true,
+        content: `Busca en la web oficial de la marca "${String(brand || "").slice(0, 60)}" la ficha del producto: ${terms.map((x) => `"${String(x).slice(0, 80)}"`).join(" o ")}. Responde SOLO con JSON {"urls": [hasta 3 enlaces a fichas de producto de la web oficial]}.`,
+      });
+      const urls = [...new Set([...(parseJsonLoose(text)?.urls || []), ...sources.map((x) => x.uri)])].slice(0, 4);
+      const products = (await Promise.all(urls.map((u) => productFromPage(u).catch(() => null)))).filter(Boolean);
+      return { source: "busqueda", products };
+    } catch (e) {
+      return { source: null, products: [], reason: shop ? "no-encontrada" : "sin-busqueda" };
+    }
+  },
+
+  // Descarga una foto oficial (la app no puede por CORS) y la devuelve en base64
+  async "/api/image"({ url }) {
+    let u; try { u = new URL(url); } catch { throw new HttpError(400, "Enlace no válido."); }
+    if (u.protocol !== "https:") throw new HttpError(400, "Enlace no válido.");
+    const r = await fetch(u, { headers: BROWSER });
+    const type = r.headers.get("content-type") || "";
+    if (!r.ok || !type.startsWith("image/")) throw new HttpError(502, "No se ha podido descargar la foto oficial.");
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength > 6_000_000) throw new HttpError(413, "La foto oficial es demasiado grande.");
+    return { image: b64(buf), mime: type.split(";")[0] };
   },
 
   // Armario + estilo + ocasión → 3 outfits

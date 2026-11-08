@@ -22,7 +22,7 @@ src/ui.js               $/esc/toast/hojas/fotos/inclinación 3D/halo de color/ic
 src/places.js           GPS (@capacitor/geolocation o navegador) + Open-Meteo (buscar ciudad) + BigDataCloud (nombre de la ciudad)
 src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
-src/views/add.js        Añadir/editar: recorte + IA en paralelo, foto de etiqueta
+src/views/add.js        Añadir/editar: recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: cuerpo (maniquí 3D), tallas, ubicaciones, idioma, cuenta
 src/viewer.js           Maniquí three.js: carga public/models/maniqui.glb (cuerpo masculino realista de la malla base CC0 de MakeHuman, brazos bajados, morph targets delgada/atletica/robusta; lo genera scripts/mh2glb.py). setBody({heightCm, build}), autoRotate, show(items). Si el modelo no carga, usa un maniquí sencillo de formas
@@ -52,7 +52,9 @@ cd worker && npx wrangler deploy
 | Ruta | Entrada | Salida |
 |---|---|---|
 | `/api/classify` | `{image}` JPEG base64 | `{name,type,colors[{k,hex}],pattern,materialKey,fit,seasons,formality,styleTags,brand}` con claves del catálogo |
-| `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn}` |
+| `/api/label` | `{image}` foto de la etiqueta | `{brand,size,material,materialKey,care,madeIn,ref}` |
+| `/api/official` | `{brand, ref, name, type, color}` | `{source, products:[{name,color,ref,price,url,images[]}], reason?}`. Zara: catálogo público `itxrest` de Inditex (tienda 10701 = España; respondió 200 desde un servidor el 8/11/2026, formato de productos sin verificar: se recorre el JSON buscando objetos con `name` + `xmedia`). Otras marcas: búsqueda de Google vía Gemini (necesita crédito) + JSON-LD/og:image de la ficha. H&M, COS y Mango bloquean servidores (403/429) |
+| `/api/image` | `{url}` | `{image, mime}`: descarga la foto oficial (la app no puede por CORS) |
 | `/api/outfits` | `{wardrobe, style, occasion, weather}` | `{outfits:[{title,itemIds,why,tip}]}` |
 | `/api/style/images` | `{images[]}` | `{style}` |
 | `/api/style/pinterest` | `{url}` tablero público → lee `<usuario>/<tablero>.rss` y descarga hasta 12 pines | `{style, pinCount}` |

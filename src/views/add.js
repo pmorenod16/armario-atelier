@@ -6,6 +6,8 @@ import { shrinkPhoto, makeCutout } from "../cutout.js";
 import { api, blobToBase64 } from "../api.js";
 import { saveItem, fullImage } from "../data.js";
 import { itemForm } from "./form.js";
+import { base64ToBlob } from "../api.js";
+import { TYPE, COLOR, label } from "../catalog.js";
 
 const tintFor = (hex) => soften(hex, matchMedia("(prefers-color-scheme: dark)").matches ? 0.72 : 0.8, matchMedia("(prefers-color-scheme: dark)").matches ? 20 : 255);
 
@@ -47,6 +49,8 @@ export function openAdd(file) {
         <div class="progress" id="prog"><span id="progText">${t("add.cutting")}</span><div class="bar indet"><i></i></div></div></div>
       <p class="status" id="aiStatus" aria-live="polite">${t("add.reading")}</p>
       <button type="button" class="label-btn" id="labelBtn">${icon("tag")}<span><b>${t("item.addLabel")}</b><small>${t("item.labelHint")}</small></span></button>
+      <button type="button" class="link" id="officialBtn">${t("official.find")}</button>
+      <div id="official"></div>
       <div id="formSlot"></div>`;
     const form = itemForm();
     $("#formSlot", root).append(form.el);
@@ -83,14 +87,17 @@ export function openAdd(file) {
       }
     })();
 
-    $("#labelBtn", root).onclick = () => readLabel(form, root);
+    let official = null;
+    const useOfficial = (c, info) => { cut = c; official = info; showCut(root, c); $("#save", root).disabled = false; };
+    $("#labelBtn", root).onclick = () => readLabel(form, root, useOfficial);
+    $("#officialBtn", root).onclick = () => findOfficial(form, root, useOfficial);
     const doSave = async (again) => {
       const data = form.read();
       if (!data.name) { toast(t("item.needName"), "error"); form.focusName(); return; }
       await cutting; if (!cut) return;
       $("#save", root).disabled = $("#saveMore", root).disabled = true;
       try {
-        await saveItem({ ...data, status: "disponible" }, { cut });
+        await saveItem({ ...data, status: "disponible", ...(official || {}) }, { cut });
         toast(t("item.saved"));
         sheet.close();
         if (again) setTimeout(() => openAdd(), 360);
@@ -104,7 +111,7 @@ export function openAdd(file) {
   }
 }
 
-async function readLabel(form, root) {
+async function readLabel(form, root, onOfficial) {
   const f = await choosePhoto(); if (!f) return;
   const btn = $("#labelBtn", root), st = $("#aiStatus", root);
   btn.disabled = true; say(st, t("item.labelReading"));
@@ -114,8 +121,51 @@ async function readLabel(form, root) {
     form.fill(d, { ai: true });
     if (d.madeIn) form.fill({ notes: [form.read().notes, t("item.madeIn", { c: d.madeIn })].filter(Boolean).join(" · ") });
     say(st, t("item.labelDone"), "ok");
+    btn.disabled = false;
+    if (d.brand) findOfficial(form, root, onOfficial, d.ref);
+    return;
   } catch (e) { say(st, e?.message || t("item.labelFail"), "error"); }
   btn.disabled = false;
+}
+
+function showCut(root, c) {
+  const pv = $("#pv", root);
+  pv.innerHTML = `<img src="${URL.createObjectURL(c.blob)}" alt="">`;
+  pv.style.setProperty("--tint", tintFor(c.tone) || "var(--surface-solid)");
+  setHalo(c.tone);
+}
+
+/** Busca la prenda en la web oficial de la marca y deja elegir una de sus fotos para usarla en vez de la tuya. */
+async function findOfficial(form, root, onPick, ref) {
+  const d = form.read(), box = $("#official", root);
+  if (!d.brand) { toast(t("official.needBrand"), "error"); return; }
+  const color = d.colors?.[0]?.k ? label(COLOR[d.colors[0].k]) : "";
+  box.innerHTML = `<div class="official"><p class="status">${t("official.searching", { brand: esc(d.brand) })}</p></div>`;
+  let res;
+  try { res = await api("/api/official", { brand: d.brand, ref: ref || d.ref || null, name: d.name, type: label(TYPE[d.type]), color }); }
+  catch (e) { box.innerHTML = `<div class="official"><p class="status" data-kind="error">${esc(e?.message || t("official.fail"))}</p></div>`; return; }
+  if (!res.products?.length) {
+    box.innerHTML = `<div class="official"><p class="status">${t(res.reason === "sin-busqueda" ? "official.noSearch" : "official.none")}</p></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="official"><div class="row between"><b>${t("official.title")}</b><span class="muted small">${t("official.pick")}</span></div>
+    ${res.products.map((p, i) => `<div class="off-prod">
+      <div class="off-meta"><span>${esc(p.name || "")}${p.color ? ` · ${esc(p.color)}` : ""}</span>${p.price ? `<span class="muted">${esc(p.price)}</span>` : ""}${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${t("official.view")}</a>` : ""}</div>
+      <div class="off-imgs">${p.images.slice(0, 6).map((src, k) => `<button type="button" data-p="${i}" data-k="${k}" aria-label="${t("official.use")}"><img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer"></button>`).join("")}</div>
+    </div>`).join("")}</div>`;
+  box.onclick = async (e) => {
+    const b = e.target.closest(".off-imgs button"); if (!b) return;
+    const p = res.products[+b.dataset.p], src = p.images[+b.dataset.k];
+    box.querySelectorAll(".off-imgs button").forEach((x) => x.classList.toggle("on", x === b));
+    const st = $("#aiStatus", root); say(st, t("official.loading"));
+    try {
+      const { image, mime } = await api("/api/image", { url: src });
+      const c = await makeCutout(base64ToBlob(image, mime));
+      onPick(c, { officialImage: src, officialUrl: p.url || null, officialRef: p.ref || null, photoSource: "oficial" });
+      if (p.ref && !form.read().notes?.includes(p.ref)) form.fill({ notes: [form.read().notes, `Ref. ${p.ref}`].filter(Boolean).join(" · ") });
+      say(st, t("official.used"), "ok");
+    } catch (err) { say(st, err?.message || t("official.fail"), "error"); }
+  };
 }
 
 /** Editar una prenda existente (datos y, si quiere, la foto). */
@@ -126,8 +176,10 @@ export function openEdit(item) {
     <div class="row wrap" style="margin-top:10px">
       <button class="btn sm" type="button" id="photo">${icon("camera")}${t("item.changePhoto")}</button>
       <button class="btn sm" type="button" id="labelBtn">${icon("tag")}${t("item.addLabel")}</button>
+      <button class="btn sm" type="button" id="officialBtn">${icon("search")}${t("official.findShort")}</button>
     </div>
     <p class="status" id="aiStatus" aria-live="polite"></p>
+    <div id="official"></div>
     <div id="formSlot"></div>
     <div class="sheet-foot"><button class="btn" type="button" data-close>${t("common.cancel")}</button><button class="btn primary" type="button" id="save">${t("item.save")}</button></div>`,
   { label: t("item.edit") });
@@ -149,13 +201,16 @@ export function openEdit(item) {
     } catch { say(st, t("add.badImage"), "error"); }
     $("#save", root).disabled = false;
   };
-  $("#labelBtn", root).onclick = () => readLabel(form, root);
+  let official = null;
+  const useOfficial = (c, info) => { cut = c; official = info; showCut(root, c); };
+  $("#labelBtn", root).onclick = () => readLabel(form, root, useOfficial);
+  $("#officialBtn", root).onclick = () => findOfficial(form, root, useOfficial);
   $("#save", root).onclick = async () => {
     const data = form.read();
     if (!data.name) { toast(t("item.needName"), "error"); return; }
     $("#save", root).disabled = true;
     try {
-      await saveItem({ ...data, createdAt: item.createdAt, status: item.status }, { id: item.id, cut });
+      await saveItem({ ...data, createdAt: item.createdAt, status: item.status, ...(official || {}) }, { id: item.id, cut });
       toast(t("item.saved")); sheet.close();
     } catch (e) { toast(t(e?.code === "too-big" ? "item.tooBig" : "item.saveFail"), "error"); $("#save", root).disabled = false; }
   };
