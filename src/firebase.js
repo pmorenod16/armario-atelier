@@ -61,4 +61,6 @@ export const imageDoc = (id) => doc(fs, `${base()}/images/${id}`);
 export const newItemId = () => doc(itemsRef()).id;
 export const userCol = (name) => collection(fs, `${base()}/${name}`);
 
+export const accessDoc = (uid) => doc(fs, `access/${uid}`);
+export const accessCol = () => collection(fs, "access");
 export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment };

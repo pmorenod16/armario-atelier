@@ -1,9 +1,27 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Administradores: pueden aprobar o quitar el acceso a otras cuentas (Polete)
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in ["gyhrn5U6V7cFslqwDzabTPxEu0w2"];
+    }
+
     // Cada persona solo lee y escribe su propio armario
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Acceso a la app: quien se registra pide acceso (pendiente) y un administrador lo aprueba o lo deniega
+    match /access/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.status == "pendiente";
+      allow update: if isAdmin()
+        || (request.auth != null && request.auth.uid == uid
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "email", "seenAt"]));
+      allow delete: if isAdmin();
     }
   }
 }

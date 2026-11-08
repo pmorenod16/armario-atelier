@@ -4,7 +4,8 @@ import "@fontsource-variable/bricolage-grotesque";
 import "./styles.css";
 import { App } from "@capacitor/app";
 import { t, translateDom, setLanguage, getLanguage, ensureLanguage } from "./i18n.js";
-import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle } from "./firebase.js";
+import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle, auth, logOut } from "./firebase.js";
+import { watchAccess } from "./access.js";
 import { store, subscribe, startData, stopData } from "./data.js";
 import { $, $$, icon, say, topSheet, isNative, setHalo } from "./ui.js";
 import { renderCloset } from "./views/closet.js";
@@ -97,13 +98,35 @@ document.addEventListener("drop", (e) => {
 });
 
 /* ---------- sesión ---------- */
-let unsubStore = null, onboarding = false, autoChecked = false;
+let unsubStore = null, unsubAccess = null, onboarding = false, autoChecked = false;
+/** Pantalla mientras un administrador aprueba la cuenta. */
+function showWaiting(st) {
+  const host = $("#onboarding"), u = auth.currentUser;
+  $("#app").hidden = true; host.hidden = false;
+  host.innerHTML = `<div class="onb-inner"><div class="onb-step">
+    <div class="empty-art">${icon(st === "denegado" ? "close" : "spark")}</div>
+    <h1 class="display">${t(st === "denegado" ? "access.deniedTitle" : "access.waitTitle")}</h1>
+    <p class="lead">${t(st === "denegado" ? "access.deniedBody" : "access.waitBody")}</p>
+    <p class="muted small">${t("access.as", { who: (u?.email || u?.displayName || "").replace(/[<>&]/g, "") })}</p>
+    <div class="row wrap"><button class="btn" type="button" id="accOut">${icon("logout")}${t("profile.signOut")}</button></div>
+  </div></div>`;
+  $("#accOut", host).onclick = () => logOut();
+}
 watchAuth((user) => {
-  unsubStore?.(); unsubStore = null; cleanup?.(); cleanup = null;
+  unsubStore?.(); unsubStore = null; unsubAccess?.(); unsubAccess = null; cleanup?.(); cleanup = null;
   while (topSheet()) topSheet().close();
   hideBoot();
   $("#authView").hidden = !!user;
   if (!user) { stopData(); $("#app").hidden = true; $("#onboarding").hidden = true; return; }
+  // primero, ¿tiene acceso? (los administradores siempre; el resto, cuando lo aprueban)
+  let opened = false;
+  unsubAccess = watchAccess((st) => {
+    if (st === "aprobado" || st === "error") { if (!opened) { opened = true; $("#onboarding").hidden = true; $("#onboarding").innerHTML = ""; openApp(); } return; }
+    if (opened) { opened = false; unsubStore?.(); unsubStore = null; cleanup?.(); cleanup = null; stopData(); }
+    showWaiting(st);
+  });
+});
+function openApp() {
   startData();
   let started = false;
   unsubStore = subscribe(() => {
@@ -119,7 +142,7 @@ watchAuth((user) => {
     // cada 3 días mira si tus tableros de Pinterest tienen pines nuevos (en segundo plano)
     if (started && !autoChecked && store.ready.style !== false) { autoChecked = true; setTimeout(() => import("./stylesync.js").then((m) => m.autoRefresh()).catch(() => {}), 6000); }
   });
-});
+}
 
 /* ---------- Android: botón atrás ---------- */
 if (isNative) {

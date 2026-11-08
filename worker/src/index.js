@@ -62,10 +62,25 @@ async function verifyUser(req, env) {
   try {
     ({ payload } = await jwtVerify(token, JWKS, { issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`, audience: env.FIREBASE_PROJECT_ID }));
   } catch { throw new HttpError(401, "Tu sesión ha caducado. Vuelve a entrar."); }
+  // Administradores (ALLOWED_UIDS) siempre; el resto, si un administrador ha aprobado su cuenta en la app (access/{uid})
   const allowed = (env.ALLOWED_UIDS || "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (!allowed.length) throw new HttpError(403, "Falta autorizar tu cuenta: copia tu identificador desde Ajustes y ponlo en ALLOWED_UIDS del servidor.");
-  if (!allowed.includes(payload.sub)) throw new HttpError(403, "Esta cuenta no tiene acceso a la IA de la app.");
-  return payload;
+  if (allowed.includes(payload.sub)) return payload;
+  const status = await accessStatus(payload.sub, token, env);
+  if (status === "aprobado") return payload;
+  throw new HttpError(403, status === "denegado" ? "Tu cuenta no tiene acceso a la app." : "Tu cuenta está pendiente de aprobación.");
+}
+// caché corta por instancia para no leer Firestore en cada petición
+const ACCESS_CACHE = new Map();
+async function accessStatus(uid, token, env) {
+  const c = ACCESS_CACHE.get(uid);
+  if (c && c.until > Date.now()) return c.status;
+  let status = "pendiente";
+  try {
+    const r = await fetch(`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/access/${encodeURIComponent(uid)}`, { headers: { authorization: `Bearer ${token}` } });
+    if (r.ok) status = (await r.json())?.fields?.status?.stringValue || "pendiente";
+  } catch (e) { console.warn("acceso", e.message); }
+  ACCESS_CACHE.set(uid, { status, until: Date.now() + (status === "aprobado" ? 10 : 1) * 60_000 });
+  return status;
 }
 
 /* ---------- fotos oficiales ---------- */

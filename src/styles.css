@@ -664,3 +664,9 @@ a.btn { text-decoration: none; color: inherit; }
 .plan-tools .btn { min-height: 30px; }
 #mic.on { color: var(--bad); animation: pulse 1s infinite alternate; }
 @keyframes pulse { to { opacity: .45; } }
+.acc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
+.acc-row:first-child { border-top: 0; }
+.acc-row .grow { display: grid; min-width: 160px; }
+.pill.acc-pendiente { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.pill.acc-aprobado { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.acc-denegado { background: var(--surface-2); color: var(--muted); }

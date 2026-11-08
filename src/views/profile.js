@@ -8,6 +8,7 @@ import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
 import { canNotify, setMorningReminder } from "../native.js";
+import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
 const sizePh = (k) => t(`size.placeholder.${k}`) !== `size.placeholder.${k}` ? t(`size.placeholder.${k}`) : SIZE_PH[k] || "";
@@ -118,6 +119,7 @@ export function renderProfile(view) {
         <div class="seg" id="langs">${LANGUAGES.map((l) => `<button type="button" data-lang="${l.k}" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
         <p class="status" id="langSt" aria-live="polite"></p>
         <p class="muted small" style="margin:0">${t("profile.language.note")}</p></section>
+      ${isAdmin() ? `<section class="card span2" id="cAccess"><h2 class="display">${t("access.title")}</h2><p class="muted small" style="margin:0">${t("access.adminHint")}</p><div id="accList"><p class="muted">${t("common.loading")}</p></div></section>` : ""}
       <section class="card span2"><h2 class="display">${t("profile.account")}</h2>
         <div class="field"><span>${t("profile.uid")}</span><div class="row"><code class="uid" style="flex:1">${esc(user?.uid || "")}</code><button class="btn sm" type="button" id="copy">${icon("copy")}${t("profile.copy")}</button></div></div>
         <div class="field"><span>${t("profile.version")}</span><div class="row"><code class="uid" style="flex:1">${esc(BUILD)}${isNative ? ` · ${esc(location.host)}` : ""}</code><button class="btn sm" type="button" id="upd">${icon("refresh")}${t("profile.checkUpdate")}</button></div></div>
@@ -126,6 +128,27 @@ export function renderProfile(view) {
     </div>`;
   $("#cPlaces", view).append(placesBlock(p, change));
   $("#cSizes", view).append(sizesBlock(p, change));
+  let unsubAcc = null;
+  if (isAdmin()) {
+    const box = $("#accList", view);
+    unsubAcc = watchAccessList((list) => {
+      if (!list) { box.innerHTML = `<p class="status" data-kind="error">${t("access.rulesMissing")}</p>`; return; }
+      if (!list.length) { box.innerHTML = `<p class="muted">${t("access.none")}</p>`; return; }
+      box.innerHTML = list.map((a) => `<div class="acc-row">
+        <div class="grow"><b>${esc(a.name || a.email || a.uid)}</b><small class="muted">${esc(a.email || "")} · ${new Date(a.requestedAt || 0).toLocaleDateString("es-ES")}</small></div>
+        <span class="pill acc-${a.status}">${t("access.st." + a.status)}</span>
+        <div class="row">${a.status !== "aprobado" ? `<button class="btn sm primary" type="button" data-acc="${a.uid}" data-to="aprobado">${t("access.approve")}</button>` : ""}
+          ${a.status !== "denegado" ? `<button class="btn sm ghost" type="button" data-acc="${a.uid}" data-to="denegado">${t(a.status === "aprobado" ? "access.revoke" : "access.deny")}</button>` : ""}
+          <button class="btn sm icon ghost" type="button" data-acc="${a.uid}" data-to="borrar" aria-label="${t("access.remove")}">${icon("trash")}</button></div>
+      </div>`).join("");
+    });
+    box.onclick = async (e) => {
+      const b = e.target.closest("[data-acc]"); if (!b) return;
+      b.disabled = true;
+      try { b.dataset.to === "borrar" ? await removeAccess(b.dataset.acc) : await setAccess(b.dataset.acc, b.dataset.to); toast(t("access.saved")); }
+      catch { b.disabled = false; toast(t("item.saveFail"), "error"); }
+    };
+  }
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
   $("#langs", view).onclick = async (e) => {
@@ -168,7 +191,7 @@ export function renderProfile(view) {
   };
   const inst = $("#install", view);
   if (window.__installEvt) { inst.hidden = false; inst.onclick = () => { window.__installEvt.prompt(); window.__installEvt = null; inst.hidden = true; }; }
-  return () => { clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };
+  return () => { unsubAcc?.(); clearTimeout(saveTimer); if (Object.keys(pending).length) saveProfile(pending).catch(() => {}); };
 }
 
 /* ---------- bienvenida (primer uso) ---------- */
