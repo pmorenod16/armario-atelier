@@ -703,7 +703,7 @@ Responde SOLO con JSON: {"keep": [números]}`,
     const seenUrl = new Set();
     products = products.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 8);
     const q = encodeURIComponent(`${term} hombre`);
-    const links = use.map((k) => ({
+    const links = Object.keys(STORE_DOMAINS).map((k) => ({
       store: STORE_NAMES[k],
       url: k === "zara" ? `https://www.zara.com/es/es/search?searchTerm=${encodeURIComponent(term)}&section=MAN`
         : k === "hm" ? `https://www2.hm.com/es_es/search-results.html?q=${q}`
