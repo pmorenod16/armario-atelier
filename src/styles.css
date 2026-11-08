@@ -670,3 +670,7 @@ a.btn { text-decoration: none; color: inherit; }
 .pill.acc-pendiente { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .pill.acc-aprobado { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
 .pill.acc-denegado { background: var(--surface-2); color: var(--muted); }
+.wash-edit summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.wash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; margin: 8px 0 10px; }
+.wash-grid label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.wash-grid .input { width: 64px; text-align: center; padding: 6px; }

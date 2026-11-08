@@ -1,9 +1,9 @@
 // Perfil y bienvenida: cuerpo (maniquí con tus proporciones), tallas, ubicaciones, idioma y cuenta.
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
 import { t, LANGUAGES, getLanguage, ensureLanguage } from "../i18n.js";
-import { SIZE_KEYS } from "../catalog.js";
+import { SIZE_KEYS, TYPE, label } from "../catalog.js";
 import { $, $$, esc, icon, toast, say, isNative } from "../ui.js";
-import { store, saveProfile } from "../data.js";
+import { store, saveProfile, WASH_AFTER, washLimit } from "../data.js";
 import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
@@ -106,7 +106,12 @@ export function renderProfile(view) {
         <label class="auto-row"><input type="checkbox" id="remOn" ${store.profile?.reminder ? "checked" : ""}><span>${t("remind.on")}</span></label>
         <label class="field"><span>${t("remind.time")}</span><input class="input" type="time" id="remAt" value="${esc(store.profile?.reminder || "08:00")}"></label></section>` : ""}
       <section class="card"><h2 class="display">${t("profile.wash")}</h2>
-        <label class="auto-row"><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}<small class="muted"> · ${t("wash.autoHint")}</small></span></label></section>
+        <label class="auto-row"><input type="checkbox" id="autoDirty" ${store.profile?.autoDirty === false ? "" : "checked"}><span>${t("wash.auto")}</span></label>
+        <details class="wash-edit"><summary>${t("wash.edit")}</summary>
+          <p class="muted small">${t("wash.editHint")}</p>
+          <div class="wash-grid">${Object.keys(WASH_AFTER).filter((k) => TYPE[k]).map((k) => `<label><span>${esc(label(TYPE[k]))}</span><input class="input" type="number" min="0" max="30" inputmode="numeric" data-wash="${k}" value="${washLimit(k)}"></label>`).join("")}</div>
+          <button class="btn sm ghost" type="button" id="washReset">${icon("refresh")}${t("wash.reset")}</button>
+        </details></section>
       <section class="card" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
         <p class="muted small" style="margin:0">${t("recut.body")}</p>
         <div class="row wrap"><button class="btn sm primary" type="button" id="recut">${icon("spark")}${t("recut.go", { n: store.items.filter((i) => i.hasImage).length })}</button><button class="btn sm ghost" type="button" id="unrecut">${icon("refresh")}${t("recut.undo")}</button></div>
@@ -167,6 +172,15 @@ export function renderProfile(view) {
     change({ section: b.dataset.sec });
   };
   $("#autoDirty", view).onchange = (e) => change({ autoDirty: e.target.checked });
+  view.querySelector(".wash-grid").onchange = (e) => {
+    const k = e.target.dataset?.wash; if (!k) return;
+    const v = Math.max(0, Math.min(30, Math.round(+e.target.value || 0))); e.target.value = v;
+    p.washAfter = { ...(p.washAfter || {}), [k]: v }; change({ washAfter: p.washAfter });
+  };
+  $("#washReset", view).onclick = () => {
+    p.washAfter = {}; change({ washAfter: {} });
+    view.querySelectorAll("[data-wash]").forEach((i) => (i.value = WASH_AFTER[i.dataset.wash]));
+  };
   const remOn = $("#remOn", view), remAt = $("#remAt", view);
   if (remOn) {
     const apply = async () => {
