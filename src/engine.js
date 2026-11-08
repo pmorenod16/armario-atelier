@@ -244,7 +244,8 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
   for (const c of combos) { if (chosen.length >= count) break; if (!chosen.includes(c)) chosen.push(c); }
 
   const accs = items.filter((it) => TYPE[it.type]?.g === "complementos");
-  const outfits = chosen.map((c, i) => describeOutfit(addAccessories(c, ctx, accs, sc, i), ctx, i));
+  const watchUse = new Map();
+  const outfits = chosen.map((c, i) => describeOutfit(addAccessories(c, ctx, accs, sc, i, watchUse), ctx, i));
   const missing = !shoes.length ? "No tienes calzado en el armario: añádelo para que los outfits estén completos."
     : needWarmth >= 2 && !outers.length ? `Para ${T} °C te vendría bien una chaqueta o un abrigo: no tienes ninguno disponible.` : null;
   return { outfits, missing, engine: true };
@@ -261,14 +262,35 @@ function bestAdd(base, options, sc, ctx) {
 
 /* ---------- complementos ---------- */
 const COL_FAMILY = (k) => ["marron", "camel", "beige"].includes(k) ? "marron" : ["negro", "antracita"].includes(k) ? "negro" : k;
+/** Elige el reloj: formalidad parecida a la del conjunto, correa a juego con zapatos/cinturón, tono del estilo y rotación. */
+function bestWatch(watches, c, f, ctx, sc, used = new Map()) {
+  const shoe = c.items.find(isKind(SHOES)), shoeFam = shoe ? COL_FAMILY(mainColor(shoe).k) : null;
+  const dark = harmony(c.items).dark > 0.5;
+  const score = (w) => {
+    const words = new Set([...(w.colors || []).map((x) => x.k), ...String(`${w.name} ${w.material || ""} ${w.materialKey || ""} ${(w.styleTags || []).join(" ")}`).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9-]+/)]);
+    const leather = words.has("cuero") || words.has("piel") || words.has("correa");
+    const sporty = ["deportivo", "sport", "smartwatch", "digital", "caucho", "silicona", "buceo"].some((x) => words.has(x));
+    const metal = ["acero", "metal", "plata", "plateado", "dorado", "oro", "titanio"].some((x) => words.has(x));
+    let s = -(used.get(w.id) || 0) * 0.7 + (sc.get(w.id) || 0) * 0.3 + (metal ? 0.6 : 0); // el de metal va con casi todo; la paleta pesa poco en un reloj
+    s -= Math.abs(formalityOf(w) - f) * 1.2;                       // de vestir con lo arreglado, deportivo con lo informal
+    if (sporty) s += ctx.mood === "deporte" ? 2 : f <= 1.8 ? 0.5 : f >= 3 ? -1.5 : -0.3;
+    if (leather && shoeFam) s += (w.colors || []).some((x) => COL_FAMILY(x.k) === shoeFam) ? 1.5 : -0.8; // correa a juego con el calzado
+    if (dark && (w.colors || []).some((x) => ["negro", "antracita"].includes(x.k))) s += 0.8; // looks oscuros, reloj oscuro
+    if (!dark && (w.colors || []).some((x) => ["gris", "gris-claro", "plata", "blanco", "beige", "camel", "marron"].includes(x.k))) s += 0.4;
+    return s;
+  };
+  const w = watches.slice().sort((a, b) => score(b) - score(a))[0];
+  used.set(w.id, (used.get(w.id) || 0) + 1);
+  return w;
+}
+
 /** Añade al conjunto los complementos del armario que lo rematan (máx. 3) y apunta en c.extras los que le faltarían. */
-function addAccessories(c, ctx, accs, sc, seed) {
+function addAccessories(c, ctx, accs, sc, seed, watchUse) {
   const f = c.items.reduce((a, it) => a + formalityOf(it), 0) / c.items.length;
   const T = ctx.temp, has = (t) => c.items.some((it) => it.type === t);
   const top = c.items.find((it) => ["camisa", "polo"].includes(it.type)), bottom = c.items.find(isKind(BOTTOM)), shoe = c.items.find(isKind(SHOES));
   const tucked = top && bottom && bottom.type !== "jogger" && f >= 2.8;
   const want = []; // [tipo, motivo para sugerirlo si no lo tiene]
-  if (f >= 2.2 || ctx.mood === "trabajo" || ctx.mood === "cita") want.push(["reloj", "Reloj de esfera sencilla con correa de piel o metal"]);
   if (tucked) want.push(["cinturon", `Cinturón de piel ${shoe && COL_FAMILY(mainColor(shoe).k) === "negro" ? "negro" : "marrón"} a juego con los zapatos`]);
   if (ctx.sunny && T != null && T >= 14) want.push(["gafas", "Gafas de sol de pasta o metal"]);
   if (T != null && T < 10) want.push(["bufanda", "Bufanda de lana en gris o camel"]);
@@ -278,8 +300,12 @@ function addAccessories(c, ctx, accs, sc, seed) {
   if ((ctx.mood === "noche" || ctx.mood === "cita") && f >= 2.8) want.push(["joya", "Cadena o anillo plateado discreto"]);
   if (f <= 2.2 && !ctx.rain && (ctx.mood === "relax" || ctx.mood === "deporte" || ctx.mood === "paseo")) want.push(["gorra", "Gorra lisa"]);
   const added = [], extras = [];
+  // reloj SIEMPRE (si tiene alguno): el que mejor encaja con este conjunto
+  const watches = accs.filter((a) => a.type === "reloj");
+  if (watches.length && !has("reloj")) added.push(bestWatch(watches, c, f, ctx, sc, watchUse));
+  else if (!watches.length) extras.push("Reloj de esfera sencilla con correa de piel o metal");
   for (const [type, suggestion] of want) {
-    if (added.length >= 3) break;
+    if (added.filter((a) => a.type !== "reloj").length >= 3) break;
     const opts = accs.filter((a) => a.type === type && !has(type));
     if (!opts.length) { if (extras.length < 2) extras.push(suggestion); continue; }
     // a juego: cinturón del color de los zapatos; si no, el que mejor puntúa
