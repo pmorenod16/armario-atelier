@@ -521,3 +521,10 @@ body.no-select, .board.editing { user-select: none; -webkit-user-select: none; }
 .style-chip .ic { width: 15px; height: 15px; }
 .style-chip.off { color: var(--muted); }
 .cards > .card { margin: 0 !important; }
+
+/* Mi estilo: mezcla de estéticas */
+.style-mix { margin-bottom: 14px; gap: 12px; }
+.mix-row { display: grid; gap: 6px; }
+.mix-row p { margin: 0; }
+.mix-bar { height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--ink, currentColor) 10%, transparent); overflow: hidden; }
+.mix-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent, currentColor); }

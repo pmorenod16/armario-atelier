@@ -167,6 +167,7 @@ export function styleText(s) {
   if (!s?.summary) return null;
   return [
     s.name && `Estilo «${s.name}»: ${s.summary}`, !s.name && s.summary,
+    s.mix?.length > 1 && `Mezcla: ${s.mix.map((m) => `${m.name} ${m.share}%${m.look ? ` (${m.look})` : ""}`).join(", ")}`,
     s.keywords?.length && `Palabras clave: ${s.keywords.join(", ")}`,
     s.palette?.length && `Paleta: ${s.palette.map((p) => p.name).join(", ")}`,
     s.formulas?.length && `Fórmulas de outfit: ${s.formulas.join(" | ")}`,

@@ -49,17 +49,18 @@ export function renderStyle(view) {
       try { pins = await boardPins(board); } catch (e) { console.warn("tablero", e); pins = null; why = e?.message || ""; }
       if (pins?.length) {
         st(t("style.analyzing", { n: pins.length }));
-        const titles = pins.map((p) => p.title).filter(Boolean).join(" · ");
-        try { r = await api("/api/style/pins", { board: board.url, pins, titles }); }
+        const titles = [...new Set(pins.map((p) => p.title?.trim()).filter(Boolean))].join(" · ").slice(0, 2500);
+        const hint = store.style?.notes || "";
+        try { r = await api("/api/style/pins", { board: board.url, pins: pins.slice(0, 300).map(({ img, link }) => ({ img, link })), titles, hint }); }
         catch (e) {
           if (e?.message !== "IMAGENES") throw e;
           // 2) el servidor no pudo descargar las fotos: las descarga el móvil
-          const sample = pins.length <= 12 ? pins : Array.from({ length: 12 }, (_, i) => pins[Math.floor(i * pins.length / 12)]);
-          const images = (await Promise.all(sample.map((p) => pinToBase64(p.img).catch(() => null)))).filter(Boolean);
+          const N = 30, sample = pins.length <= N ? pins : Array.from({ length: N }, (_, i) => pins[Math.floor(i * pins.length / N)]);
+          const images = (await Promise.all(sample.map((p) => pinToBase64(p.img.replace("/564x/", "/236x/"), 400).catch(() => null)))).filter(Boolean);
           if (images.length < 3) throw new Error(t("style.noImages"));
-          r = await api("/api/style/images", { images });
+          r = await api("/api/style/images", { images, titles, hint, total: pins.length });
         }
-        r = { ...r, pins: pins.slice(0, 40), pinCount: pins.length };
+        r = { ...r, pins: pins.slice(0, 60).map(({ img, link }) => ({ img, link })), pinCount: pins.length };
       } else {
         // 3) último intento: que lo lea el servidor
         try { r = await api("/api/style/pinterest", { url: board.url }); }
@@ -80,7 +81,7 @@ export function renderStyle(view) {
     setBusy(true, t("style.readingShots", { n: files.length }));
     try {
       const images = await Promise.all(files.map(async (f) => blobToBase64(await shrinkPhoto(f, 1000))));
-      const r = await api("/api/style/images", { images });
+      const r = await api("/api/style/images", { images, hint: store.style?.notes || "" });
       const thumbs = await Promise.all(files.slice(0, 12).map(async (f) => "data:image/jpeg;base64," + await blobToBase64(await shrinkPhoto(f, 300))));
       await saveStyle({ ...r.style, notes: store.style?.notes || "", source: "capturas", boardUrl: "", pins: thumbs.map((img) => ({ img, link: null })), pinCount: files.length, analyzed: files.length, analyzedAt: Date.now(), match: null });
       toast(t("style.done", { n: files.length }));
@@ -116,6 +117,9 @@ export function renderStyle(view) {
           <div class="chips">${(s.keywords || []).map((k) => `<span class="chip">${esc(k)}</span>`).join("")}</div>
         </div>
       </section>
+      ${s.mix?.length > 1 ? `<section class="card style-mix"><h2 class="display">${t("style.mix")}</h2>
+        ${s.mix.map((m) => `<div class="mix-row"><div class="row between"><b>${esc(m.name)}</b><span class="muted small">${m.share}%</span></div><div class="mix-bar"><i style="width:${m.share}%"></i></div>${m.look ? `<p class="muted small">${esc(m.look)}</p>` : ""}</div>`).join("")}
+        <p class="muted small" style="margin:0">${t("style.analyzedOf", { a: Math.min(s.analyzed || s.pinCount, s.pinCount) || "?", n: s.pinCount || "?" })}</p></section>` : ""}
       <div class="cards">
         <section class="card"><h2 class="display">${t("style.palette")}</h2>
           <div class="palette">${(s.palette || []).map((p) => `<div><i style="background:${p.hex}"></i><span>${esc(p.name)}</span></div>`).join("")}</div></section>
@@ -138,7 +142,7 @@ export function renderStyle(view) {
             ${m.items !== store.items.length ? `<p class="muted small">${t("style.stale")}</p>` : ""}`
             : store.items.length ? `<p class="muted">${t("style.matching")}</p>` : `<p class="muted">${t("style.noItems")}</p>`}</div></section>
         <section class="card span2"><h2 class="display">${t("style.notes")}</h2>
-          <p class="muted small" style="margin:0">${t("style.notesHint")}</p>
+          <p class="muted small" style="margin:0">${t("style.notesHint")} ${t("style.notesReread")}</p>
           <textarea class="input" id="notes" rows="3" maxlength="500" placeholder="${t("style.notesPh")}">${esc(s.notes || "")}</textarea></section>
       </div>`;
   }

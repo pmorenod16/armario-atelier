@@ -34,14 +34,18 @@ const big = (u) => u.replace(/\/(60x60|75x75_RS|170x|236x|237x|474x|736x|origina
 /** Pines del tablero: [{img, link, title}]. Prueba varias vías y guarda por qué falla cada una (para el mensaje de error). */
 export async function boardPins(board) {
   const why = [];
-  const tries = isNative ? [["rss", nativeRss], ["página", nativePage], ["widget", widgetPins]] : [["widget", widgetPins]];
+  // en el APK se lee el tablero entero (por páginas); el widget y el RSS solo dan los últimos pines
+  const tries = isNative ? [["tablero", nativeFeed], ["widget", widgetPins], ["rss", nativeRss], ["página", nativePage]] : [["widget", widgetPins]];
+  let best = [];
   for (const [name, fn] of tries) {
     try {
       const pins = await fn(board);
-      if (pins.length) return pins;
-      why.push(`${name}: sin pines`);
+      if (pins.length > best.length) best = pins;
+      if (pins.length >= 60 || (best.length && name !== "tablero")) return best;
+      if (!pins.length) why.push(`${name}: sin pines`);
     } catch (e) { why.push(`${name}: ${e?.message || e}`); }
   }
+  if (best.length) return best;
   const err = new Error(why.join(" · ")); err.why = why; throw err;
 }
 
@@ -51,6 +55,33 @@ async function nativeGet(url) {
   const r = await CapacitorHttp.get({ url, headers: UA, responseType: "text", connectTimeout: 12000, readTimeout: 12000 });
   if (r.status >= 400) throw new Error("HTTP " + r.status);
   return typeof r.data === "string" ? r.data : JSON.stringify(r.data);
+}
+/** Tablero entero con la API interna de la web de Pinterest (la misma que usa al hacer scroll), hasta 300 pines. */
+async function nativeFeed({ user, slug }) {
+  const path = `/${user}/${slug}/`;
+  const res = async (name, options) => {
+    const url = `https://www.pinterest.com/resource/${name}/get/?source_url=${encodeURIComponent(path)}&data=${encodeURIComponent(JSON.stringify({ options, context: {} }))}`;
+    const r = await CapacitorHttp.get({ url, headers: { ...UA, Accept: "application/json, text/javascript, */*; q=0.01", "X-Requested-With": "XMLHttpRequest", "X-Pinterest-Source-Url": path }, connectTimeout: 12000, readTimeout: 15000 });
+    if (r.status >= 400) throw new Error("HTTP " + r.status);
+    const j = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+    return j?.resource_response || {};
+  };
+  const id = (await res("BoardResource", { username: user, slug, field_set_key: "detailed" })).data?.id;
+  if (!id) throw new Error("sin id");
+  const out = [], seen = new Set();
+  let bookmark = null;
+  for (let page = 0; page < 12 && out.length < 300; page++) {
+    const r = await res("BoardFeedResource", { board_id: id, board_url: path, page_size: 50, field_set_key: "react_grid_pin", ...(bookmark ? { bookmarks: [bookmark] } : {}) });
+    for (const p of Array.isArray(r.data) ? r.data : []) {
+      const src = p?.images?.["564x"]?.url || p?.images?.["474x"]?.url || p?.images?.["236x"]?.url || p?.images?.orig?.url;
+      if (!src || p.type && p.type !== "pin") continue;
+      const img = big(src); if (seen.has(img)) continue; seen.add(img);
+      out.push({ img, link: p.id ? `https://www.pinterest.com/pin/${p.id}/` : null, title: p.grid_title || p.title || p.description || "" });
+    }
+    bookmark = r.bookmark;
+    if (!bookmark || bookmark === "-end-") break;
+  }
+  return out;
 }
 async function nativeRss({ user, slug }) {
   const xml = await nativeGet(`https://www.pinterest.com/${encodeURIComponent(user)}/${encodeURIComponent(slug)}.rss`);
@@ -74,7 +105,7 @@ async function nativePage({ user, slug }) {
 
 /** Widget público de incrustar tableros (JSONP): funciona en el navegador sin restricciones de origen. */
 async function widgetPins({ user, slug }) {
-  const d = await jsonp(`https://widgets.pinterest.com/v3/pidgets/boards/${encodeURIComponent(user)}/${encodeURIComponent(slug)}/pins/`);
+  const d = await jsonp(`https://widgets.pinterest.com/v3/pidgets/boards/${encodeURIComponent(user)}/${encodeURIComponent(slug)}/pins/?page_size=250`);
   if (d?.status && d.status !== "success") throw new Error(d.message || "estado " + d.status);
   return (d?.data?.pins || []).map((p) => ({
     img: big(p.images?.["564x"]?.url || p.images?.["237x"]?.url || ""),

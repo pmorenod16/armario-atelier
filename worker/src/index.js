@@ -16,7 +16,7 @@ estampado: liso, rayas, cuadros, estampado, grafico, texturizado, degradado
 material: ${MATERIAL_KEYS}
 ajuste: slim, regular, relaxed, oversize
 temporada: primavera, verano, otono, invierno`;
-const STYLE_FORMAT = `Es ropa de HOMBRE. Responde SOLO con JSON: {"name": nombre corto y evocador del estilo (2-4 palabras), "summary": 2-3 frases que describan el estilo, "keywords": 5-7 palabras clave, "palette": [{"name": color en español, "hex": "#rrggbb"}] (5-7 colores), "keyPieces": 6-10 prendas concretas que definen el estilo, "formulas": 3-5 fórmulas de outfit concretas del tablero (ej. "camisa oxford blanca + chino beige + mocasín marrón"), "fabrics": materiales y texturas que se repiten, "silhouettes": una frase sobre siluetas y proporciones (ajustes, largos, por dentro o por fuera), "footwear": una frase sobre el calzado, "avoid": una frase sobre qué no encaja}`;
+const STYLE_FORMAT = `Es ropa de HOMBRE. Responde SOLO con JSON: {"name": nombre corto y evocador del estilo (2-4 palabras; si es una mezcla, que se note), "mix": [{"name": nombre conocido de la estética (ej. "Old money", "Starboy", "Streetwear", "Minimalista", "Workwear", "Gorpcore"), "share": porcentaje entero de pines de esa estética, "look": 1 frase con lo que la define en ESTE tablero}] (2-5 estéticas, de mayor a menor, que sumen ~100; si es un único estilo, una sola con 100), "summary": 2-3 frases que describan el estilo y cómo se mezclan sus partes, "keywords": 5-7 palabras clave, "palette": [{"name": color en español, "hex": "#rrggbb"}] (5-7 colores), "keyPieces": 6-10 prendas concretas que definen el estilo, "formulas": 4-7 fórmulas de outfit concretas del tablero, que cubran TODAS las estéticas de la mezcla (ej. "camisa oxford blanca + chino beige + mocasín marrón"), "fabrics": materiales y texturas que se repiten, "silhouettes": una frase sobre siluetas y proporciones (ajustes, largos, por dentro o por fuera), "footwear": una frase sobre el calzado, "avoid": una frase sobre qué no encaja}`;
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -175,6 +175,7 @@ async function readBoard(url) {
   if (!pins.length) throw new HttpError(404, "No he podido leer el tablero. Comprueba que es público (en Pinterest: tablero → … → Editar → desactiva \"Mantener este tablero en secreto\") o sube capturas.");
   return { board: `https://www.pinterest.com/${user}/${slug}/`, pins, titles };
 }
+const MAX_ANALYZE = 40; // pines analizados por tablero (límite de 50 subpeticiones del Worker gratuito)
 const spread = (list, n) => list.length <= n ? list : Array.from({ length: n }, (_, i) => list[Math.floor((i * list.length) / n)]);
 async function fetchImageBlock(src) {
   try {
@@ -185,11 +186,12 @@ async function fetchImageBlock(src) {
     return imageBlock(b64(buf), type);
   } catch { return null; }
 }
-async function analyzeStyle(env, blocks, titles = "") {
+const hintText = (hint) => hint ? ` Él describe su estilo así (tenlo muy en cuenta y úsalo para nombrar las estéticas): «${clip(hint, 300)}».` : "";
+async function analyzeStyle(env, blocks, titles = "", hint = "", total = 0) {
   const text = await askAI(env, {
-    model: MAIN(env), maxTokens: 2200,
-    content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar.${titles ? ` Títulos y descripciones: ${String(titles).slice(0, 1500)}` : ""}
-Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora pines que no sean de ropa. ${STYLE_FORMAT}`)],
+    model: MAIN(env), maxTokens: 3000,
+    content: [...blocks, textBlock(`Estas ${blocks.length} imágenes son pines repartidos por todo un tablero de Pinterest${total > blocks.length ? ` de ${total} pines` : ""} con el estilo de ropa que la persona quiere llevar.${titles ? ` Títulos y descripciones: ${String(titles).slice(0, 2500)}` : ""}${hintText(hint)}
+Mira TODAS las imágenes, no solo las primeras: el tablero suele mezclar varias estéticas, así que agrupa los pines por estética y describe la mezcla completa sin quedarte con la mayoritaria (prendas, colores, siluetas, materiales, ambiente). Ignora pines que no sean de ropa. ${STYLE_FORMAT}`)],
   });
   return cleanStyle(parseJson(text));
 }
@@ -198,7 +200,8 @@ function cleanStyle(s) {
   return {
     name: clip(s?.name, 40), summary: clip(s?.summary, 500), keywords: arr(s?.keywords, 8, 30),
     palette: (Array.isArray(s?.palette) ? s.palette : []).filter((p) => /^#[0-9a-f]{6}$/i.test(p?.hex || "")).slice(0, 8).map((p) => ({ name: clip(p.name, 30), hex: p.hex })),
-    keyPieces: arr(s?.keyPieces, 10, 60), formulas: arr(s?.formulas, 5, 140), fabrics: clip(s?.fabrics, 200),
+    keyPieces: arr(s?.keyPieces, 12, 60), formulas: arr(s?.formulas, 7, 140),
+    mix: (Array.isArray(s?.mix) ? s.mix : []).filter((m) => m?.name).slice(0, 5).map((m) => ({ name: clip(m.name, 30), share: Math.max(0, Math.min(100, Math.round(+m.share || 0))), look: clip(m.look, 160) })), fabrics: clip(s?.fabrics, 200),
     silhouettes: clip(s?.silhouettes, 250), footwear: clip(s?.footwear, 200), avoid: clip(s?.avoid, 250),
   };
 }
@@ -484,24 +487,20 @@ Responde SOLO con JSON:
   },
 
   // Capturas de pines → perfil de estilo
-  async "/api/style/images"({ images }, env) {
+  async "/api/style/images"({ images, hint, titles, total }, env) {
     if (!Array.isArray(images) || !images.length) throw new HttpError(400, "Sube al menos una imagen.");
-    const blocks = images.slice(0, 12).map((i) => imageBlock(cleanImg(i)));
-    const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 1500,
-      content: [...blocks, textBlock(`Estas imágenes son pines o capturas con el estilo de ropa que la persona quiere llevar. Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora lo que no sea ropa. ${STYLE_FORMAT}`)],
-    });
-    return { style: cleanStyle(parseJson(text)) };
+    const blocks = images.slice(0, MAX_ANALYZE).map((i) => imageBlock(cleanImg(i)));
+    return { style: await analyzeStyle(env, blocks, String(titles || ""), hint, +total || 0), analyzed: blocks.length };
   },
 
   // Enlace de un tablero público → pines (widget público de Pinterest o RSS) → análisis del estilo
   async "/api/style/pinterest"({ url }, env) {
     const { board, pins, titles } = await readBoard(url);
-    const sample = spread(pins, 16);
+    const sample = spread(pins, MAX_ANALYZE);
     const blocks = (await Promise.all(sample.map((p) => fetchImageBlock(p.img)))).filter(Boolean);
     if (!blocks.length) throw new HttpError(502, "No he podido descargar las imágenes de los pines. Prueba subiendo capturas.");
-    const style = await analyzeStyle(env, blocks, titles);
-    return { style, pins: pins.slice(0, 40), pinCount: pins.length, analyzed: blocks.length, board };
+    const style = await analyzeStyle(env, blocks, titles, "", pins.length);
+    return { style, pins: pins.slice(0, 60), pinCount: pins.length, analyzed: blocks.length, board };
   },
 
   // Enlace corto pin.it → enlace completo del tablero
@@ -517,12 +516,13 @@ Responde SOLO con JSON:
   },
 
   // Pines leídos por el móvil → el servidor descarga sus fotos y analiza el estilo
-  async "/api/style/pins"({ board, pins, titles }, env) {
+  async "/api/style/pins"({ board, pins, titles, hint }, env) {
     const list = (pins || []).filter((p) => /^https:\/\/i\.pinimg\.com\//.test(p?.img || ""));
     if (!list.length) throw new HttpError(400, "El tablero no tiene pines con foto.");
-    const blocks = (await Promise.all(spread(list, 16).map((p) => fetchImageBlock(p.img)))).filter(Boolean);
+    // fotos pequeñas (236x): bastan para ver el estilo y caben muchas más en una petición
+    const blocks = (await Promise.all(spread(list, MAX_ANALYZE).map((p) => fetchImageBlock(p.img.replace("/564x/", "/236x/"))))).filter(Boolean);
     if (blocks.length < 3) throw new HttpError(424, "IMAGENES"); // la app las descargará ella y usará /api/style/images
-    const style = await analyzeStyle(env, blocks, String(titles || "").slice(0, 1500));
+    const style = await analyzeStyle(env, blocks, String(titles || ""), hint, list.length);
     return { style, analyzed: blocks.length, board };
   },
 
