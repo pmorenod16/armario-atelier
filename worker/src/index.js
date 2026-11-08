@@ -446,7 +446,7 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
       model: MAIN(env), maxTokens: 3500,
       content: `Eres el estilista personal de un hombre joven. Hoy tiene este plan: «${String(plan || "día normal").slice(0, 300)}».
 Tiempo: ${String(weather || "no indicado").slice(0, 600)}
-Estilo que busca: ${style ? String(style).slice(0, 800) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
+Estilo que busca (sacado de su Pinterest; lo que dice él manda): ${style ? String(style).slice(0, 2000) : "aún no definido (usa un estilo actual, cuidado y sencillo)"}
 
 Su armario (solo prendas disponibles):
 ${itemsText(wardrobe)}
@@ -462,7 +462,8 @@ Reglas:
 - Adecuado al plan (formalidad, comodidad, actividad) y al tiempo de TODO el día: si hace frío por la mañana y calor a mediodía, propón capas y di cuándo quitarlas. Si llueve, calzado y abrigo que aguanten.
 - Combina colores y estampados con criterio (como mucho un estampado protagonista).
 - No repetir, a medias: evita prendas llevadas en los últimos 3 días SOLO si hay otra prenda adecuada del mismo tipo; si no la hay, repite sin problema y dilo.
-- Tiene en cuenta lo que le gustó y lo que no.
+- Tiene en cuenta lo que le gustó y lo que no.${style ? `
+- EL ESTILO ES LO PRIMERO después del plan y el tiempo: cada outfit tiene que parecer sacado de su tablero (paleta, siluetas, fórmulas, materiales). Si su estilo es una mezcla de estéticas, reparte los outfits entre ellas (o fusiónalas) y di en "why" a cuál se acerca. Si con su armario no llega del todo a su estilo, monta lo más cercano y dilo en "missing".` : ""}
 Responde SOLO con JSON:
 {"outfits":[{"title": nombre corto y con gancho, "itemIds":[ids], "why": 1-2 frases de por qué funciona hoy, "how": [2-4 instrucciones concretas de cómo llevarlo: por dentro o por fuera, remangado, abierto o cerrado, cuándo quitarse una capa…], "tucked": [ids de prendas de arriba que van por dentro], "repeats": [ids repetidos de los últimos días, si los hay]}], "missing": si para este plan le falta algo importante en el armario, dilo en una frase; si no, null}`,
     });
@@ -479,7 +480,7 @@ Responde SOLO con JSON:
       content: `Eres estilista. Haz la maleta de un hombre joven para ${n} días en ${String(destination || "").slice(0, 80)}.
 Plan del viaje: «${String(plan || "turismo").slice(0, 300)}».
 Tiempo por días: ${String(weather || "no disponible").slice(0, 1500)}
-Estilo que busca: ${style ? String(style).slice(0, 600) : "actual, cuidado y sencillo"}
+Estilo que busca (sacado de su Pinterest; lo que dice él manda; si es una mezcla, reparte los días entre sus estéticas): ${style ? String(style).slice(0, 2000) : "actual, cuidado y sencillo"}
 Su armario (solo disponibles):
 ${itemsText(wardrobe)}
 

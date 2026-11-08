@@ -166,12 +166,14 @@ export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, updatedAt
 export function styleText(s) {
   if (!s?.summary) return null;
   return [
+    s.notes && `Lo que dice él (manda sobre todo lo demás): ${s.notes}`,
     s.name && `Estilo «${s.name}»: ${s.summary}`, !s.name && s.summary,
     s.mix?.length > 1 && `Mezcla: ${s.mix.map((m) => `${m.name} ${m.share}%${m.look ? ` (${m.look})` : ""}`).join(", ")}`,
     s.keywords?.length && `Palabras clave: ${s.keywords.join(", ")}`,
     s.palette?.length && `Paleta: ${s.palette.map((p) => p.name).join(", ")}`,
     s.formulas?.length && `Fórmulas de outfit: ${s.formulas.join(" | ")}`,
     s.silhouettes && `Siluetas: ${s.silhouettes}`, s.fabrics && `Materiales: ${s.fabrics}`, s.footwear && `Calzado: ${s.footwear}`,
-    s.avoid && `Evitar: ${s.avoid}`, s.notes && `Lo que dice él: ${s.notes}`,
+    s.keyPieces?.length && `Prendas clave: ${s.keyPieces.join(", ")}`,
+    s.avoid && `Evitar: ${s.avoid}`,
   ].filter(Boolean).join(". ");
 }
