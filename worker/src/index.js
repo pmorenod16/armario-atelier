@@ -353,23 +353,46 @@ async function askGeminiSteady(env, opts) {
 }
 
 async function askAI(env, opts) {
-  const hasNvidia = !!env.NVIDIA_API_KEY;
-  if (!env.GEMINI_API_KEY) {
-    if (hasNvidia && !opts.search) return askNvidia(env, opts);
-    throw new HttpError(500, "Falta la clave de Gemini en el servidor (GEMINI_API_KEY).");
-  }
-  try {
-    return await askGeminiSteady(env, opts);
-  } catch (e) {
-    // La búsqueda con Google tiene cupos gratuitos distintos según el modelo: probar el de reserva
-    if (opts.search && e instanceof HttpError && e.status === 429 && env.MODEL_SEARCH_FALLBACK && env.MODEL_SEARCH_FALLBACK !== opts.model) {
-      return askGemini(env, { ...opts, model: env.MODEL_SEARCH_FALLBACK });
+  // Orden: Gemini → IA de Cloudflare (Workers AI, sin clave: va en la misma cuenta) → NVIDIA (si hay clave)
+  const backups = [];
+  if (env.AI && !opts.search) backups.push(["Cloudflare", askWorkersAI]);
+  if (env.NVIDIA_API_KEY && !opts.search) backups.push(["NVIDIA", askNvidia]);
+  let first;
+  if (env.GEMINI_API_KEY) {
+    try { return await askGeminiSteady(env, opts); }
+    catch (e) {
+      // La búsqueda con Google tiene cupos gratuitos distintos según el modelo: probar el de reserva
+      if (opts.search && e instanceof HttpError && e.status === 429 && env.MODEL_SEARCH_FALLBACK && env.MODEL_SEARCH_FALLBACK !== opts.model) {
+        return askGemini(env, { ...opts, model: env.MODEL_SEARCH_FALLBACK });
+      }
+      const retryable = e instanceof HttpError && [429, 500, 502, 503, 504].includes(e.status);
+      if (!retryable || !backups.length) throw e;
+      first = e;
     }
-    const retryable = e instanceof HttpError && [429, 500, 502].includes(e.status);
-    if (!hasNvidia || opts.search || !retryable) throw e;
-    console.warn("Gemini falló, uso NVIDIA:", e.message);
-    return askNvidia(env, opts);
+  } else if (!backups.length) throw new HttpError(500, "Falta la clave de Gemini en el servidor (GEMINI_API_KEY).");
+  for (const [name, fn] of backups) {
+    try { console.warn(`Gemini no disponible (${first?.message || "sin clave"}), uso ${name}`); return await fn(env, opts); }
+    catch (e) { console.warn(name, "falló:", e.message); first ||= e; }
   }
+  throw first instanceof HttpError ? first : new HttpError(502, "La IA no está disponible ahora. Inténtalo en un rato.");
+}
+
+/** IA de Cloudflare (Workers AI): gratis dentro de la cuenta del Worker, sin clave. Llama 4 Scout ve imágenes. */
+async function askWorkersAI(env, { content, maxTokens = 2000 }) {
+  const parts = typeof content === "string" ? [{ text: content }] : content;
+  const maxImages = Number(env.CF_MAX_IMAGES || 4);
+  const all = parts.filter((p) => p.inline_data), images = all.length > maxImages ? spread(all, maxImages) : all;
+  const text = parts.filter((p) => p.text).map((p) => p.text).join("\n\n")
+    + (all.length > images.length ? `\n\n(Se adjuntan ${images.length} de las ${all.length} imágenes, repartidas.)` : "")
+    + "\n\nResponde solo con el JSON pedido, sin texto antes ni después.";
+  const model = images.length ? (env.CF_VISION_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct") : (env.CF_TEXT_MODEL || "@cf/meta/llama-4-scout-17b-16e-instruct");
+  const r = await env.AI.run(model, {
+    max_tokens: Math.min(maxTokens, 4000), temperature: 0.4,
+    messages: [{ role: "user", content: images.length ? [{ type: "text", text }, ...images.map((p) => ({ type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } }))] : text }],
+  }).catch((e) => { throw new HttpError(/limit|quota|neurons|429/i.test(String(e?.message)) ? 429 : 502, "La IA de reserva no está disponible ahora. Inténtalo en un rato."); });
+  const out = typeof r?.response === "string" ? r.response : r?.response ? JSON.stringify(r.response) : r?.choices?.[0]?.message?.content;
+  if (!out) throw new HttpError(502, "La IA ha devuelto una respuesta vacía. Vuelve a intentarlo.");
+  return out;
 }
 
 /** Llamada a NVIDIA (formato compatible con OpenAI). Los modelos de visión admiten pocas imágenes por petición. */

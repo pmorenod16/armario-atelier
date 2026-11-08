@@ -18,6 +18,11 @@ MODEL_FAST = "gemini-3.5-flash"
 # Si la búsqueda en tiendas agota el cupo gratuito del modelo principal, se prueba este
 MODEL_SEARCH_FALLBACK = "gemini-2.5-flash"
 
+# Reserva sin clave si Gemini falla: IA de Cloudflare (Workers AI, misma cuenta, cupo gratis diario; binding [ai] al final)
+CF_VISION_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+CF_TEXT_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+CF_MAX_IMAGES = "4"
+
 # Reserva gratuita si Gemini falla o se agota: NVIDIA (build.nvidia.com)
 NVIDIA_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
 NVIDIA_TEXT_MODEL = "meta/llama-3.3-70b-instruct"
@@ -27,3 +32,7 @@ NVIDIA_MAX_IMAGES = "1"
 #   npx wrangler secret put GEMINI_API_KEY   (o en el panel de Cloudflare: Settings → Variables and Secrets)
 #   npx wrangler secret put NVIDIA_API_KEY   (opcional, reserva)
 #   npx wrangler secret put TAVILY_API_KEY   (búsqueda en tiendas gratis: app.tavily.com)
+
+# IA de Cloudflare (Workers AI): reserva sin clave cuando Gemini falla
+[ai]
+binding = "AI"
