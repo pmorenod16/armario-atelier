@@ -45,7 +45,8 @@ export function renderStyle(view) {
       const board = await boardFromUrl(raw);
       let r, pins;
       // 1) el móvil lee el tablero (Pinterest bloquea a los servidores)
-      try { pins = await boardPins(board); } catch (e) { console.warn("widget", e); pins = null; }
+      let why = "";
+      try { pins = await boardPins(board); } catch (e) { console.warn("tablero", e); pins = null; why = e?.message || ""; }
       if (pins?.length) {
         st(t("style.analyzing", { n: pins.length }));
         const titles = pins.map((p) => p.title).filter(Boolean).join(" · ");
@@ -61,7 +62,8 @@ export function renderStyle(view) {
         r = { ...r, pins: pins.slice(0, 40), pinCount: pins.length };
       } else {
         // 3) último intento: que lo lea el servidor
-        r = await api("/api/style/pinterest", { url: board.url });
+        try { r = await api("/api/style/pinterest", { url: board.url }); }
+        catch (e) { throw new Error(t("style.cantRead", { board: `${board.user}/${board.slug}`, why: `${why}${why ? " · " : ""}servidor: ${e?.status || ""} ${e?.message?.slice(0, 40) || ""}` })); }
       }
       await saveStyle({ ...r.style, notes: store.style?.notes || "", source: "pinterest", boardUrl: board.url, pins: r.pins, pinCount: r.pinCount, analyzed: r.analyzed || null, analyzedAt: Date.now(), match: null });
       toast(t("style.done", { n: r.pinCount }));
