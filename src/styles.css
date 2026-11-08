@@ -644,3 +644,4 @@ body.no-select, .board.editing { user-select: none; -webkit-user-select: none; }
 a.btn { text-decoration: none; color: inherit; }
 .engine-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .engine-seg button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.diag summary { cursor: pointer; } .diag p { margin: 4px 0 0; word-break: break-word; }

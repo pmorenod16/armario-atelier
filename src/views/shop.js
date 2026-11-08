@@ -87,6 +87,7 @@ export function renderShop(view) {
             </div>`).join("")}</div>` : `<p class="muted small">${t("shop.noProducts")}</p>`}
           ${r.size || size ? `<p class="muted small">${t("shop.sizeNote", { s: esc(r.size || size) })}</p>` : ""}
           ${!r.allStores ? `<p class="muted small">${t("shop.moreInApp")}</p>` : ""}
+          ${r.diag && r.allStores ? `<details class="diag"><summary class="muted small">${t("shop.diag")}</summary><p class="muted small">${esc(r.diag)}</p></details>` : ""}
           <div class="store-links"><span class="muted small">${t("shop.inStores")}</span>${(r.links || []).map((l) => `<a class="chip" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.store)} ${icon("external")}</a>`).join("")}</div>` : ""}
       </article>`;
     };
@@ -143,17 +144,18 @@ export function renderShop(view) {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
       const [srv, dev] = await Promise.all([
         api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color }).catch((e) => { console.warn("tiendas", e); return []; }),
+        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
       ]);
-      if (srv.error && !dev.length) throw srv.error;
+      const devRes = dev; const dev2 = devRes.products || [];
+      if (srv.error && !dev2.length) throw srv.error;
       const verdict = (n) => !n || !g.priceMin ? null : n < g.priceMin * 0.6 ? "barato" : n > (g.priceMax || g.priceMin) * 1.35 ? "caro" : "justo";
-      const devP = dev.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
+      const devP = dev2.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
       // intercalar tiendas para que no salga todo de la misma marca
       const all = [...(srv.products || []), ...devP], byStore = new Map();
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
-      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 12), links: srv.links || [], size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores };
+      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 12), links: srv.links || [], size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
       searching.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));

@@ -22,8 +22,8 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
 ];
 const UA = { "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36", "Accept-Language": "es-ES,es;q=0.9", Accept: "text/html,application/xhtml+xml" };
 
-async function get(url, timeout = 12000) {
-  const r = await CapacitorHttp.get({ url, headers: UA, responseType: "text", connectTimeout: timeout, readTimeout: timeout });
+async function get(url, timeout = 12000, extra = {}) {
+  const r = await CapacitorHttp.get({ url, headers: { ...UA, ...extra }, responseType: "text", connectTimeout: timeout, readTimeout: timeout });
   if (r.status >= 400) throw new Error("HTTP " + r.status);
   return typeof r.data === "string" ? r.data : JSON.stringify(r.data);
 }
@@ -36,18 +36,30 @@ function linksFrom(html) {
   for (const m of html.matchAll(/href="([^"]+)"/g)) {
     let u = decodeHtml(m[1]);
     const dd = u.match(/[?&]uddg=([^&]+)/); if (dd) u = decodeURIComponent(dd[1]);
+    const gq = u.match(/^\/url\?(?:.*&)?q=([^&]+)/); if (gq) u = decodeURIComponent(gq[1]);
     const bing = u.match(/bing\.com\/ck\/a\?.*?[?&]u=a1([^&]+)/); if (bing) { try { u = atob(bing[1].replace(/-/g, "+").replace(/_/g, "/")); } catch {} }
-    if (/^https?:\/\//.test(u) && !/duckduckgo\.com|bing\.com|microsoft\.com|google\./.test(u)) out.add(u.split("#")[0]);
+    if (/^https?:\/\//.test(u) && !/duckduckgo\.com|bing\.com|microsoft\.com|google\.[a-z.]+\/|gstatic/.test(u)) out.add(u.split("#")[0]);
   }
   return [...out];
 }
-async function webSearch(q) {
-  try {
-    const html = await get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=es-es`);
-    const l = linksFrom(html); if (l.length) return l;
-  } catch (e) { console.warn("ddg", e.message); }
-  try { return linksFrom(await get(`https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=es&cc=ES`)); }
-  catch (e) { console.warn("bing", e.message); return []; }
+const ENGINES = [
+  ["DuckDuckGo", (q) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=es-es`],
+  ["DuckDuckGo lite", (q) => `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}&kl=es-es`],
+  ["Bing", (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=es&cc=ES&count=30`],
+  ["Google", (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=es&gl=es&num=30&gbv=1`, { Cookie: "CONSENT=YES+cb; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVzIAEaBgiA_LyaBg" }],
+];
+/** Prueba buscadores hasta que uno devuelva enlaces de tiendas. diag[] guarda qué pasó con cada uno. */
+async function webSearch(q, diag) {
+  for (const [name, url, extra] of ENGINES) {
+    try {
+      const html = await get(url(q), 12000, extra);
+      const links = linksFrom(html).map((u) => u.replace(/^\/url\?q=/, ""));
+      const shops = links.filter((u) => storeOf(u));
+      diag.push(`${name}: ${shops.length}/${links.length}`);
+      if (shops.length) return links;
+    } catch (e) { diag.push(`${name}: ${e.message}`); }
+  }
+  return [];
 }
 
 /** Ficha de producto → {name, image, price}. JSON-LD Product o etiquetas og/product. */
@@ -86,26 +98,33 @@ export const canSearchStores = isNative;
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
 export async function searchStores({ term, piece, color, skip = ["zara.com"], max = 10 }) {
-  if (!isNative) return [];
+  const diag = [];
+  if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const stores = STORES.filter(([, d]) => !skip.includes(d));
   const q = `${term} hombre`;
   const groups = [stores.slice(0, 5), stores.slice(5, 9), stores.slice(9)].filter((g) => g.length);
-  const lists = await Promise.all([webSearch(`${q} comprar`), ...groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`))]);
+  const lists = await Promise.all([webSearch(`${q} comprar`, diag), ...groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))]);
   const seen = new Set(), cand = [];
+  let shopLinks = 0;
   for (const u of lists.flat()) {
     const st = storeOf(u); if (!st || skip.includes(st[1])) continue;
+    shopLinks++;
     const clean = u.split("?")[0];
     if (!st[2].test(clean) || seen.has(clean)) continue;
     seen.add(clean); cand.push({ url: u, st });
   }
   // como mucho 3 por tienda, para que salgan varias marcas
   const per = new Map(), picked = cand.filter((c) => { const n = per.get(c.st[0]) || 0; if (n >= 3) return false; per.set(c.st[0], n + 1); return true; }).slice(0, 18);
-  const read = await pool(picked, 5, async (c) => ({ ...(await readProduct(c.url)), url: c.url, store: c.st[0] }));
-  const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  const fails = [];
+  const read = await pool(picked, 5, async (c) => { try { return { ...(await readProduct(c.url)), url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } });
+  const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5); // «mocasín» = «mocasines»
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
-  return read.filter(Boolean).map((p) => {
+  const ok = read.filter(Boolean);
+  const products = ok.map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
     return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
-  }).filter((p) => p._hits > 0).sort((a, b) => b._hits - a._hits).slice(0, max);
+  }).sort((a, b) => b._hits - a._hits).slice(0, max);
+  diag.push(`enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
+  return { products, diag };
 }

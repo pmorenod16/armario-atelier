@@ -296,6 +296,7 @@ const DICT = {
     "shop.noProductsToast": "Sin modelos que encajen: te dejo los enlaces a las tiendas",
     "shop.sizeNote": "Elige tu talla {s} en la web y comprueba que queda en stock.",
     "shop.inStores": "Buscar en",
+    "shop.diag": "Detalle de la búsqueda en otras tiendas",
     "shop.moreInApp": "Desde la app del móvil busco también en Massimo Dutti, Mango, H&M, Pull&Bear, Bershka, Uniqlo, COS, Arket, Springfield, Scalpers, El Ganso y más.",
     "shop.toWish": "Guardar en deseos",
     "shop.wishAdded": "Guardado en tu lista de deseos",
