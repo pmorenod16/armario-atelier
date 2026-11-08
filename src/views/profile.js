@@ -93,7 +93,12 @@ export function renderProfile(view) {
     <div class="cards">
       <section class="card" id="cPlaces"><h2 class="display">${t("profile.places")}</h2></section>
       <section class="card span2" id="cSizes"><h2 class="display">${t("profile.sizes")}</h2></section>
-      <section class="card"><h2 class="display">${t("soon.style.title")}</h2><p class="muted" style="margin:0">${t("soon.style.body")}</p><span class="pill" style="justify-self:start">${t("soon.style.phase")}</span></section>
+      <a class="card style-link" href="#/estilo">
+        <div class="row between"><h2 class="display">${t("style.title")}</h2>${icon("chevron")}</div>
+        ${store.style?.summary ? `<b>${esc(store.style.name || "")}</b><p class="muted" style="margin:0">${esc(store.style.summary)}</p>
+          <div class="palette mini-pal">${(store.style.palette || []).map((c) => `<i style="background:${c.hex}" title="${esc(c.name)}"></i>`).join("")}</div>`
+        : `<p class="muted" style="margin:0">${t("style.emptyBody")}</p>`}
+      </a>
       <section class="card"><h2 class="display">${t("profile.language")}</h2>
         <div class="seg">${LANGUAGES.map((l) => `<button type="button" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
         <p class="muted small" style="margin:0">${t("profile.language.soon")}</p></section>

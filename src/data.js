@@ -158,3 +158,19 @@ export function saveLayout(ids, boxes) {
   return setDoc(doc(userCol("layouts"), layoutKey(ids)), { boxes, at: Date.now() });
 }
 export const deleteLayout = (ids) => deleteDoc(doc(userCol("layouts"), layoutKey(ids)));
+
+/* ---------- fase 3: estilo ---------- */
+export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, updatedAt: Date.now() }, { merge: true });
+
+/** Texto del estilo para la IA (outfits, maleta, compras). */
+export function styleText(s) {
+  if (!s?.summary) return null;
+  return [
+    s.name && `Estilo «${s.name}»: ${s.summary}`, !s.name && s.summary,
+    s.keywords?.length && `Palabras clave: ${s.keywords.join(", ")}`,
+    s.palette?.length && `Paleta: ${s.palette.map((p) => p.name).join(", ")}`,
+    s.formulas?.length && `Fórmulas de outfit: ${s.formulas.join(" | ")}`,
+    s.silhouettes && `Siluetas: ${s.silhouettes}`, s.fabrics && `Materiales: ${s.fabrics}`, s.footwear && `Calzado: ${s.footwear}`,
+    s.avoid && `Evitar: ${s.avoid}`, s.notes && `Lo que dice él: ${s.notes}`,
+  ].filter(Boolean).join(". ");
+}

@@ -5,7 +5,7 @@ import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
-  store, subscribe, saveProfile, logWear, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
+  store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
@@ -50,6 +50,7 @@ function tabToday(box) {
         <div class="chips" id="quick">${t("today.quick").split("|").map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
         <button class="btn primary block" type="button" id="go">${icon("spark")}${t("today.go")}</button>
         <p class="status" id="st" aria-live="polite"></p>
+        ${store.style?.summary ? `<a class="style-chip" href="#/estilo">${icon("spark")}${t("today.styleOn", { name: esc(store.style.name || t("style.title")) })}</a>` : `<a class="style-chip off" href="#/estilo">${icon("pin")}${t("today.styleOff")}</a>`}
       </section>
     </div>
     <div id="result"></div>`;
@@ -203,7 +204,6 @@ function tabToday(box) {
   return () => unsub();
 }
 
-const styleText = (s) => s ? [s.summary, s.keywords?.length ? `Palabras clave: ${s.keywords.join(", ")}` : "", s.palette?.length ? `Paleta: ${s.palette.map((p) => p.name).join(", ")}` : "", s.avoid ? `Evitar: ${s.avoid}` : ""].filter(Boolean).join(". ") : null;
 
 /* =================== CALENDARIO =================== */
 function tabCalendar(box) {

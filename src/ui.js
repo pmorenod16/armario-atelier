@@ -69,6 +69,19 @@ export async function pickPhoto({ prompt = true } = {}) {
     inp.click();
   });
 }
+/** Varias fotos a la vez (capturas de Pinterest…). Devuelve una lista de Blob. */
+export async function pickPhotos(limit = 12) {
+  if (isNative) {
+    const r = await Camera.pickImages({ quality: 85, width: 1400, limit });
+    return Promise.all(r.photos.map(async (p) => (await fetch(p.webPath)).blob()));
+  }
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*"; inp.multiple = true;
+    inp.onchange = () => resolve([...inp.files].slice(0, limit));
+    inp.click();
+  });
+}
 export const isCancel = (e) => /cancel/i.test(String(e?.message || e || ""));
 
 /** Zona que acepta arrastrar y soltar una imagen (ordenador). */

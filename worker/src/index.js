@@ -16,7 +16,7 @@ estampado: liso, rayas, cuadros, estampado, grafico, texturizado, degradado
 material: ${MATERIAL_KEYS}
 ajuste: slim, regular, relaxed, oversize
 temporada: primavera, verano, otono, invierno`;
-const STYLE_FORMAT = `Responde SOLO con JSON: {"summary": 2-3 frases que describan el estilo, "keywords": 5-7 palabras clave, "palette": [{"name": color en español, "hex": "#rrggbb"}] (5-7 colores), "keyPieces": 6-10 prendas concretas que definen el estilo, "silhouettes": una frase sobre siluetas y proporciones, "avoid": una frase sobre qué no encaja}`;
+const STYLE_FORMAT = `Es ropa de HOMBRE. Responde SOLO con JSON: {"name": nombre corto y evocador del estilo (2-4 palabras), "summary": 2-3 frases que describan el estilo, "keywords": 5-7 palabras clave, "palette": [{"name": color en español, "hex": "#rrggbb"}] (5-7 colores), "keyPieces": 6-10 prendas concretas que definen el estilo, "formulas": 3-5 fórmulas de outfit concretas del tablero (ej. "camisa oxford blanca + chino beige + mocasín marrón"), "fabrics": materiales y texturas que se repiten, "silhouettes": una frase sobre siluetas y proporciones (ajustes, largos, por dentro o por fuera), "footwear": una frase sobre el calzado, "avoid": una frase sobre qué no encaja}`;
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -135,6 +135,64 @@ async function productFromPage(url) {
   brand ||= html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)/i)?.[1] || null;
   if (!imgs.length) throw new Error(/captcha|challenge|access denied|security checkpoint/i.test(html.slice(0, 20000)) ? "bloqueada" : "sin-fotos");
   return { name, brand, color, ref: null, price, url, images: imgs };
+}
+
+/* ---------- Pinterest ---------- */
+const UA_MOBILE = { "user-agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36", "accept-language": "es-ES,es;q=0.9" };
+async function readBoard(url) {
+  let board = String(url || "").trim().match(/https?:\/\/\S+/)?.[0] || "";
+  if (!/^https?:\/\/(([a-z]+\.)?pinterest\.[a-z.]+\/|pin\.it\/)/i.test(board)) throw new HttpError(400, "Ese enlace no es de Pinterest. Abre el tablero, toca Compartir → Copiar enlace y pégalo aquí.");
+  if (/pin\.it\//i.test(board)) { const r = await fetch(board, { headers: UA_MOBILE, redirect: "follow" }); board = r.url; }
+  const parts = new URL(board).pathname.split("/").filter(Boolean);
+  if (parts.length < 2 || parts[0] === "pin") throw new HttpError(400, "Pega el enlace de un tablero (pinterest.com/usuario/tablero), no de tu perfil ni de un pin suelto.");
+  const [user, slug] = parts;
+  const pins = [], seen = new Set(); let titles = "";
+  const add = (img, link, title) => {
+    if (!img) return;
+    img = img.replace(/\/(60x60|75x75_RS|170x|236x|474x|736x|originals)\//, "/564x/");
+    if (seen.has(img)) return; seen.add(img);
+    pins.push({ img, link: link || null }); if (title) titles += ` · ${title}`;
+  };
+  // 1) widget público (hasta 50 pines, JSON)
+  try {
+    const r = await fetch(`https://widgets.pinterest.com/v3/pidgets/boards/${encodeURIComponent(user)}/${encodeURIComponent(slug)}/pins/`, { headers: UA_MOBILE });
+    if (r.ok) {
+      const j = await r.json();
+      for (const p of j?.data?.pins || []) add(p.images?.["564x"]?.url || p.images?.["237x"]?.url, p.id ? `https://www.pinterest.com/pin/${p.id}/` : null, p.description);
+    }
+  } catch (e) { console.warn("pidgets", e.message); }
+  // 2) RSS (últimos ~25)
+  if (pins.length < 6) {
+    const rss = await fetch(`https://www.pinterest.com/${user}/${slug}.rss`, { headers: UA_MOBILE }).catch(() => null);
+    if (rss?.ok) {
+      const xml = await rss.text();
+      for (const it of xml.split("<item>").slice(1)) {
+        const img = it.match(/https:\/\/i\.pinimg\.com\/[^"'\s<>]+?\.(?:jpg|jpeg|png|webp)/i)?.[0];
+        add(img, it.match(/<link>([^<]+)<\/link>/)?.[1], it.match(/<title>(?:<!\[CDATA\[)?([^<\]]*)/)?.[1]);
+      }
+    }
+  }
+  if (!pins.length) throw new HttpError(404, "No he podido leer el tablero. Comprueba que es público (en Pinterest: tablero → … → Editar → desactiva \"Mantener este tablero en secreto\") o sube capturas.");
+  return { board: `https://www.pinterest.com/${user}/${slug}/`, pins, titles };
+}
+const spread = (list, n) => list.length <= n ? list : Array.from({ length: n }, (_, i) => list[Math.floor((i * list.length) / n)]);
+async function fetchImageBlock(src) {
+  try {
+    const r = await fetch(src, { headers: UA_MOBILE }); if (!r.ok) return null;
+    const type = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(type)) return null;
+    const buf = await r.arrayBuffer(); if (buf.byteLength > 3_500_000) return null;
+    return imageBlock(b64(buf), type);
+  } catch { return null; }
+}
+function cleanStyle(s) {
+  const arr = (x, n, m = 120) => (Array.isArray(x) ? x : []).map((v) => clip(v, m)).filter(Boolean).slice(0, n);
+  return {
+    name: clip(s?.name, 40), summary: clip(s?.summary, 500), keywords: arr(s?.keywords, 8, 30),
+    palette: (Array.isArray(s?.palette) ? s.palette : []).filter((p) => /^#[0-9a-f]{6}$/i.test(p?.hex || "")).slice(0, 8).map((p) => ({ name: clip(p.name, 30), hex: p.hex })),
+    keyPieces: arr(s?.keyPieces, 10, 60), formulas: arr(s?.formulas, 5, 140), fabrics: clip(s?.fabrics, 200),
+    silhouettes: clip(s?.silhouettes, 250), footwear: clip(s?.footwear, 200), avoid: clip(s?.avoid, 250),
+  };
 }
 
 /* ---------- outfits ---------- */
@@ -420,46 +478,41 @@ Responde SOLO con JSON:
   // Capturas de pines → perfil de estilo
   async "/api/style/images"({ images }, env) {
     if (!Array.isArray(images) || !images.length) throw new HttpError(400, "Sube al menos una imagen.");
-    const blocks = images.slice(0, 10).map((i) => imageBlock(cleanImg(i)));
+    const blocks = images.slice(0, 12).map((i) => imageBlock(cleanImg(i)));
     const text = await askAI(env, {
       model: MAIN(env), maxTokens: 1500,
-      content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}`)],
+      content: [...blocks, textBlock(`Estas imágenes son pines o capturas con el estilo de ropa que la persona quiere llevar. Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora lo que no sea ropa. ${STYLE_FORMAT}`)],
     });
-    return { style: parseJson(text) };
+    return { style: cleanStyle(parseJson(text)) };
   },
 
-  // Enlace de un tablero público → lee su RSS, descarga las imágenes de los pines y las analiza
+  // Enlace de un tablero público → pines (widget público de Pinterest o RSS) → análisis del estilo
   async "/api/style/pinterest"({ url }, env) {
-    let board = String(url || "").trim();
-    if (!/^https?:\/\/(([a-z]+\.)?pinterest\.[a-z.]+\/|pin\.it\/)/i.test(board)) throw new HttpError(400, "Ese enlace no es de Pinterest.");
-    const UA = { "user-agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" };
-    if (/pin\.it\//i.test(board)) { const r = await fetch(board, { headers: UA, redirect: "follow" }); board = r.url; }
-    const u = new URL(board);
-    const parts = u.pathname.split("/").filter(Boolean);
-    if (parts.length < 2) throw new HttpError(400, "Pega el enlace de un tablero (pinterest.com/usuario/tablero), no de tu perfil ni de un pin.");
-    const rssUrl = `https://www.pinterest.com/${parts[0]}/${parts[1]}.rss`;
-    const rss = await fetch(rssUrl, { headers: UA });
-    if (!rss.ok) throw new HttpError(404, "No he podido leer el tablero. Comprueba que es público, o sube capturas.");
-    const xml = await rss.text();
-    const imgs = [...new Set([...xml.matchAll(/https:\/\/i\.pinimg\.com\/[^"'\s<>]+?\.(?:jpg|jpeg|png|webp)/gi)].map((m) => m[0].replace(/\/(236x|474x|170x|75x75_RS|originals)\//, "/564x/")))].slice(0, 12);
-    if (!imgs.length) throw new HttpError(404, "El tablero no tiene pines legibles. Comprueba que es público, o sube capturas.");
-    const titles = [...xml.matchAll(/<title>(?:<!\[CDATA\[)?([^<\]]*)/g)].map((m) => m[1]).slice(1, 25).join(" · ");
-    const blocks = (await Promise.all(imgs.map(async (src) => {
-      try {
-        const r = await fetch(src, { headers: UA }); if (!r.ok) return null;
-        const type = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
-        if (!/^image\/(jpeg|png|webp|gif)$/.test(type)) return null;
-        const buf = await r.arrayBuffer(); if (buf.byteLength > 3_500_000) return null;
-        return imageBlock(b64(buf), type);
-      } catch { return null; }
-    }))).filter(Boolean);
+    const { board, pins, titles } = await readBoard(url);
+    const sample = spread(pins, 16);
+    const blocks = (await Promise.all(sample.map((p) => fetchImageBlock(p.img)))).filter(Boolean);
     if (!blocks.length) throw new HttpError(502, "No he podido descargar las imágenes de los pines. Prueba subiendo capturas.");
     const text = await askAI(env, {
-      model: MAIN(env), maxTokens: 1500,
-      content: [...blocks, textBlock(`Estas imágenes son los pines más recientes de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Títulos de los pines: ${titles.slice(0, 1500)}
-Analiza el estilo común (prendas, colores, siluetas, ambiente). ${STYLE_FORMAT}`)],
+      model: MAIN(env), maxTokens: 2200,
+      content: [...blocks, textBlock(`Estas imágenes son pines de un tablero de Pinterest con el estilo de ropa que la persona quiere llevar. Títulos y descripciones: ${titles.slice(0, 1500)}
+Analiza el estilo común (prendas, colores, siluetas, materiales, ambiente). Ignora pines que no sean de ropa. ${STYLE_FORMAT}`)],
     });
-    return { style: parseJson(text), pinCount: blocks.length };
+    return { style: cleanStyle(parseJson(text)), pins: pins.slice(0, 40), pinCount: pins.length, analyzed: blocks.length, board };
+  },
+
+  // Estilo + armario → cuánto encaja y qué prendas lo representan mejor
+  async "/api/style/match"({ style, wardrobe }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    if (!ids.size) throw new HttpError(400, "Añade prendas al armario para compararlo con tu estilo.");
+    const text = await askAI(env, {
+      model: FAST(env), maxTokens: 1500,
+      content: `Estilo objetivo (ropa de hombre): ${String(style || "").slice(0, 1500)}
+Armario:
+${itemsText(wardrobe)}
+Valora de 0 a 100 cuánto se parece el armario a ese estilo. Responde SOLO con JSON: {"score": entero, "fits": [hasta 8 ids de prendas que mejor lo representan], "off": [hasta 6 ids que menos encajan], "note": 2 frases: qué tiene ya a favor y qué le falta para acercarse}`,
+    });
+    const r = parseJson(text), ok = (l) => [...new Set((l || []).filter((id) => ids.has(id)))];
+    return { score: Math.max(0, Math.min(100, Math.round(+r.score || 0))), fits: ok(r.fits), off: ok(r.off), note: String(r.note || "").slice(0, 400) };
   },
 
   // Armario + estilo → qué falta comprar

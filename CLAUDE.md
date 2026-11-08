@@ -8,7 +8,7 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 
 ## Especificación y fases
 **`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
-1. Armario (aprobada el 8/11) · 2. Outfits del día (construida, pendiente de su revisión) (tiempo, plan, cómo llevarlo, calendario, maleta) · 3. Estilo (Pinterest) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+1. Armario (aprobada el 8/11) · 2. Outfits del día (aprobada el 8/11; extras propuestos aplazados) · 3. Estilo (Pinterest; construida, pendiente de su revisión) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
 Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
 
 ## Estructura
@@ -29,6 +29,7 @@ src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, elimina
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
 src/views/profile.js    Perfil y bienvenida: tallas, ubicaciones, idioma, cuenta
+src/views/style.js      Mi estilo (#/estilo, desde Perfil y Hoy): enlace del tablero → /api/style/pinterest o capturas → /api/style/images; moodboard, paleta, fórmulas, prendas clave, detalles; "Tu armario y tu estilo" (/api/style/match); ajustes propios (notes) que mandan sobre la IA. data.styleText() lo resume para outfits, maleta y compras
 src/views/board.js      Outfit = lienzo limpio (estilo Whering) con las fotos de las prendas, rectas y de la cabeza a los pies (autoLayout por capa). Modo "Colocar a mi gusto": arrastrar, tamaño (esquina, pellizco, rueda), traer al frente; se guarda en users/{uid}/layouts/{ids ordenados} {boxes:{id:[l,t,w,h,z]}}. Sin maniquí por decisión de Polete (8/11/2026); el 3D quedó en el historial de git
 src/cutout.js           Quita el fondo en el dispositivo; devuelve también tone (color para el halo) y thumb (miniatura dataURL)
 src/firebase.js, api.js, config.js, styles.css (tokens claro/oscuro; halo con @property)
@@ -54,7 +55,8 @@ cd worker && npx wrangler deploy
 - `users/{uid}/meta/today`: propuestas del día (`date, plan, placeId, weather, outfits[{title,itemIds,why,how[],tucked[],repeats[]}], missing`).
 - `users/{uid}/trips/{id}`: `dest{name,region,lat,lon}, start, days, plan, weather{source,days[]}, pack[], outfits[{day,title,itemIds,how}], tips, missing, packed[]`.
 - `users/{uid}/layouts/{ids ordenados}`: `boxes{itemId:[left,top,width,height,z]}` en % del lienzo 4:5, `at`.
-- `users/{uid}/meta/style`, `meta/shopping`, `outfits/`: de la versión anterior; se rehacen en las fases 3-4.
+- `users/{uid}/meta/style`: `name, summary, keywords[], palette[{name,hex}], keyPieces[], formulas[], fabrics, silhouettes, footwear, avoid, notes (de Polete), source (pinterest|capturas), boardUrl, pins[{img,link}] (URLs de pinimg o miniaturas dataURL), pinCount, analyzed, analyzedAt, match{score,fits[],off[],note,at,items}`.
+- `users/{uid}/meta/shopping`, `outfits/`: de la versión anterior; se rehacen en la fase 4.
 - No se usa Firebase Storage a propósito (exige plan Blaze).
 
 ## API del Worker (POST, `Authorization: Bearer <idToken de Firebase>`)
@@ -67,8 +69,9 @@ cd worker && npx wrangler deploy
 | `/api/image` | `{url}` | `{image, mime}`: descarga la foto oficial (la app no puede por CORS) |
 | `/api/outfits` | `{wardrobe[{id,name,type,colors,pattern,material,fit,formality,seasons,styleTags,wears}], plan, weather (texto), style, likes, dislikes, recent[{date,itemIds}], exclude, count}` | `{outfits:[{title,itemIds,why,how[],tucked[],repeats[]}], missing}` (ids filtrados al armario) |
 | `/api/packing` | `{wardrobe, destination, days, plan, weather, style}` | `{pack[], days[{day,title,itemIds,how}], tips[], missing}` |
-| `/api/style/images` | `{images[]}` | `{style}` |
-| `/api/style/pinterest` | `{url}` tablero público → lee `<usuario>/<tablero>.rss` y descarga hasta 12 pines | `{style, pinCount}` |
+| `/api/style/images` | `{images[]}` (hasta 12) | `{style}` |
+| `/api/style/pinterest` | `{url}` tablero público (también pin.it) → widget público `widgets.pinterest.com/v3/pidgets/boards/{u}/{t}/pins/` (hasta 50) y, si falla, `{u}/{t}.rss`; analiza 16 pines repartidos | `{style, pins[{img,link}], pinCount, analyzed, board}`. Sin probar en real desde un servidor |
+| `/api/style/match` | `{style (texto), wardrobe}` | `{score 0-100, fits[], off[], note}` |
 | `/api/gaps` | `{wardrobe, style, budget, section}` | `{advice, gaps}` |
 | `/api/shop` | `{piece, searchTerm, colorHint, section, budget, stores}` → si hay `TAVILY_API_KEY`: Tavily (`include_domains` = tiendas, gratis 1.000/mes) + Gemini sin búsqueda elige productos por índice; si no, Gemini con búsqueda de Google; enlaces filtrados a los dominios de las tiendas (si no, se usa el enlace de la fuente de Google) | `{products:[{store,name,price,url,color}]}` |
 
@@ -86,5 +89,5 @@ IA: **Gemini** (decisión de Polete: coste cero; tiene Google AI Pro con 10 $/me
 Para probar la interfaz en local sin cuenta: un vite.config aparte con un plugin `resolveId` que sustituya `firebase.js` y `api.js` por versiones en memoria (ver historial). No dejar ese archivo en el repo.
 
 ## Estado
-Fase 2 construida y probada con datos simulados (8/11/2026). Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
+Fase 3 construida y probada con datos simulados (8/11/2026). Fase 2 construida y probada con datos simulados (8/11/2026). Fase 1 (Armario) construida: bienvenida, perfil, añadir con recorte + IA + etiqueta, armario con filtros, ficha con estado. Probada con datos simulados en móvil/ordenador y claro/oscuro. Pendiente: revisión de Polete; probar en real la clasificación, la etiqueta y el GPS en el APK.
 Funciona de antes: login con Google en web, `/api/gaps` con Gemini, APK firmado en Actions, web en https://pmorenod16.github.io/armario-atelier/.
