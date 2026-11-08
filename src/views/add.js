@@ -28,6 +28,9 @@ export function openAdd(file) {
         <p>${t("add.pickHint")}</p>
         ${isNative ? "" : `<p class="small">${t("add.pickDesktop")}</p>`}
       </div>
+      <div class="or"><span>${t("add.orLink")}</span></div>
+      <form class="off-link" id="startLink"><input class="input" name="url" type="url" inputmode="url" placeholder="${t("official.linkPh")}" aria-label="${t("add.fromLink")}"><button class="btn sm primary" type="submit">${t("official.go")}</button></form>
+      <div id="startOfficial"></div>
     </div>`, { label: t("add.title"), onClose: () => { document.removeEventListener("paste", onPaste); setHalo(null); } });
   const root = sheet.el;
   $("[data-close]", root).onclick = () => sheet.close();
@@ -37,8 +40,32 @@ export function openAdd(file) {
   $("#pick", root).onclick = async () => { const f = await choosePhoto(); if (f) start(f); };
   if (file) start(file);
 
+  // empezar desde el enlace de la tienda: se elige una foto oficial y se sigue como si fuera tu foto
+  $("#startLink", root).onsubmit = async (e) => {
+    e.preventDefault();
+    const url = e.target.url.value.trim(); if (!url) return;
+    const box = $("#startOfficial", root);
+    box.innerHTML = `<div class="official"><p class="status">${t("official.reading")}</p></div>`;
+    let p;
+    try { p = (await api("/api/product", { url })).products[0]; }
+    catch (err) { box.innerHTML = `<div class="official"><p class="status" data-kind="error">${esc(err?.message || t("official.fail"))}</p></div>`; return; }
+    box.innerHTML = `<div class="official"><div class="row between"><b>${esc(p.name || t("official.title"))}</b><span class="muted small">${t("official.pick")}</span></div>
+      ${p.price || p.brand ? `<div class="off-meta">${p.brand ? `<span>${esc(p.brand)}</span>` : ""}${p.price ? `<span class="muted">${esc(p.price)}</span>` : ""}</div>` : ""}
+      <div class="off-imgs">${p.images.slice(0, 8).map((src, k) => `<button type="button" data-k="${k}" aria-label="${t("official.use")}"><img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer"></button>`).join("")}</div></div>`;
+    box.onclick = async (ev) => {
+      const b = ev.target.closest(".off-imgs button"); if (!b) return;
+      const src = p.images[+b.dataset.k];
+      box.querySelectorAll(".off-imgs button").forEach((x) => (x.disabled = true));
+      try {
+        const { image, mime } = await api("/api/image", { url: src });
+        start(base64ToBlob(image, mime), { product: p, image: src });
+      } catch (err) { toast(err?.message || t("official.fail"), "error"); box.querySelectorAll(".off-imgs button").forEach((x) => (x.disabled = false)); }
+    };
+  };
+  if (!isNative) $("#startLink input", root).addEventListener("paste", () => setTimeout(() => $("#startLink", root).requestSubmit(), 0));
+
   let busy = false;
-  async function start(photoFile) {
+  async function start(photoFile, fromShop = null) {
     if (busy) return; busy = true;
     document.removeEventListener("paste", onPaste);
     let photo;
@@ -81,6 +108,10 @@ export function openAdd(file) {
         const small = await shrinkPhoto(photo, 1024);
         const d = await api("/api/classify", { image: await blobToBase64(small) });
         form.fill(d, { ai: true });
+        if (fromShop) {
+          const p = fromShop.product;
+          form.fill({ name: p.name ? p.name.charAt(0) + p.name.slice(1).toLowerCase() : null, brand: p.brand || brandFromUrl(p.url) }, { ai: true });
+        }
         say($("#aiStatus", root), t("add.readDone"), "ok");
       } catch (e) {
         say($("#aiStatus", root), e?.message ? `${t("add.readFail")} (${e.message})` : t("add.readFail"), "error");
@@ -88,7 +119,7 @@ export function openAdd(file) {
       }
     })();
 
-    let official = null;
+    let official = fromShop ? { officialImage: fromShop.image, officialUrl: fromShop.product.url || null, photoSource: "oficial" } : null;
     const useOfficial = (c, info) => { cut = c; official = info; showCut(root, c); $("#save", root).disabled = false; };
     $("#labelBtn", root).onclick = () => readLabel(form, root, useOfficial);
     wireOfficial(form, root, useOfficial, async () => photo);
@@ -135,6 +166,11 @@ function showCut(root, c) {
   pv.style.setProperty("--tint", tintFor(c.tone) || "var(--surface-solid)");
   setHalo(c.tone);
 }
+
+// "www.zara.com" → "Zara"
+const brandFromUrl = (u) => {
+  try { const h = new URL(u).hostname.replace(/^(www\d?|shop|es)\./, "").split(".")[0]; return h.charAt(0).toUpperCase() + h.slice(1); } catch { return null; }
+};
 
 const officialTools = () => `
   <div class="off-tools">

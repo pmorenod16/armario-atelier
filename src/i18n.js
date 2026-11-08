@@ -155,6 +155,8 @@ const DICT = {
     "add.pick": "Hacer foto o elegir imagen",
     "add.pickHint": "Prenda extendida, de frente, sobre un fondo liso y con buena luz.",
     "add.pickDesktop": "También puedes arrastrarla aquí o pegarla con Ctrl+V.",
+    "add.orLink": "o pega el enlace de la tienda online",
+    "add.fromLink": "Enlace de la prenda en la tienda",
     "add.cutting": "Quitando el fondo…",
     "add.downloading": "Preparando el recorte (solo la primera vez)…",
     "add.reading": "La IA está mirando la prenda…",

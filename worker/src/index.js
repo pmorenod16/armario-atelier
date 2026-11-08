@@ -116,11 +116,12 @@ async function productFromPage(url) {
   const r = await fetch(url, { headers: BROWSER, redirect: "follow" });
   if (!r.ok) return null;
   const html = (await r.text()).slice(0, 1_500_000);
-  const images = new Set(); let name = null, price = null;
+  const images = new Set(); let name = null, price = null, brand = null, color = "";
   for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
     const j = parseJsonLoose(m[1]); const list = [].concat(j?.["@graph"] || j || []);
     for (const x of list) if (/Product/i.test([].concat(x?.["@type"]).join())) {
       name ||= x.name; [].concat(x.image || []).forEach((i) => images.add(typeof i === "string" ? i : i?.url));
+      brand ||= typeof x.brand === "string" ? x.brand : x.brand?.name || null; color ||= x.color || "";
       const off = [].concat(x.offers || [])[0]; if (off?.price) price ||= `${off.price} ${off.priceCurrency || "€"}`;
     }
   }
@@ -128,7 +129,8 @@ async function productFromPage(url) {
   if (og) images.add(og.replace(/&amp;/g, "&"));
   name ||= html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] || null;
   const imgs = [...images].filter(Boolean).map((i) => new URL(i, url).href).slice(0, 8);
-  return imgs.length ? { name, color: "", ref: null, price, url, images: imgs } : null;
+  brand ||= html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)/i)?.[1] || null;
+  return imgs.length ? { name, brand, color, ref: null, price, url, images: imgs } : null;
 }
 
 /* ---------- utilidades ---------- */
