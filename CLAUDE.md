@@ -8,7 +8,7 @@ App personal de Polete (estudiante de ingeniería, Girona) para clasificar su ar
 
 ## Especificación y fases
 **`ESPECIFICACION.md` manda**: son las decisiones de Polete. Se construye por fases y cada una se enseña y se aprueba antes de empezar la siguiente:
-1. Armario (aprobada el 8/11) · 2. Outfits del día (aprobada el 8/11; extras propuestos aplazados) · 3. Estilo (Pinterest; construida, pendiente de su revisión) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
+1. Armario (aprobada el 8/11) · 2. Outfits del día (aprobada el 8/11; extras propuestos aplazados) · 3. Estilo (Pinterest; construida, lectura del tablero comprobada en real el 8/11 —fallaba por perfil privado—; pendiente de su aprobación) · 4. Compras (huecos, recomendaciones reales, lista de deseos, modo tienda).
 Sin claves ni cuentas nuevas para Polete: servicios gratis sin clave (Open-Meteo, BigDataCloud) y lo que ya hay (Firebase, Worker con Gemini/NVIDIA).
 
 ## Estructura

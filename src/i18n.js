@@ -246,7 +246,7 @@ const DICT = {
     "style.reading": "Leyendo tu tablero y analizando los pines…",
     "style.readingShots": "Analizando {n} imágenes…",
     "style.done": "Estilo sacado de {n} pines",
-    "style.cantRead": "No he podido leer el tablero «{board}». Si es público, mándale a Claude este detalle: [{why}]. Mientras tanto puedes subir capturas.",
+    "style.cantRead": "No he podido leer el tablero «{board}». Comprueba que tu perfil no es privado (Pinterest → Ajustes → Visibilidad del perfil → desactiva «Perfil privado») y que el tablero no está en secreto. Si sigue sin ir, mándale a Claude este detalle: [{why}]. Mientras tanto puedes subir capturas.",
     "style.analyzing": "He leído {n} pines. Analizando tu estilo…",
     "style.noImages": "He leído el tablero pero no he podido descargar las fotos de los pines. Prueba con capturas.",
     "style.fail": "No se ha podido analizar. Inténtalo de nuevo.",
