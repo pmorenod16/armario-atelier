@@ -61,6 +61,7 @@ jobs:
           $BT/apksigner verify --verbose --print-certs $APK || echo "::warning::apksigner no da por buena la firma"
           $BT/aapt2 dump badging $APK | grep -E "^package|sdkVersion|targetSdk|native-code|testOnly|application:" || true
           grep -n "testOnly\|minSdk\|targetSdk" android/variables.gradle android/app/build.gradle || true
+          echo "Configuración dentro del APK:"; unzip -p $APK assets/capacitor.config.json || true
 
       - name: Subir el APK
         uses: actions/upload-artifact@v7
