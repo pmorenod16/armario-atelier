@@ -112,9 +112,12 @@ function inditexProducts(data, base) {
 const OFFICIAL = { zara };
 
 /** Ficha de producto de cualquier web: nombre e imágenes desde JSON-LD u og:image. */
+const MOBILE = { ...BROWSER, "user-agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36" };
 async function productFromPage(url) {
-  const r = await fetch(url, { headers: BROWSER, redirect: "follow" });
-  if (!r.ok) return null;
+  let r = await fetch(url, { headers: { ...BROWSER, accept: "text/html" }, redirect: "follow" });
+  if (!r.ok) r = await fetch(url, { headers: { ...MOBILE, accept: "text/html" }, redirect: "follow" });
+  if (r.status === 403 || r.status === 429 || r.status === 503) throw new Error("bloqueada");
+  if (!r.ok) throw new Error("http " + r.status);
   const html = (await r.text()).slice(0, 1_500_000);
   const images = new Set(); let name = null, price = null, brand = null, color = "";
   for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -130,7 +133,8 @@ async function productFromPage(url) {
   name ||= html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] || null;
   const imgs = [...images].filter(Boolean).map((i) => new URL(i, url).href).slice(0, 8);
   brand ||= html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)/i)?.[1] || null;
-  return imgs.length ? { name, brand, color, ref: null, price, url, images: imgs } : null;
+  if (!imgs.length) throw new Error(/captcha|challenge|access denied|security checkpoint/i.test(html.slice(0, 20000)) ? "bloqueada" : "sin-fotos");
+  return { name, brand, color, ref: null, price, url, images: imgs };
 }
 
 /* ---------- utilidades ---------- */
@@ -303,8 +307,22 @@ Responde SOLO con JSON: {"brand": marca o null, "size": talla tal cual (ej. "M",
   // Enlace de una ficha de producto (p. ej. copiado de Google Lens) → nombre y fotos oficiales
   async "/api/product"({ url }) {
     let u; try { u = new URL(String(url).trim().match(/https?:\/\/\S+/)?.[0] || ""); } catch { throw new HttpError(400, "Ese enlace no es válido. Copia el enlace completo de la prenda."); }
-    const p = await productFromPage(u.href).catch(() => null);
-    if (!p) throw new HttpError(422, "No he podido leer esa página. Algunas tiendas no dejan; prueba con el enlace de otra tienda que la venda.");
+    const host = u.hostname.replace(/^www\./, "");
+    let p = null, why = "";
+    try { p = await productFromPage(u.href); } catch (e) { why = e.message; console.warn("ficha", host, why); }
+    // Zara: si la página no deja leerse, se busca el producto en su catálogo por el nombre del enlace
+    if (!p && /(^|\.)zara\.com$/.test(host)) {
+      const slug = u.pathname.split("/").pop().replace(/-p\d+\.html$/, "").replace(/\.html$/, "");
+      const id = u.pathname.match(/-p(\d+)\.html/)?.[1];
+      const found = await zara(slug.replace(/-/g, " ")).catch((e) => { console.warn("zara", e.message); return []; });
+      p = found.find((x) => id && x.url?.includes(`-p${id}`)) || found[0] || null;
+      if (p) p.brand = "Zara";
+    }
+    if (!p) throw new HttpError(422, why === "bloqueada"
+      ? `${host} no deja que la app lea sus páginas. Busca la misma prenda en otra tienda o usa Google Lens.`
+      : why === "sin-fotos"
+        ? `He abierto la página de ${host} pero no trae las fotos (las carga después). Busca la misma prenda en otra tienda o usa Google Lens.`
+        : `No he podido abrir la página de ${host}. Comprueba que el enlace es de la prenda y vuelve a probar.`);
     return { source: "enlace", products: [p] };
   },
 
