@@ -63,8 +63,9 @@ export function renderCloset(view) {
     if (e.target.closest("#emptyAdd")) openAdd();
     if (e.target.closest("#clearF")) { clearFilters(); draw(); }
   };
-  grid.addEventListener("pointerover", (e) => { const tl = e.target.closest(".tile"); if (tl) setHalo(tl.dataset.tone); });
-  let tops = null;
+  // el halo sigue al ratón solo en el ordenador (en el móvil, al deslizar, repintaba la pantalla a cada toque)
+  grid.addEventListener("pointerover", (e) => { if (e.pointerType !== "mouse") return; const tl = e.target.closest(".tile"); if (tl) setHalo(tl.dataset.tone); });
+  let tops = null, lastKey = "";
   grid.addEventListener("pointerleave", () => setHalo(...(tops || [null])));
   tilt(grid, ".tile");
 
@@ -89,7 +90,12 @@ export function renderCloset(view) {
     }
     const list = base.filter((it) => !state.group || groupOf(it.type).k === state.group).sort(SORTS[state.sort]);
     if (!list.length) { grid.innerHTML = `<div class="empty"><p>${t("closet.noMatch")}</p><button class="btn" id="clearF" type="button">${t("closet.clearFilters")}</button></div>`; return; }
-    grid.innerHTML = `<div class="grid">${list.map((it, i) => tile(it, i)).join("")}</div>`;
+    // solo se rehace la cuadrícula si de verdad cambia algo (la base de datos avisa muchas veces sin cambios)
+    const key = list.map((it) => `${it.id}:${it.updatedAt || 0}:${it.status}`).join("|");
+    if (key !== lastKey) {
+      grid.innerHTML = `<div class="grid${lastKey ? " no-rise" : ""}">${list.map((it, i) => tile(it, i)).join("")}</div>`;
+      lastKey = key;
+    }
     // el color secundario toma los colores que más se repiten en lo que estás viendo
     const cnt = new Map(); list.forEach((it) => (it.colors || []).slice(0, 2).forEach((c, j) => c?.hex && cnt.set(c.hex, (cnt.get(c.hex) || 0) + (j ? 1 : 2))));
     const top = [...cnt].sort((a, b) => b[1] - a[1]).map(([h]) => h);

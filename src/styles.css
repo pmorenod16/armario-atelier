@@ -15,7 +15,7 @@
   --halo-a: #c9cfd8; --halo-b: #d9d2c6; --halo-strength: .55;
   --glow-l: #7b8597; --glow-d: #9aa3b4; --glow: var(--glow-l); /* color secundario: lo pone setHalo según lo que se ve */
   --glow-soft: color-mix(in oklab, var(--glow) 22%, transparent);
-  transition: --glow 1s var(--ease);
+
   --r-sm: 10px; --r: 16px; --r-lg: 24px; --r-xl: 32px;
   --font: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --display: "Bricolage Grotesque Variable", var(--font);
@@ -732,3 +732,20 @@ html, body { max-width: 100%; overflow-x: clip; }
 .ptabs { margin-bottom: 14px; }
 .only-looks .looks-head .grow { display: none; }
 .only-looks .looks-head { background: none; border: 0; box-shadow: none; padding: 0; }
+
+/* ---------- fluidez: en el móvil nada de 3D por tarjeta, ni desenfoques que se recalculen al desplazar ---------- */
+.halo { will-change: transform; }
+.glow-ring { will-change: transform; }
+.grid.no-rise .tile { animation: none; }
+.tile { content-visibility: auto; contain-intrinsic-size: auto 260px; }
+@media (hover: none), (pointer: coarse) {
+  .halo { filter: none; }
+  .grid { perspective: none; }
+  .tile { transform: none; transform-style: flat; transition: box-shadow .2s; }
+  .tile:active { transform: scale(.97); }
+  .tile-img img { transform: none; filter: none; transition: none; }
+  .tile::after { display: none; }
+  .glass, .nav { -webkit-backdrop-filter: none; backdrop-filter: none; background: color-mix(in oklab, var(--surface-solid) 94%, transparent); }
+  .sheet-head { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+  .card, .look, .opt[aria-pressed="true"] { transition: none; }
+}

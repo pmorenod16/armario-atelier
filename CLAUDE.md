@@ -30,7 +30,7 @@ src/views/combine.js    «¿Con qué lo combino?» desde la ficha: motor con mus
 src/native.js           Solo APK (plugins; perfil.calAuto = calendario conectado: el plan de Hoy/Mañana se rellena solo si está vacío; se conecta en Perfil → Conexiones): plan desde el calendario del móvil (@ebarooni/capacitor-calendar, READ_CALENDAR), dictar el plan (@capacitor-community/speech-recognition; en el ordenador Web Speech) y aviso diario (@capacitor/local-notifications, id 801, perfil.reminder "HH:MM")
 src/updater.js          Actualización sola: compara __BUILD__ con dist/version.json al abrir, al volver y cada 30 min
 src/weather.js          Open-Meteo sin clave: hoy por horas, viaje (previsión ≤16 días; más lejos, mismos días del año pasado con archive-api)
-src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula
+src/views/closet.js     Armario: búsqueda, grupos, filtros, orden, cuadrícula. Fluidez (8/11/2026, iba a trompicones en su móvil): la cuadrícula solo se rehace si cambian las prendas (lastKey), el halo sigue solo al ratón, y en pantallas táctiles (styles.css, «fluidez») sin 3D por tarjeta, sin drop-shadow en las fotos, sin backdrop-filter en la barra y sin blur del halo; .tile con content-visibility. No volver a poner transition de --glow en :root (repinta toda la página)
 src/views/item.js       Ficha: estado disponible/sucia/prestada, editar, eliminar (doble pulsación)
 src/views/add.js        Añadir/editar: foto o enlace de la tienda (/api/product → elegir foto → mismo flujo), recorte + IA en paralelo, foto de etiqueta → busca la foto oficial de la marca (findOfficial) y deja elegirla; guarda officialImage/officialUrl/officialRef/photoSource
 src/views/form.js       Formulario de prenda con marcas "Leído por la IA"
