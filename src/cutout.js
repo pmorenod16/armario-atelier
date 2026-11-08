@@ -110,7 +110,7 @@ export function cleanMask(canvas) {
   for (let p = 0; p < n; p++) {
     const a = d[p * 4 + 3];
     if (a < 40) d[p * 4 + 3] = 0; else if (a > 215) d[p * 4 + 3] = 255;
-    solid[p] = d[p * 4 + 3] >= 128 ? 1 : 0;
+    solid[p] = d[p * 4 + 3] >= 60 ? 1 : 0;
   }
   // componentes conexas de lo opaco
   const label = new Int32Array(n), sizes = [0];
@@ -131,7 +131,7 @@ export function cleanMask(canvas) {
   }
   const biggest = Math.max(0, ...sizes);
   if (!biggest) return 0;
-  const keep = sizes.map((s) => s >= biggest * 0.15);
+  const keep = sizes.map((s) => s >= biggest * 0.06);
   // lo semitransparente se queda solo si toca una pieza que se conserva (borde suave)
   let opaque = 0;
   for (let p = 0; p < n; p++) {
@@ -150,11 +150,27 @@ export function cleanMask(canvas) {
 async function cropToBox(photo, box) {
   const img = await loadImage(photo), W = img.naturalWidth, H = img.naturalHeight;
   const [y0, x0, y1, x1] = box.map((v) => Math.max(0, Math.min(1000, +v)) / 1000);
-  const m = 0.04;
+  const m = 0.1; // margen generoso: la IA a veces deja fuera mangas o puntas
   const sx = Math.max(0, (x0 - m) * W), sy = Math.max(0, (y0 - m) * H), ex = Math.min(W, (x1 + m) * W), ey = Math.min(H, (y1 + m) * H);
   const c = canvasFor(Math.round(ex - sx), Math.round(ey - sy));
   c.getContext("2d").drawImage(img, sx, sy, ex - sx, ey - sy, 0, 0, c.width, c.height);
-  return new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  blob.cutEdges = { top: sy > 0, left: sx > 0, bottom: ey < H, right: ex < W }; // lados en los que se ha cortado la foto
+  return blob;
+}
+/** ¿La prenda llega hasta un lado por el que se ha recortado la foto? (entonces la caja se ha quedado corta) */
+function touchesCut(canvas, edges) {
+  if (!edges) return false;
+  const { width: w, height: h } = canvas, d = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+  const op = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+  const count = (fn, len) => { let n = 0; for (let i = 0; i < len; i++) if (fn(i)) n++; return n / len; };
+  const band = 2;
+  const hit = (edge) => {
+    let f = 0;
+    for (let b = 0; b < band; b++) f = Math.max(f, edge === "top" ? count((x) => op(x, b), w) : edge === "bottom" ? count((x) => op(x, h - 1 - b), w) : edge === "left" ? count((y) => op(b, y), h) : count((y) => op(w - 1 - b, y), h));
+    return f > 0.03;
+  };
+  return Object.entries(edges).some(([k, cut]) => cut && hit(k));
 }
 const validBox = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => Number.isFinite(+v)) && (b[2] - b[0]) * (b[3] - b[1]) > 0.04 * 1e6 && (b[2] - b[0]) * (b[3] - b[1]) < 0.985 * 1e6;
 
@@ -185,11 +201,18 @@ export async function makeCutout(photo, onProgress = () => {}, { locate } = {}) 
         else onProgress("Recortando la prenda…", 0.95);
       },
     });
-    let png;
-    try { png = await run("isnet_fp16"); } catch (e) { console.warn("isnet_fp16 no disponible, uso el ligero", e); png = await run("isnet_quint8"); }
-    const img = await loadImage(png);
-    const c = canvasFor(img.naturalWidth, img.naturalHeight);
-    c.getContext("2d").drawImage(img, 0, 0);
+    let model = "isnet_fp16";
+    const cutOf = async () => {
+      let png;
+      try { png = await run(model); } catch (e) { console.warn(model, "no disponible, uso el ligero", e); model = "isnet_quint8"; png = await run(model); }
+      const img = await loadImage(png);
+      const c = canvasFor(img.naturalWidth, img.naturalHeight);
+      c.getContext("2d").drawImage(img, 0, 0);
+      return c;
+    };
+    let c = await cutOf();
+    // si la prenda toca el borde recortado, la caja de la IA se quedó corta (mangas, bajos): se repite con la foto entera
+    if (src !== photo && touchesCut(c, src.cutEdges)) { console.warn("La caja cortaba la prenda: recorto la foto entera"); src = photo; c = await cutOf(); }
     const frac = cleanMask(c);
     if (frac > 0.03 && frac < 0.96) {
       const res = await trimToWebp(c);
