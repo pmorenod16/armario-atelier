@@ -14,7 +14,7 @@ import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
-import { suggestOutfits, packTrip } from "../engine.js";
+import { suggestOutfits, packTrip, ensureGlasses } from "../engine.js";
 import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
@@ -290,6 +290,7 @@ function tabToday(box) {
         catch (e) { console.warn("IA no disponible, uso el motor de la app", e); r = local(); note = t("engine.fallback"); }
       }
       if (!r.outfits?.length) throw { message: r.missing || t("today.fail") };
+      r.outfits = ensureGlasses(r.outfits, store.items); // gafas de ver siempre, también con la IA
       const outfits = more ? [...outfitsNow(), ...r.outfits] : r.outfits;
       state.sel = more ? outfitsNow().length : 0;
       await saveToday({ date: today, plan: planEl.value.trim(), placeId: place?.id || null, weather: wx ? { t: wx.now.t, min: wx.min, max: wx.max, code: wx.code } : null, outfits, missing: r.missing || null }, slot);

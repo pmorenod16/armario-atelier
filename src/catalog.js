@@ -61,6 +61,7 @@ export const TYPES = [
   { k: "cinturon", es: "Cinturón", g: "complementos" },
   { k: "corbata", es: "Corbata", g: "complementos" },
   { k: "reloj", es: "Reloj", g: "complementos" },
+  { k: "gafas-ver", es: "Gafas de ver", g: "complementos" },
   { k: "gafas", es: "Gafas de sol", g: "complementos" },
   { k: "mochila", es: "Mochila", g: "complementos" },
   { k: "bolso", es: "Bolso / bandolera", g: "complementos" },

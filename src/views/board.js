@@ -11,14 +11,14 @@ import { t } from "../i18n.js";
 const WITH_OUTER = { outer: [46, 3, 50, 46], top: [8, 6, 42, 37], dress: [8, 4, 44, 70], bottom: [18, 41, 36, 54], shoes: [58, 73, 34, 21] };
 const NO_OUTER = { top: [18, 3, 50, 41], dress: [20, 3, 48, 70], bottom: [22, 42, 38, 55], shoes: [62, 75, 32, 20] };
 // tamaño de cada complemento (proporcional a lo que mide de verdad al lado de una chaqueta)
-const ACC_SIZE = { reloj: [12, 10], gafas: [18, 8], cinturon: [22, 11], gorra: [19, 13], gorro: [17, 14], bufanda: [19, 25], mochila: [25, 25], bolso: [23, 21], corbata: [8, 25], joya: [9, 8], otro: [15, 13] };
+const ACC_SIZE = { reloj: [12, 10], gafas: [18, 8], "gafas-ver": [17, 7], cinturon: [22, 11], gorra: [19, 13], gorro: [17, 14], bufanda: [19, 25], mochila: [25, 25], bolso: [23, 21], corbata: [8, 25], joya: [9, 8], otro: [15, 13] };
 // huecos libres para complementos (centro x, centro y), del más cómodo al menos
 const ACC_SPOTS = {
   outer: [[80, 58], [10, 52], [10, 70], [68, 90], [10, 88], [88, 70]],
   none: [[84, 14], [84, 38], [11, 52], [11, 72], [86, 58], [11, 90]],
 };
 // cada complemento prefiere un sitio: lo de la cabeza arriba, el cinturón a la altura de la cintura, la mochila abajo
-const ACC_PREF = { gorra: 0, gorro: 0, gafas: 0, reloj: 1, joya: 1, cinturon: 2, corbata: 2, bufanda: 2, mochila: 3, bolso: 3 };
+const ACC_PREF = { gorra: 0, gorro: 0, gafas: 0, "gafas-ver": 0, reloj: 1, joya: 1, cinturon: 2, corbata: 2, bufanda: 2, mochila: 3, bolso: 3 };
 const EXTRA = [[2, 74, 24, 22], [76, 28, 22, 20], [30, 74, 24, 22]];
 
 function autoLayout(items) {

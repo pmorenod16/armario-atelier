@@ -146,7 +146,7 @@ function styleBonus(it, ctx) {
 /* ---------- puntuación del conjunto ---------- */
 function harmony(items) {
   let s = 0, n = 0;
-  const cols = items.filter((it) => !["cinturon", "reloj", "joya"].includes(it.type)).map(mainColor);
+  const cols = items.filter((it) => !["cinturon", "reloj", "joya", "gafas-ver"].includes(it.type)).map(mainColor);
   for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) { s += colorPair(cols[i], cols[j]); n++; }
   let score = n ? (s / n) * 2.2 : 0;
   const strong = cols.filter((c) => c.k && !NEUTRAL.has(c.k) && !SEMI.has(c.k)).length;
@@ -296,6 +296,34 @@ function bestWatch(watches, c, f, ctx, sc, used = new Map()) {
   return w;
 }
 
+/** Elige las gafas de ver: montura oscura con looks oscuros, de pasta/metal según la formalidad, a juego con el calzado si son marrones/carey; y rota. */
+function bestGlasses(list, c, f, used = new Map()) {
+  const dark = harmony(c.items).dark > 0.5, shoe = c.items.find(isKind(SHOES)), shoeFam = shoe ? COL_FAMILY(mainColor(shoe).k) : null;
+  const score = (g) => {
+    const fam = COL_FAMILY(mainColor(g).k), words = String(`${g.name} ${g.material || ""} ${(g.styleTags || []).join(" ")}`).toLowerCase();
+    let s = -(used.get(g.id) || 0) * 0.7 - Math.abs(formalityOf(g) - f) * 0.8;
+    if (dark && fam === "negro") s += 0.8;
+    if (shoeFam && fam === shoeFam) s += 0.6;
+    if (/metal|dorad|platead|titanio/.test(words) && f >= 3) s += 0.4;
+    return s;
+  };
+  const g = list.slice().sort((a, b) => score(b) - score(a))[0];
+  used.set(g.id, (used.get(g.id) || 0) + 1);
+  return g;
+}
+
+/** Para outfits que vienen de la IA: si tiene gafas de ver y el outfit no las lleva, se las pone (las mejores para ese conjunto). */
+export function ensureGlasses(outfits, items) {
+  const glasses = items.filter((i) => i.type === "gafas-ver" && i.status !== "prestada"); if (!glasses.length) return outfits;
+  const used = new Map(), byId = new Map(items.map((i) => [i.id, i]));
+  return outfits.map((o) => {
+    const its = (o.itemIds || []).map((id) => byId.get(id)).filter(Boolean);
+    if (!its.length || its.some((i) => i.type === "gafas-ver")) return o;
+    const f = its.reduce((a, it) => a + formalityOf(it), 0) / its.length;
+    return { ...o, itemIds: [...o.itemIds, bestGlasses(glasses, { items: its }, f, used).id] };
+  });
+}
+
 /** Añade al conjunto los complementos del armario que lo rematan (máx. 3) y apunta en c.extras los que le faltarían. */
 function addAccessories(c, ctx, accs, sc, seed, watchUse) {
   const f = c.items.reduce((a, it) => a + formalityOf(it), 0) / c.items.length;
@@ -316,8 +344,11 @@ function addAccessories(c, ctx, accs, sc, seed, watchUse) {
   const watches = accs.filter((a) => a.type === "reloj");
   if (watches.length && !has("reloj")) added.push(bestWatch(watches, c, f, ctx, sc, watchUse));
   else if (!watches.length) extras.push("Reloj de esfera sencilla con correa de piel o metal");
+  // gafas de ver SIEMPRE (las lleva a diario): las que mejor van con el conjunto
+  const glasses = accs.filter((a) => a.type === "gafas-ver");
+  if (glasses.length && !has("gafas-ver")) added.push(bestGlasses(glasses, c, f, watchUse));
   for (const [type, suggestion] of want) {
-    if (added.filter((a) => a.type !== "reloj").length >= 3) break;
+    if (added.filter((a) => a.type !== "reloj" && a.type !== "gafas-ver").length >= 3) break;
     const opts = accs.filter((a) => a.type === type && !has(type));
     if (!opts.length) { if (extras.length < 2) extras.push(suggestion); continue; }
     // a juego: cinturón del color de los zapatos; si no, el que mejor puntúa
