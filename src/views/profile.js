@@ -8,6 +8,7 @@ import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
 import { canNotify, setMorningReminder, canCalendar, planFromCalendar } from "../native.js";
+import { STORES, LOCAL_DEFAULT, allowedStores } from "../storesearch.js";
 import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
@@ -116,6 +117,11 @@ export function renderProfile(view) {
           <div class="wash-grid">${Object.keys(WASH_AFTER).filter((k) => TYPE[k]).map((k) => `<label><span>${esc(label(TYPE[k]))}</span><input class="input" type="number" min="0" max="30" inputmode="numeric" data-wash="${k}" value="${washLimit(k)}"></label>`).join("")}</div>
           <button class="btn sm ghost" type="button" id="washReset">${icon("refresh")}${t("wash.reset")}</button>
         </details></section>
+      <section class="card" data-pt="settings" id="cStores"><h2 class="display">${t("stores.title")}</h2>
+        <p class="muted small">${t("stores.hint")}</p>
+        <div class="chips" id="storeChips">${STORES.map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
+        <div class="row wrap"><button class="btn sm ghost" type="button" id="storesReset">${icon("refresh")}${t("stores.reset")}</button></div>
+      </section>
       <section class="card" data-pt="settings" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
         <p class="muted small" style="margin:0">${t("recut.body")}</p>
         <div class="row wrap"><button class="btn sm primary" type="button" id="recut">${icon("spark")}${t("recut.go", { n: store.items.filter((i) => i.hasImage).length })}</button><button class="btn sm ghost" type="button" id="unrecut">${icon("refresh")}${t("recut.undo")}</button></div>
@@ -196,6 +202,14 @@ export function renderProfile(view) {
     $("#section", view).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     change({ section: b.dataset.sec });
   };
+  $("#storeChips", view).onclick = (e) => {
+    const b = e.target.closest("[data-store]"); if (!b) return;
+    b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
+    const on = [...view.querySelectorAll("#storeChips [aria-pressed=true]")].map((x) => x.dataset.store);
+    if (!on.length) { b.setAttribute("aria-pressed", "true"); return toast(t("stores.atLeastOne")); }
+    change({ stores: on });
+  };
+  $("#storesReset", view).onclick = () => { change({ stores: null }); view.querySelectorAll("#storeChips [data-store]").forEach((x) => x.setAttribute("aria-pressed", String(LOCAL_DEFAULT.includes(x.dataset.store)))); };
   $("#autoDirty", view).onchange = (e) => change({ autoDirty: e.target.checked });
   $("#washCheck", view).onchange = (e) => { $("#autoRow", view).hidden = e.target.checked; change({ washCheck: e.target.checked }); };
   view.querySelector(".wash-grid").onchange = (e) => {

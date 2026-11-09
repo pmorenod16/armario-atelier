@@ -21,7 +21,16 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
   ["Jack & Jones", "jackjones.com", /\/\d{8,}|\.html/i],
   ["Selected", "selected.com", /\/\d{8,}|\.html/i],
   ["Zara", "zara.com", /-p\d{6,}\.html/i],
+  ["Primark", "primark.com", /\/p\/|\d{9,}/i],
+  ["Lefties", "lefties.com", /-l\d{6,}|c\d+p\d+|-p\d{6,}/i],
+  ["Cortefiel", "cortefiel.com", /\/p\/|\d{6,}\.html/i],
+  ["Celio", "celio.com", /\d{6,}\.html|\/p\//i],
+  ["Decathlon", "decathlon.es", /\/p\/|_\d{6,}/i],
 ];
+// Tiendas con tienda física en Girona o alrededores (Espai Gironès, centro): las que se buscan por defecto.
+// Polete puede cambiarlas en Perfil → Ajustes → Tiendas (perfil.stores).
+export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bear", "Bershka", "Springfield", "Primark", "Lefties", "Cortefiel", "Jack & Jones", "Decathlon"];
+export const allowedStores = (profile) => (Array.isArray(profile?.stores) && profile.stores.length ? profile.stores : LOCAL_DEFAULT);
 const UA = { "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36", "Accept-Language": "es-ES,es;q=0.9", Accept: "text/html,application/xhtml+xml" };
 
 async function get(url, timeout = 12000, extra = {}) {
@@ -232,10 +241,10 @@ export const canSearchStores = isNative;
  * Busca la prenda en muchas tiendas (sin Zara, que ya da el servidor).
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
-export async function searchStores({ term, piece, color, colorHex, type, skip = ["zara.com"], max = 14 }) {
+export async function searchStores({ term, piece, color, colorHex, type, only = null, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
-  const stores = STORES.filter(([, d]) => !skip.includes(d));
+  const stores = STORES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
   const wanted = wantedColor(color || term, colorHex);
   const sec = apiDefaults.section || "hombre";
   const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids`;

@@ -9,7 +9,7 @@ import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, de
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
-import { searchStores, canSearchStores, STORES, typeOk } from "../storesearch.js";
+import { searchStores, canSearchStores, STORES, typeOk, allowedStores } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -144,9 +144,10 @@ export function renderShop(view) {
     searching.add(g.id); open.add(g.id); draw();
     try {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
+      const only = allowedStores(store.profile), wantZara = only.includes("Zara");
       const [srv, dev] = await Promise.all([
-        api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
+        !wantZara ? Promise.resolve({ products: [], links: [] }) : api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
+        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
       // aunque todo falle, siempre quedan los enlaces «Buscar en…» de cada tienda
@@ -154,11 +155,12 @@ export function renderShop(view) {
       const devP = dev2.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
       // intercalar tiendas para que no salga todo de la misma marca
       const srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece)); // Zara también: que sea esa prenda
-      const all = [...srvP, ...devP], byStore = new Map();
+      // todas las tiendas por igual: se intercalan empezando por la que mejor encaja (Zara no va primero por norma)
+      const all = [...devP, ...srvP], byStore = new Map();
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
-      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: srv.links?.length ? srv.links : storeLinks(g), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
+      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: storeLinks(g, only), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
       searching.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));
@@ -318,14 +320,16 @@ function priceNum(p) {
 }
 
 /** Enlaces al buscador de cada tienda (se hacen en la app: no dependen del servidor). */
-function storeLinks(g) {
+function storeLinks(g, only = null) {
   const sec = store.profile?.section === "mujer" ? "mujer" : "hombre";
   const term = `${g.searchTerm || g.piece} ${sec}`, q = encodeURIComponent(term);
   const site = (d) => `https://www.google.com/search?q=${q}+site%3A${d}`;
+  const site2 = (d) => site(d);
   return [
     { store: "Zara", url: `https://www.zara.com/es/es/search?searchTerm=${encodeURIComponent(g.searchTerm || g.piece)}&section=${sec === "mujer" ? "WOMAN" : "MAN"}` },
     { store: "Massimo Dutti", url: site("massimodutti.com") }, { store: "H&M", url: `https://www2.hm.com/es_es/search-results.html?q=${q}` },
     { store: "Mango", url: site("mango.com") }, { store: "Pull&Bear", url: site("pullandbear.com") }, { store: "Bershka", url: site("bershka.com") },
     { store: "Uniqlo", url: site("uniqlo.com") }, { store: "COS", url: site("cos.com") },
-  ];
+    ...STORES.filter(([n]) => !["Zara", "Massimo Dutti", "H&M", "Mango", "Pull&Bear", "Bershka", "Uniqlo", "COS"].includes(n)).map(([n, d]) => ({ store: n, url: site2(d) })),
+  ].filter((l) => !only || only.includes(l.store));
 }
