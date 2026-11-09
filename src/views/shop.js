@@ -146,7 +146,7 @@ export function renderShop(view) {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
       const [srv, dev] = await Promise.all([
         api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
+        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
       if (srv.error && !dev2.length) throw srv.error;

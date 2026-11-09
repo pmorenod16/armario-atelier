@@ -4,6 +4,7 @@
 import { CapacitorHttp } from "@capacitor/core";
 import { isNative } from "./ui.js";
 import { apiDefaults } from "./api.js";
+import { COLORS } from "./catalog.js";
 
 export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
   ["Massimo Dutti", "massimodutti.com", /-l\d{6,}|\/p\/|c\d+p\d+/i],
@@ -93,6 +94,49 @@ async function imageSearch(q, diag, tag) {
 }
 const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|Mango|H&M|Pull&Bear|Bershka|UNIQLO|Uniqlo|COS|ARKET|Arket|Springfield|Scalpers|El Ganso|JACK & JONES|Jack & Jones|SELECTED|Selected)\b.*$/i, "").replace(/^(Comprar|Buy)\s+/i, "").trim();
 
+/* ---------- color: que la prenda de la foto sea del color que buscas ---------- */
+// palabras de color que aparecen en los nombres de las tiendas → clave del catálogo
+const COLOR_WORDS = [["blanc|white|off.?white", "blanco"], ["crudo|ecru|marfil|hueso|ivory", "crudo"], ["beige|arena|piedra|sand|stone", "beige"], ["camel|tostado|tabaco", "camel"],
+  ["marr[oó]n|chocolate|brown|cuero", "marron"], ["gris claro|gris jaspe|light grey|vigor", "gris-claro"], ["gris|grey|gray", "gris"], ["antracita|charcoal|grafito", "antracita"],
+  ["negr|black", "negro"], ["marino|navy", "azul-marino"], ["azul|blue|cobalto|indigo", "azul"], ["celeste|azul claro|light blue|cielo", "celeste"], ["verde|green|botella", "verde"],
+  ["oliva|olive|kaki|khaki|caqui", "oliva"], ["rojo|red", "rojo"], ["burdeos|granate|vino|burgundy", "burdeos"], ["rosa|pink", "rosa"], ["morado|lila|violeta|purple", "morado"],
+  ["amarillo|yellow", "amarillo"], ["mostaza|mustard|ocre", "mostaza"], ["naranja|orange|teja", "naranja"]];
+const FAMILY = { blanco: "claro", crudo: "claro", beige: "claro", "gris-claro": "claro", nude: "claro", celeste: "azul", azul: "azul", "azul-marino": "azul", denim: "azul", negro: "oscuro", antracita: "oscuro", gris: "gris", marron: "marron", camel: "marron", verde: "verde", oliva: "verde", caqui: "verde", rojo: "rojo", burdeos: "rojo", rosa: "rojo", morado: "morado", amarillo: "amarillo", mostaza: "amarillo", naranja: "naranja" };
+/** Color pedido («blanco», «azul marino»…) → {k, hex} del catálogo. */
+export function wantedColor(text, hex) {
+  const low = String(text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  for (const [re, k] of COLOR_WORDS) if (new RegExp(re.normalize("NFD").replace(/[̀-ͯ]/g, "")).test(low)) { const c = COLORS.find((x) => x.k === k); return { k, hex: hex || c?.hex }; }
+  return hex ? { k: null, hex } : null;
+}
+/** Colores que nombra un título de producto. */
+const colorsInTitle = (t) => { const low = String(t || "").toLowerCase(); return COLOR_WORDS.filter(([re]) => new RegExp(re).test(low)).map(([, k]) => k); };
+const rgbOf = (hex) => { const n = parseInt(String(hex).replace("#", ""), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+function lab([r, g, b]) {
+  const f = (c) => { c /= 255; return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92; };
+  const R = f(r), G = f(g), B = f(b);
+  const X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const h = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * h(Y) - 16, 500 * (h(X) - h(Y)), 200 * (h(Y) - h(Z))];
+}
+const dE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+/** Color de la prenda en una foto de tienda: se quita el fondo (color de los bordes) y se mira el centro. */
+async function garmentColor(url) {
+  const r = await CapacitorHttp.get({ url, responseType: "blob", headers: { "User-Agent": UA["User-Agent"] }, connectTimeout: 8000, readTimeout: 8000 });
+  if (r.status >= 400 || typeof r.data !== "string") throw new Error("foto " + r.status);
+  const mime = (r.headers?.["Content-Type"] || r.headers?.["content-type"] || "image/jpeg").split(";")[0];
+  const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = `data:${mime};base64,${r.data}`; });
+  const W = 48, H = 60, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
+  const d = g.getImageData(0, 0, W, H).data, px = (x, y) => { const i = (y * W + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  const border = []; for (let x = 0; x < W; x++) { border.push(px(x, 0), px(x, H - 1)); } for (let y = 0; y < H; y++) { border.push(px(0, y), px(W - 1, y)); }
+  const med = (arr) => [0, 1, 2].map((k) => arr.map((v) => v[k]).sort((a, b) => a - b)[arr.length >> 1]);
+  const bg = lab(med(border)), inner = [];
+  for (let y = Math.round(H * 0.2); y < H * 0.8; y++) for (let x = Math.round(W * 0.2); x < W * 0.8; x++) { const p = px(x, y); if (dE(lab(p), bg) > 12) inner.push(p); }
+  // prenda casi del color del fondo (camiseta blanca sobre blanco): el color es el del fondo
+  if (inner.length < W * H * 0.36 * 0.12) return med(border);
+  return med(inner);
+}
+
 /** Ficha de producto → {name, image, price}. JSON-LD Product o etiquetas og/product. */
 async function readProduct(url) {
   const html = (await get(url, 10000)).slice(0, 1_500_000);
@@ -128,11 +172,12 @@ export const canSearchStores = isNative;
  * Busca la prenda en muchas tiendas (sin Zara, que ya da el servidor).
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
-export async function searchStores({ term, piece, color, skip = ["zara.com"], max = 14 }) {
+export async function searchStores({ term, piece, color, colorHex, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const stores = STORES.filter(([, d]) => !skip.includes(d));
-  const q = `${term} ${apiDefaults.section || "hombre"}`;
+  const wanted = wantedColor(color || term, colorHex);
+  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${apiDefaults.section || "hombre"}`;
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
@@ -148,11 +193,26 @@ export async function searchStores({ term, piece, color, skip = ["zara.com"], ma
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
       if (![...pieceWords].some((w) => tw.has(w))) continue; // que sea esa prenda
+      // que sea de ese color: si el nombre dice otro color (de otra familia), fuera
+      const named = colorsInTitle(title);
+      if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
       if (viaImg.some((p) => p.url.split("?")[0] === clean)) continue;
       viaImg.push({ store: name, name: title.slice(0, 120), url: r.page, image: r.image || r.thumb, thumb: r.thumb || r.image, price: "", priceNum: null, color: "", _hits: [...tw].filter((w) => want.has(w)).length + (pat.test(clean) ? 0.5 : 0) });
       if (++n >= 3) break; // como mucho 3 por tienda
     }
   });
+  // color de verdad: se mira la foto (los nombres a menudo no dicen el color). Lejos del pedido → fuera
+  let dropped = 0;
+  if (wanted?.hex && /^#/.test(wanted.hex)) {
+    const target = lab(rgbOf(wanted.hex));
+    await pool(viaImg, 6, async (p) => {
+      if (colorsInTitle(p.name).some((k) => k === wanted.k)) { p._color = 0; return; } // el nombre ya lo dice
+      try { p._color = dE(lab(await garmentColor(p.thumb || p.image)), target); } catch { p._color = null; }
+    });
+    const limit = ["blanco", "crudo", "negro", "gris-claro"].includes(wanted.k) ? 22 : 34; // blanco y negro, más estrictos
+    for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { viaImg.splice(i, 1); dropped++; }
+    viaImg.forEach((p) => { if (p._color != null) p._hits += Math.max(0, (limit - p._color) / limit) * 2; });
+  }
   // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
   await pool(viaImg.slice(0, 14), 5, async (p) => {
     try { const f = await readProduct(p.url); if (f.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
@@ -173,12 +233,12 @@ export async function searchStores({ term, piece, color, skip = ["zara.com"], ma
   const fails = [];
   const read = await pool(picked, 5, async (c) => { try { return { ...(await readProduct(c.url)), url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } });
   const ok = read.filter(Boolean);
-  const fromPages = ok.map((p) => {
+  const fromPages = ok.filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
     return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
   });
   const seenU = new Set(), products = [...viaImg, ...fromPages].filter((p) => { const k = p.url.split("?")[0]; if (seenU.has(k)) return false; seenU.add(k); return true; })
     .sort((a, b) => b._hits - a._hits).slice(0, max);
-  diag.push(`por imágenes ${viaImg.length} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
+  diag.push(`por imágenes ${viaImg.length}${dropped ? `, ${dropped} quitadas por color` : ""} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
   return { products, diag };
 }
