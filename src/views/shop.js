@@ -82,7 +82,7 @@ export function renderShop(view) {
         ${r && isOpen ? `
           ${r.products?.length ? `<div class="products">${r.products.map((p, k) => `
             <div class="product">
-              <a class="p-img" href="${esc(p.url)}" target="_blank" rel="noopener">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon("bag")}</a>
+              <a class="p-img" href="${esc(p.url)}" target="_blank" rel="noopener">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"${p.thumb && p.thumb !== p.image ? ` onerror="this.onerror=null;this.src='${esc(p.thumb)}'"` : ""}>` : icon("bag")}</a>
               <div class="p-info"><span class="muted small">${esc(p.store)}</span><a href="${esc(p.url)}" target="_blank" rel="noopener" class="p-name">${esc(p.name)}</a>
                 <div class="p-price"><b>${esc(p.price || t("shop.noPrice"))}</b>${p.verdict ? `<span class="pill v-${p.verdict}">${t(VERDICT[p.verdict])}</span>` : ""}</div></div>
               <button class="btn sm icon ghost heart" type="button" data-wish="${esc(g.id)}|${k}" aria-pressed="${wished.has(p.url)}" aria-label="${t("shop.toWish")}">${icon("heart")}</button>
@@ -157,7 +157,7 @@ export function renderShop(view) {
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
-      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 12), links: srv.links || [], size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
+      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: srv.links || [], size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
       searching.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));
