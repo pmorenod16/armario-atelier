@@ -151,7 +151,9 @@ export async function logWear({ date = todayKey(), itemIds, title = "", plan = "
 }
 /** Usos antes de ir a lavar, por tipo de prenda. */
 /** Usos antes de lavar para este tipo: lo que haya puesto en Perfil o el de serie (0 = nunca). */
-export const washLimit = (type) => { const v = store.profile?.washAfter?.[type]; return v == null ? WASH_AFTER[type] || 0 : +v || 0; };
+// sujetadores: nunca se marcan solos para lavar, los marca quien los usa (como cualquier prenda, desde su ficha)
+const MANUAL_WASH = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
+export const washLimit = (type) => { if (MANUAL_WASH.has(type)) return 0; const v = store.profile?.washAfter?.[type]; return v == null ? WASH_AFTER[type] || 0 : +v || 0; };
 export const WASH_AFTER = { camiseta: 1, "camiseta-ml": 1, polo: 1, tirantes: 1, camisa: 2, "camisa-mc": 1, sobrecamisa: 4, jersey: 3, cardigan: 3, sudadera: 3, "sudadera-capucha": 3, "chaleco-punto": 4, pantalon: 4, chino: 4, vaquero: 6, "traje-pantalon": 4, jogger: 2, bermuda: 3, falda: 3, vestido: 2, mono: 2, calcetines: 1,
   // chaquetas y abrigos: a la tintorería de vez en cuando
   cazadora: 20, chaqueta: 20, americana: 15, abrigo: 30, gabardina: 25, plumifero: 30, parka: 30, chaleco: 25 };
