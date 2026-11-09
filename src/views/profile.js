@@ -8,7 +8,7 @@ import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
 import { canNotify, setMorningReminder, canCalendar, planFromCalendar } from "../native.js";
-import { STORES, BRANDS, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
+import { STORES, BRANDS, BRAND_GROUPS, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
 import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
@@ -122,7 +122,9 @@ export function renderProfile(view) {
         <div class="chips" id="storeChips">${STORES.map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
         <h3 class="sub-h">${t("brands.title")}</h3>
         <p class="muted small">${t("brands.hint")}</p>
-        <div class="chips" id="brandChips">${BRANDS.map(([n]) => `<button type="button" class="chip" data-brand="${esc(n)}" aria-pressed="${allowedBrands(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
+        <div id="brandChips">${BRAND_GROUPS.map(([g, title]) => { const list = BRANDS.filter((b) => b.group === g); const on = list.filter((b) => allowedBrands(p).includes(b[0])).length;
+          return `<details class="brand-group"><summary><b>${esc(title)}</b> <span class="muted small">${list.length} marcas${on ? ` · ${on} marcadas` : ""}</span></summary>
+            ${list.map((b) => `<div class="brand-row"><button type="button" class="chip" data-brand="${esc(b[0])}" aria-pressed="${allowedBrands(p).includes(b[0])}">${esc(b[0])}</button><span class="muted small">${esc(b.desc)}</span></div>`).join("")}</details>`; }).join("")}</div>
         <div class="row wrap"><button class="btn sm ghost" type="button" id="storesReset">${icon("refresh")}${t("stores.reset")}</button></div>
       </section>
       <section class="card" data-pt="settings" id="cRecut"><h2 class="display">${t("recut.title")}</h2>

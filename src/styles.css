@@ -763,3 +763,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 .under-item .ph { width: 48px; height: 48px; border-radius: 10px; background: var(--bg-2); display: grid; place-items: center; flex: none; color: var(--glow); }
 .under-item .ph svg { width: 22px; height: 22px; }
 .sub-h { margin: 18px 0 4px; font-size: 15px; font-weight: 600; }
+.brand-group { border-top: 1px solid var(--line); padding: 10px 0; }
+.brand-group summary { cursor: pointer; list-style-position: outside; }
+.brand-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; margin-top: 8px; }
+.brand-row .chip { white-space: nowrap; }

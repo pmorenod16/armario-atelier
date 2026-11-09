@@ -17,7 +17,7 @@ const DICT = {
     "stores.hint": "En Compras solo se buscan modelos de las tiendas marcadas. Vienen marcadas las que tienen tienda física en Girona o alrededores (centro y Espai Gironès); cambia las que quieras.",
     "stores.reset": "Volver a las de Girona",
     "brands.title": "Marcas",
-    "brands.hint": "Marcas que se venden en tiendas multimarca o propias: se buscan en su web oficial. Marca las que te gusten (por defecto ninguna).",
+    "brands.hint": "Marcas para ir descubriendo, agrupadas por estilo. Se buscan en su web oficial (muchas se venden en tiendas multimarca). Marca las que te gusten y saldrán en Compras.",
     "stores.atLeastOne": "Deja al menos una tienda marcada",
     "under.suggest": "no tienes, te iría",
     "socks.length": "Largo",
