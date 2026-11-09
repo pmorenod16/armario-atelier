@@ -9,7 +9,7 @@ import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, de
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
-import { searchStores, canSearchStores, STORES } from "../storesearch.js";
+import { searchStores, canSearchStores, STORES, typeOk } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -146,18 +146,19 @@ export function renderShop(view) {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
       const [srv, dev] = await Promise.all([
         api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
+        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
-      if (srv.error && !dev2.length) throw srv.error;
+      // aunque todo falle, siempre quedan los enlaces «Buscar en…» de cada tienda
       const verdict = (n) => !n || !g.priceMin ? null : n < g.priceMin * 0.6 ? "barato" : n > (g.priceMax || g.priceMin) * 1.35 ? "caro" : "justo";
       const devP = dev2.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
       // intercalar tiendas para que no salga todo de la misma marca
-      const all = [...(srv.products || []), ...devP], byStore = new Map();
+      const srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece)); // Zara también: que sea esa prenda
+      const all = [...srvP, ...devP], byStore = new Map();
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
-      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: srv.links || [], size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
+      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: srv.links?.length ? srv.links : storeLinks(g), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
       searching.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));
@@ -314,4 +315,17 @@ function priceNum(p) {
   let x = m[1];
   x = /[.,]\d{1,2}$/.test(x) ? x.replace(/[.,](?=\d{3}\b)/g, "").replace(",", ".") : x.replace(/[.,]/g, "");
   const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Enlaces al buscador de cada tienda (se hacen en la app: no dependen del servidor). */
+function storeLinks(g) {
+  const sec = store.profile?.section === "mujer" ? "mujer" : "hombre";
+  const term = `${g.searchTerm || g.piece} ${sec}`, q = encodeURIComponent(term);
+  const site = (d) => `https://www.google.com/search?q=${q}+site%3A${d}`;
+  return [
+    { store: "Zara", url: `https://www.zara.com/es/es/search?searchTerm=${encodeURIComponent(g.searchTerm || g.piece)}&section=${sec === "mujer" ? "WOMAN" : "MAN"}` },
+    { store: "Massimo Dutti", url: site("massimodutti.com") }, { store: "H&M", url: `https://www2.hm.com/es_es/search-results.html?q=${q}` },
+    { store: "Mango", url: site("mango.com") }, { store: "Pull&Bear", url: site("pullandbear.com") }, { store: "Bershka", url: site("bershka.com") },
+    { store: "Uniqlo", url: site("uniqlo.com") }, { store: "COS", url: site("cos.com") },
+  ];
 }

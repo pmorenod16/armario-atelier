@@ -94,6 +94,66 @@ async function imageSearch(q, diag, tag) {
 }
 const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|Mango|H&M|Pull&Bear|Bershka|UNIQLO|Uniqlo|COS|ARKET|Arket|Springfield|Scalpers|El Ganso|JACK & JONES|Jack & Jones|SELECTED|Selected)\b.*$/i, "").replace(/^(Comprar|Buy)\s+/i, "").trim();
 
+/* ---------- precisión: que sea ESA prenda, de la sección del perfil ---------- */
+const N = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// por tipo del catálogo: lo que el nombre tiene que decir (need) y lo que no puede decir (avoid)
+const TYPE_RULES = {
+  camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|manga larga|\btop\b|\bbody\b|tank/ },
+  "camiseta-ml": { need: /(\bcamisetas?\b|t-?shirt).*manga larga|manga larga.*(\bcamisetas?\b|t-?shirt)|long sleeve/, avoid: /tirantes|\bcamisas?\b|\bpolo|sudadera/ },
+  polo: { need: /\bpolos?\b/, avoid: /cuello polo.*jersey|jersey|sudadera/ },
+  tirantes: { need: /tirantes|sin mangas|tank/ },
+  camisa: { need: /\bcamisas?\b|\bshirt\b/, avoid: /camiseta|sobrecamisa|overshirt|t-?shirt|manga corta/ },
+  "camisa-mc": { need: /\bcamisas?\b.*manga corta|manga corta.*\bcamisas?\b/, avoid: /camiseta|sobrecamisa|t-?shirt/ },
+  sobrecamisa: { need: /sobrecamisa|overshirt/ },
+  jersey: { need: /jersey|sueter|sweater|pullover|\bpunto\b/, avoid: /chaleco|cardigan|sudadera|chaqueta|vestido|falda|pantalon/ },
+  cardigan: { need: /cardigan|chaqueta (de )?punto/ },
+  sudadera: { need: /sudadera|sweatshirt/, avoid: /capucha|hoodie|pantalon/ },
+  "sudadera-capucha": { need: /capucha|hoodie/, avoid: /pantalon|chaqueta/ },
+  "chaleco-punto": { need: /chaleco/ },
+  pantalon: { need: /pantalon|trousers/, avoid: /corto|bermuda|\bshorts?\b|jogger|chandal|vaquero|jeans?\b|denim|pijama/ },
+  chino: { need: /chino/ , avoid: /corto|bermuda|\bshorts?\b/ },
+  vaquero: { need: /vaquero|jeans?\b/, avoid: /corto|bermuda|\bshorts?\b|camisa|chaqueta|cazadora|sobrecamisa/ },
+  "traje-pantalon": { need: /pantalon.*traje|traje.*pantalon|pantalon (de )?vestir|pinzas/, avoid: /corto|bermuda/ },
+  jogger: { need: /jogger|chandal|jogging/, avoid: /sudadera|chaqueta/ },
+  bermuda: { need: /bermuda|\bshorts?\b|pantalon corto/ },
+  falda: { need: /falda|skirt/ },
+  vestido: { need: /vestido|dress/ },
+  zapatillas: { need: /zapatilla|sneaker|deportiva/, avoid: /calcetin|bolsa|zapato/ },
+  zapatos: { need: /zapato|oxford|derby|blucher/, avoid: /zapatilla|calcetin/ },
+  mocasines: { need: /mocasin|loafer|penny/, avoid: /calcetin/ },
+  botas: { need: /\bbotas?\b|boot/, avoid: /botin|calcetin/ },
+  botines: { need: /botin|chelsea|boot/, avoid: /calcetin/ },
+  sandalias: { need: /sandalia|chancla/ },
+  americana: { need: /americana|blazer/, avoid: /pantalon|chaleco/ },
+  abrigo: { need: /abrigo|\bcoat\b/, avoid: /sobrecamisa|chaleco/ },
+  gabardina: { need: /gabardina|trench/ },
+  cazadora: { need: /cazadora|bomber|chaqueta/, avoid: /punto|americana|pantalon/ },
+  chaqueta: { need: /chaqueta|cazadora|jacket/, avoid: /punto|pantalon/ },
+  plumifero: { need: /plumifero|acolchad|puffer|plumas/ },
+  parka: { need: /parka/ },
+  chaleco: { need: /chaleco/, avoid: /punto/ },
+  cinturon: { need: /cinturon|\bbelt\b/ },
+  reloj: { need: /reloj|watch/ },
+  gafas: { need: /gafas|sunglasses/ },
+  bufanda: { need: /bufanda|scarf/ },
+  gorra: { need: /gorra|\bcap\b/ },
+  calcetines: { need: /calcetin|socks?\b/ },
+};
+/** ¿El nombre es de esa prenda? (con tipo del catálogo; si no, que diga la palabra principal de la prenda entera) */
+export function typeOk(title, type, piece) {
+  const t = N(title), r = TYPE_RULES[type];
+  if (r) return r.need.test(t) && !(r.avoid && r.avoid.test(t));
+  const main = N(piece).split(/[^a-z]+/).find((w) => w.length > 3);
+  return !main || new RegExp(`\\b${main.replace(/e?s$/, "")}(e?s)?\\b`).test(t);
+}
+/** ¿Es de la sección del perfil? Fuera mujer/niño en hombre, y hombre/niño en mujer (por nombre y por enlace). */
+export function sectionOk(title, url) {
+  const t = `${N(title)} ${N(decodeURIComponent(url || ""))}`;
+  const kids = /\bnin[oa]s?\b|kids?\b|\bbebe|junior|\bboys?\b|\bgirls?\b|infantil|teen/;
+  if (kids.test(t)) return false;
+  return (apiDefaults.section || "hombre") === "mujer" ? !/\bhombres?\b|\/(man|men|hombre)\/|\bmen\b|\bman\b/.test(t) : !/\bmujer(es)?\b|\/(woman|women|mujer|ella|she)\/|\bwomen\b|\bwoman\b|\bfemenin/.test(t);
+}
+
 /* ---------- color: que la prenda de la foto sea del color que buscas ---------- */
 // palabras de color que aparecen en los nombres de las tiendas → clave del catálogo
 const COLOR_WORDS = [["blanc|white|off.?white", "blanco"], ["crudo|ecru|marfil|hueso|ivory", "crudo"], ["beige|arena|piedra|sand|stone", "beige"], ["camel|tostado|tabaco", "camel"],
@@ -172,12 +232,13 @@ export const canSearchStores = isNative;
  * Busca la prenda en muchas tiendas (sin Zara, que ya da el servidor).
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
-export async function searchStores({ term, piece, color, colorHex, skip = ["zara.com"], max = 14 }) {
+export async function searchStores({ term, piece, color, colorHex, type, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const stores = STORES.filter(([, d]) => !skip.includes(d));
   const wanted = wantedColor(color || term, colorHex);
-  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${apiDefaults.section || "hombre"}`;
+  const sec = apiDefaults.section || "hombre";
+  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids`;
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
@@ -192,7 +253,7 @@ export async function searchStores({ term, piece, color, colorHex, skip = ["zara
       const clean = r.page.split("?")[0], title = cleanTitle(r.title);
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
-      if (![...pieceWords].some((w) => tw.has(w))) continue; // que sea esa prenda
+      if (!typeOk(title, type, piece) || !sectionOk(title, r.page)) continue; // que sea esa prenda y de su sección
       // que sea de ese color: si el nombre dice otro color (de otra familia), fuera
       const named = colorsInTitle(title);
       if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
@@ -233,7 +294,7 @@ export async function searchStores({ term, piece, color, colorHex, skip = ["zara
   const fails = [];
   const read = await pool(picked, 5, async (c) => { try { return { ...(await readProduct(c.url)), url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } });
   const ok = read.filter(Boolean);
-  const fromPages = ok.filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
+  const fromPages = ok.filter((p) => typeOk(p.name, type, piece) && sectionOk(p.name, p.url)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
     return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
   });
