@@ -9,7 +9,7 @@ import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, de
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
-import { searchStores, canSearchStores, STORES, typeOk, allowedStores } from "../storesearch.js";
+import { searchStores, canSearchStores, ALL_SOURCES, typeOk, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -144,7 +144,7 @@ export function renderShop(view) {
     searching.add(g.id); open.add(g.id); draw();
     try {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
-      const only = allowedStores(store.profile), wantZara = only.includes("Zara");
+      const only = [...allowedStores(store.profile), ...allowedBrands(store.profile)], wantZara = only.includes("Zara");
       const [srv, dev] = await Promise.all([
         !wantZara ? Promise.resolve({ products: [], links: [] }) : api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
         searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
@@ -330,6 +330,6 @@ function storeLinks(g, only = null) {
     { store: "Massimo Dutti", url: site("massimodutti.com") }, { store: "H&M", url: `https://www2.hm.com/es_es/search-results.html?q=${q}` },
     { store: "Mango", url: site("mango.com") }, { store: "Pull&Bear", url: site("pullandbear.com") }, { store: "Bershka", url: site("bershka.com") },
     { store: "Uniqlo", url: site("uniqlo.com") }, { store: "COS", url: site("cos.com") },
-    ...STORES.filter(([n]) => !["Zara", "Massimo Dutti", "H&M", "Mango", "Pull&Bear", "Bershka", "Uniqlo", "COS"].includes(n)).map(([n, d]) => ({ store: n, url: site2(d) })),
+    ...ALL_SOURCES.filter(([n]) => !["Zara", "Massimo Dutti", "H&M", "Mango", "Pull&Bear", "Bershka", "Uniqlo", "COS"].includes(n)).map(([n, d]) => ({ store: n, url: site2(d) })),
   ].filter((l) => !only || only.includes(l.store));
 }

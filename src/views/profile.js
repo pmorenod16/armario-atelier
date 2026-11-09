@@ -8,7 +8,7 @@ import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
 import { canNotify, setMorningReminder, canCalendar, planFromCalendar } from "../native.js";
-import { STORES, LOCAL_DEFAULT, allowedStores } from "../storesearch.js";
+import { STORES, BRANDS, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
 import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
@@ -120,6 +120,9 @@ export function renderProfile(view) {
       <section class="card" data-pt="settings" id="cStores"><h2 class="display">${t("stores.title")}</h2>
         <p class="muted small">${t("stores.hint")}</p>
         <div class="chips" id="storeChips">${STORES.map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
+        <h3 class="sub-h">${t("brands.title")}</h3>
+        <p class="muted small">${t("brands.hint")}</p>
+        <div class="chips" id="brandChips">${BRANDS.map(([n]) => `<button type="button" class="chip" data-brand="${esc(n)}" aria-pressed="${allowedBrands(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
         <div class="row wrap"><button class="btn sm ghost" type="button" id="storesReset">${icon("refresh")}${t("stores.reset")}</button></div>
       </section>
       <section class="card" data-pt="settings" id="cRecut"><h2 class="display">${t("recut.title")}</h2>
@@ -208,6 +211,11 @@ export function renderProfile(view) {
     const on = [...view.querySelectorAll("#storeChips [aria-pressed=true]")].map((x) => x.dataset.store);
     if (!on.length) { b.setAttribute("aria-pressed", "true"); return toast(t("stores.atLeastOne")); }
     change({ stores: on });
+  };
+  $("#brandChips", view).onclick = (e) => {
+    const b = e.target.closest("[data-brand]"); if (!b) return;
+    b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
+    change({ brands: [...view.querySelectorAll("#brandChips [aria-pressed=true]")].map((x) => x.dataset.brand) });
   };
   $("#storesReset", view).onclick = () => { change({ stores: null }); view.querySelectorAll("#storeChips [data-store]").forEach((x) => x.setAttribute("aria-pressed", String(LOCAL_DEFAULT.includes(x.dataset.store)))); };
   $("#autoDirty", view).onchange = (e) => change({ autoDirty: e.target.checked });

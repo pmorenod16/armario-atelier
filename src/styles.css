@@ -762,3 +762,4 @@ html, body { max-width: 100%; overflow-x: clip; }
 .under-item.suggest { cursor: default; border-style: dashed; background: transparent; }
 .under-item .ph { width: 48px; height: 48px; border-radius: 10px; background: var(--bg-2); display: grid; place-items: center; flex: none; color: var(--glow); }
 .under-item .ph svg { width: 22px; height: 22px; }
+.sub-h { margin: 18px 0 4px; font-size: 15px; font-weight: 600; }

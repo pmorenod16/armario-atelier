@@ -30,6 +30,17 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
 // Tiendas con tienda física en Girona o alrededores (Espai Gironès, centro): las que se buscan por defecto.
 // Polete puede cambiarlas en Perfil → Ajustes → Tiendas (perfil.stores).
 export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bear", "Bershka", "Springfield", "Primark", "Lefties", "Cortefiel", "Jack & Jones", "Decathlon", "Celio"];
+// Marcas (no son cadenas de tiendas: se buscan en su web oficial; se venden en tiendas multimarca o propias).
+// Por defecto ninguna: Polete marca las que le gustan en Perfil → Ajustes → Tiendas (perfil.brands).
+export const BRANDS = [
+  ["Ralph Lauren", "ralphlauren.es"], ["Tommy Hilfiger", "tommy.com"], ["Lacoste", "lacoste.com"], ["Hackett", "hackett.com"],
+  ["Gant", "gant.es"], ["Barbour", "barbour.com"], ["Fred Perry", "fredperry.com"], ["Hugo Boss", "hugoboss.com"],
+  ["Calvin Klein", "calvinklein.es"], ["Levi's", "levi.com"], ["Dockers", "dockers.com"], ["Carhartt WIP", "carhartt-wip.com"],
+  ["Timberland", "timberland.es"], ["Clarks", "clarks.com"], ["Nike", "nike.com"], ["Adidas", "adidas.es"],
+  ["New Balance", "newbalance.es"], ["Veja", "veja-store.com"], ["Converse", "converse.com"], ["Vans", "vans.es"],
+].map(([n, d]) => [n, d, /./]);
+export const ALL_SOURCES = [...STORES, ...BRANDS];
+export const allowedBrands = (profile) => (Array.isArray(profile?.brands) ? profile.brands : []);
 export const allowedStores = (profile) => (Array.isArray(profile?.stores) && profile.stores.length ? profile.stores : LOCAL_DEFAULT);
 const UA = { "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36", "Accept-Language": "es-ES,es;q=0.9", Accept: "text/html,application/xhtml+xml" };
 
@@ -38,7 +49,7 @@ async function get(url, timeout = 12000, extra = {}) {
   if (r.status >= 400) throw new Error("HTTP " + r.status);
   return typeof r.data === "string" ? r.data : JSON.stringify(r.data);
 }
-const storeOf = (url) => { try { const h = new URL(url).hostname; return STORES.find(([, d]) => h === d || h.endsWith("." + d)); } catch { return null; } };
+const storeOf = (url) => { try { const h = new URL(url).hostname; return ALL_SOURCES.find(([, d]) => h === d || h.endsWith("." + d)); } catch { return null; } };
 const decodeHtml = (s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
 /** Enlaces de resultados del buscador (DuckDuckGo html/lite o Bing). */
@@ -101,7 +112,7 @@ async function imageSearch(q, diag, tag) {
   }
   return [];
 }
-const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|Mango|H&M|Pull&Bear|Bershka|UNIQLO|Uniqlo|COS|ARKET|Arket|Springfield|Scalpers|El Ganso|JACK & JONES|Jack & Jones|SELECTED|Selected)\b.*$/i, "").replace(/^(Comprar|Buy)\s+/i, "").trim();
+const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|Mango|H&M|Pull&Bear|Bershka|UNIQLO|Uniqlo|COS|ARKET|Arket|Springfield|Scalpers|El Ganso|JACK & JONES|Jack & Jones|SELECTED|Selected)\b.*$/i, "").replace(/\s*\|\s*[^|]{1,40}$/, "").replace(/^(Comprar|Buy)\s+/i, "").trim();
 
 /* ---------- precisión: que sea ESA prenda, de la sección del perfil ---------- */
 const N = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -244,7 +255,7 @@ export const canSearchStores = isNative;
 export async function searchStores({ term, piece, color, colorHex, type, only = null, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
-  const stores = STORES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
+  const stores = ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
   const wanted = wantedColor(color || term, colorHex);
   const sec = apiDefaults.section || "hombre";
   const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids`;
