@@ -120,16 +120,20 @@ export function renderProfile(view) {
       <section class="card" data-pt="settings" id="cStores"><h2 class="display">${t("stores.title")}</h2>
         <p class="muted small">${t("stores.hint")}</p>
         <div id="storeChips">
+          ${allBtns("store", "chains")}
           <div class="chips">${STORES.filter(([n]) => !MULTI[n]).map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
           <details class="brand-group" open><summary><b>${t("stores.multi")}</b></summary>
             <p class="muted small">${t("stores.multiHint")}</p>
+            ${allBtns("store", "multi")}
             ${STORES.filter(([n]) => MULTI[n]).map(([n]) => `<div class="brand-row"><button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button><span class="muted small">${esc(MULTI[n])}</span></div>`).join("")}
           </details>
         </div>
         <h3 class="sub-h">${t("brands.title")}</h3>
         <p class="muted small">${t("brands.hint")}</p>
+        ${allBtns("brand", "*")}
         <div id="brandChips">${BRAND_GROUPS.map(([g, title]) => { const list = BRANDS.filter((b) => b.group === g); const on = list.filter((b) => allowedBrands(p).includes(b[0])).length;
           return `<details class="brand-group"><summary><b>${esc(title)}</b> <span class="muted small">${list.length} marcas${on ? ` · ${on} marcadas` : ""}</span></summary>
+            ${allBtns("brand", g)}
             ${list.map((b) => `<div class="brand-row"><button type="button" class="chip" data-brand="${esc(b[0])}" aria-pressed="${allowedBrands(p).includes(b[0])}">${esc(b[0])}</button><span class="muted small">${esc(b.desc)}</span></div>`).join("")}</details>`; }).join("")}</div>
         <div class="row wrap"><button class="btn sm ghost" type="button" id="storesReset">${icon("refresh")}${t("stores.reset")}</button></div>
       </section>
@@ -220,6 +224,24 @@ export function renderProfile(view) {
     if (!on.length) { b.setAttribute("aria-pressed", "true"); return toast(t("stores.atLeastOne")); }
     change({ stores: on });
   };
+  // «Marcar todas» / «Quitar todas» (cadenas, multimarca, todas las marcas o un grupo de marcas)
+  view.querySelector("#cStores").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-all]"); if (!b) return;
+    e.stopPropagation();
+    const [kind, scope] = b.dataset.all.split(":"), on = b.dataset.on === "1";
+    if (kind === "store") {
+      const names = STORES.filter(([n]) => (scope === "multi" ? !!MULTI[n] : !MULTI[n])).map(([n]) => n);
+      let cur = new Set(allowedStores(p)); names.forEach((n) => (on ? cur.add(n) : cur.delete(n)));
+      if (!cur.size) return toast(t("stores.atLeastOne"));
+      p.stores = [...cur]; change({ stores: p.stores });
+      names.forEach((n) => view.querySelector(`[data-store="${CSS.escape(n)}"]`)?.setAttribute("aria-pressed", String(on)));
+    } else {
+      const names = BRANDS.filter((x) => scope === "*" || x.group === scope).map((x) => x[0]);
+      const cur = new Set(allowedBrands(p)); names.forEach((n) => (on ? cur.add(n) : cur.delete(n)));
+      p.brands = [...cur]; change({ brands: p.brands });
+      names.forEach((n) => view.querySelector(`[data-brand="${CSS.escape(n)}"]`)?.setAttribute("aria-pressed", String(on)));
+    }
+  }, true);
   $("#brandChips", view).onclick = (e) => {
     const b = e.target.closest("[data-brand]"); if (!b) return;
     b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
@@ -301,4 +323,9 @@ export function runOnboarding(host, done) {
     host.hidden = true; host.innerHTML = ""; done();
   };
   show();
+}
+
+/** Botones «Marcar todas» / «Quitar todas» para un grupo de tiendas o marcas. */
+function allBtns(kind, scope) {
+  return `<div class="row wrap all-btns"><button type="button" class="btn sm ghost" data-all="${kind}:${scope}" data-on="1">${icon("check")}${t("stores.all")}</button><button type="button" class="btn sm ghost" data-all="${kind}:${scope}" data-on="0">${icon("close")}${t("stores.none")}</button></div>`;
 }

@@ -767,3 +767,4 @@ html, body { max-width: 100%; overflow-x: clip; }
 .brand-group summary { cursor: pointer; list-style-position: outside; }
 .brand-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; margin-top: 8px; }
 .brand-row .chip { white-space: nowrap; }
+.all-btns { margin: 6px 0 8px; gap: 8px; }
