@@ -29,7 +29,7 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
 ];
 // Tiendas con tienda física en Girona o alrededores (Espai Gironès, centro): las que se buscan por defecto.
 // Polete puede cambiarlas en Perfil → Ajustes → Tiendas (perfil.stores).
-export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bear", "Bershka", "Springfield", "Primark", "Lefties", "Cortefiel", "Jack & Jones", "Decathlon"];
+export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bear", "Bershka", "Springfield", "Primark", "Lefties", "Cortefiel", "Jack & Jones", "Decathlon", "Celio"];
 export const allowedStores = (profile) => (Array.isArray(profile?.stores) && profile.stores.length ? profile.stores : LOCAL_DEFAULT);
 const UA = { "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36", "Accept-Language": "es-ES,es;q=0.9", Accept: "text/html,application/xhtml+xml" };
 
