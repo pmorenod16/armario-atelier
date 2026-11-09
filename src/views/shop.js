@@ -11,7 +11,7 @@ import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
 import { openWhere, whereSummary } from "./storepicker.js";
 import { LOCAL_DEFAULT } from "../storesearch.js";
-import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, allowedStores, allowedBrands } from "../storesearch.js";
+import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, photoPlain, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -159,7 +159,8 @@ export function renderShop(view) {
       const verdict = (n) => !n || !g.priceMin ? null : n < g.priceMin * 0.6 ? "barato" : n > (g.priceMax || g.priceMin) * 1.35 ? "caro" : "justo";
       const devP = dev2.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
       // intercalar tiendas para que no salga todo de la misma marca
-      const srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece, p.url) && patternOk(p.name, p.url, wantsPlain(g))); // Zara también: esa prenda y lisa si toca
+      let srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece, p.url) && patternOk(p.name, p.url, wantsPlain(g))); // Zara también: esa prenda y lisa si toca
+      if (canSearchStores && wantsPlain(g) && srvP.length) { const ok = await Promise.all(srvP.map((p) => p.image ? photoPlain(p.image) : true)); srvP = srvP.filter((_, i) => ok[i]); } // y que la foto no tenga logo
       // todas las tiendas por igual: se intercalan empezando por la que mejor encaja (Zara no va primero por norma)
       const all = [...devP, ...srvP], byStore = new Map();
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
