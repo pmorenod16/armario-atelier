@@ -1,7 +1,7 @@
 // Hoy: plan del día + tiempo → outfits con tu ropa, cómo llevarlos y el maniquí vestido.
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
 import { t } from "../i18n.js";
-import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
+import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label, isWomen, BRA_TYPES } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
@@ -14,7 +14,7 @@ import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
-import { suggestOutfits, packTrip, ensureGlasses } from "../engine.js";
+import { suggestOutfits, packTrip, ensureGlasses, pickUnder } from "../engine.js";
 import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
@@ -257,7 +257,7 @@ function tabToday(box) {
 
   async function generate(more = false) {
     const st = $("#st", box);
-    const avail = store.items.filter((i) => i.status === "disponible");
+    const avail = store.items.filter((i) => i.status === "disponible" && i.layer !== "under" && !BRA_TYPES.has(i.type)); // la ropa interior se elige aparte
     if (avail.length < 2) { say(st, t("today.needItems"), "error"); return; }
     const plan = planEl.value.trim() || t("today.defaultPlan");
     $("#go", box).disabled = true; say(st, t("today.thinking"));
@@ -341,6 +341,7 @@ function tabToday(box) {
       <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
+      ${underHTML(o.itemIds)}
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
       ${o.extras?.length ? `<h3 class="how-title">${t("today.extras")}</h3><div class="chips">${o.extras.map((x) => `<span class="chip">${icon("bag")}${esc(x)}</span>`).join("")}</div>` : ""}
       ${o.repeats?.length ? `<p class="muted small">${t("today.repeats", { names: esc(o.repeats.map(byId).filter(Boolean).map((i) => i.name).join(", ")) })}</p>` : ""}
@@ -503,7 +504,7 @@ function tabTrip(box) {
       keep();
       const st = $("#tst", box);
       if (!form.dest) { say(st, t("trip.needDest"), "error"); return; }
-      const avail = store.items.filter((i) => i.status !== "prestada");
+      const avail = store.items.filter((i) => i.status !== "prestada" && !BRA_TYPES.has(i.type));
       $("#pack", box).disabled = true; say(st, t("trip.weather"));
       try {
         const w = await tripWeather(form.dest, form.start, form.days);
@@ -552,4 +553,13 @@ function tabTrip(box) {
   }
   drawForm();
   return null;
+}
+
+/** Sección mujer: qué sujetador llevar debajo para que no se marque ni se transparente (se calcula al vuelo). */
+function underHTML(ids) {
+  if (!isWomen()) return "";
+  const its = (ids || []).map((id) => store.items.find((i) => i.id === id)).filter(Boolean);
+  const u = pickUnder(its, store.items); if (!u) return "";
+  const b = u.id && store.items.find((i) => i.id === u.id);
+  return `<div class="under">${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${t("under.title")}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}</div>`;
 }

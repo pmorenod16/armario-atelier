@@ -1,6 +1,6 @@
 // Ficha de una prenda: foto grande con su halo, datos, estado (disponible/sucia/prestada), editar y eliminar.
 import { t } from "../i18n.js";
-import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf } from "../catalog.js";
+import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf, BRA_TYPES } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, setHalo } from "../ui.js";
 import { store, subscribe, fullImage, setItemStatus, deleteItem, itemWashLimit, isDryClean, updateItem, washLimit } from "../data.js";
 import { openEdit, tintFor } from "./add.js";
@@ -37,7 +37,7 @@ export function openItem(id) {
           <div><div class="kicker">${esc(label(groupOf(item.type)))}</div><h2 class="display">${esc(item.name)}</h2></div>
           <div class="seg" role="group" aria-label="${t("item.status")}">${STATUSES.map((s) => `<button type="button" data-s="${s}" aria-pressed="${item.status === s}">${t("status." + s)}</button>`).join("")}</div>
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
-          <button class="btn primary" type="button" id="combine">${icon("spark")}${t("combine.title")}</button>
+          ${BRA_TYPES.has(item.type) ? "" : `<button class="btn primary" type="button" id="combine">${icon("spark")}${t("combine.title")}</button>`}
           <details class="wash-item"><summary>${icon("wash")}${t("wash.itemTitle")}<small class="muted"> · ${itemWashLimit(item) ? t("wash.itemEvery", { n: itemWashLimit(item) }) : t("wash.never")}${isDryClean(item) ? ` · ${t("washc.dry")}` : ""}</small></summary>
             <div class="row wrap" style="align-items:end">
               <label class="field" style="max-width:150px"><span>${t("wash.itemUses")}</span><input class="input" type="number" min="0" max="60" inputmode="numeric" id="wAfter" value="${itemWashLimit(item)}"></label>
@@ -78,7 +78,7 @@ export function openItem(id) {
       catch { toast(t("item.saveFail"), "error"); }
       lu.disabled = false;
     };
-    $("#combine", root).onclick = async () => (await import("./combine.js")).openCombine(item);
+    if ($("#combine", root)) $("#combine", root).onclick = async () => (await import("./combine.js")).openCombine(item);
     let armed = 0;
     $("#del", root).onclick = async (e) => {
       const btn = e.currentTarget;

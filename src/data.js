@@ -3,7 +3,7 @@ import {
   fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
 } from "./firebase.js";
 import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
-import { layerOf } from "./catalog.js";
+import { layerOf, setCatalogSection } from "./catalog.js";
 
 export const DEFAULT_PROFILE = {
   onboarded: false,
@@ -37,6 +37,7 @@ export function startData() {
   unsubs.push(onSnapshot(metaDoc("profile"), (s) => {
     store.profile = { ...DEFAULT_PROFILE, ...(s.exists() ? s.data() : {}) };
     apiDefaults.section = store.profile.section === "mujer" ? "mujer" : "hombre";
+    setCatalogSection(apiDefaults.section);
     apiDefaults.lang = ["ca", "en"].includes(store.profile.language) ? store.profile.language : "es";
     store.ready.profile = true; emit();
   }, (e) => { console.error(e); store.profile = { ...DEFAULT_PROFILE }; store.ready.profile = true; emit(); }));

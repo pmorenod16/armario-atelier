@@ -3,7 +3,10 @@
 import { t } from "../i18n.js";
 import {
   TYPES, GROUPS, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, label, sizeKeyOf,
+  shown, isWomen, BRA_FINISH, SHEER, NECKLINES, BRA_TYPES,
 } from "../catalog.js";
+// prendas que van pegadas al cuerpo (para saber qué sujetador llevar debajo)
+const BODY_TYPES = new Set(["camiseta", "camiseta-ml", "polo", "tirantes", "camisa", "camisa-mc", "blusa", "top", "vestido", "mono", "jersey", "cardigan"]);
 import { $, $$, esc, icon } from "../ui.js";
 import { store } from "../data.js";
 
@@ -19,11 +22,18 @@ export function itemForm(initial = {}) {
   el.innerHTML = `
   <div class="section"><h3>${t("item.section.basic")}</h3>
     <label class="field" data-f="name"><span>${t("item.name")} ${aiMark()}</span><input name="name" autocomplete="off" maxlength="80" required></label>
-    <label class="field" data-f="type"><span>${t("item.type")} ${aiMark()}</span><select name="type">${GROUPS.map((g) =>
-      `<optgroup label="${esc(label(g))}">${TYPES.filter((x) => x.g === g.k).map((x) => `<option value="${x.k}">${esc(label(x))}</option>`).join("")}</optgroup>`).join("")}</select></label>
+    <label class="field" data-f="type"><span>${t("item.type")} ${aiMark()}</span><select name="type">${GROUPS.filter(shown).map((g) =>
+      `<optgroup label="${esc(label(g))}">${TYPES.filter((x) => x.g === g.k && (shown(x) || x.k === initial.type)).map((x) => `<option value="${x.k}">${esc(label(x))}</option>`).join("")}</optgroup>`).join("")}</select></label>
     <div class="field ai-group" data-f="colors"><span>${t("item.colors")} ${aiMark()}</span><span class="hint">${t("item.colorsHint")}</span>
       <div class="swatches">${COLORS.map((c) => `<button type="button" class="sw-btn" data-c="${c.k}" aria-pressed="false" aria-label="${esc(label(c))}" title="${esc(label(c))}"><i style="background:${c.hex}"></i></button>`).join("")}</div></div>
     <div class="field ai-group" data-f="pattern"><span>${t("item.pattern")} ${aiMark()}</span>${chipGroup("pattern", PATTERNS)}</div>
+  </div>
+  <div class="section" id="wBody" hidden><h3>${t("under.section")}</h3>
+    <div class="field ai-group" data-f="sheer"><span>${t("under.sheer")} ${aiMark()}</span><span class="hint">${t("under.sheerHint")}</span>${chipGroup("sheer", SHEER)}</div>
+    <div class="field ai-group" data-f="neckline"><span>${t("under.neckline")} ${aiMark()}</span>${chipGroup("neckline", NECKLINES)}</div>
+  </div>
+  <div class="section" id="wBra" hidden><h3>${t("under.braSection")}</h3>
+    <div class="field ai-group" data-f="braFinish"><span>${t("under.finish")} ${aiMark()}</span><span class="hint">${t("under.finishHint")}</span>${chipGroup("braFinish", BRA_FINISH)}</div>
   </div>
   <div class="section"><h3>${t("item.section.details")}</h3>
     <div class="two">
@@ -61,7 +71,12 @@ export function itemForm(initial = {}) {
 
   const clearAi = (f) => $(`[data-f="${f}"]`, el)?.classList.remove("ai");
   el.addEventListener("input", (e) => { const f = e.target.closest("[data-f]")?.dataset.f; if (f) clearAi(f); if (e.target.name === "formality") formVal(); });
-  el.addEventListener("change", (e) => { if (e.target.name === "type") sizeHint(); });
+  const womenFields = () => {
+    const ty = F("type").value;
+    $("#wBody", el).hidden = !(isWomen() && BODY_TYPES.has(ty));
+    $("#wBra", el).hidden = !BRA_TYPES.has(ty);
+  };
+  el.addEventListener("change", (e) => { if (e.target.name === "type") { sizeHint(); womenFields(); } });
   el.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip"), sw = e.target.closest(".sw-btn");
     if (chip) {
@@ -87,11 +102,11 @@ export function itemForm(initial = {}) {
       colors = d.colors.filter((c) => COLOR[c.k] || c.hex).slice(0, 3).map((c) => ({ k: COLOR[c.k] ? c.k : "", hex: /^#[0-9a-f]{6}$/i.test(c.hex || "") ? c.hex : COLOR[c.k]?.hex || null }));
       renderColors(); mark("colors");
     }
-    for (const f of ["pattern", "materialKey", "fit"]) if (d[f]) { pressSingle(f, d[f]); mark(f); }
+    for (const f of ["pattern", "materialKey", "fit", "sheer", "neckline", "braFinish"]) if (d[f]) { pressSingle(f, d[f]); mark(f); }
     if (Array.isArray(d.seasons) && d.seasons.length) { $$('[data-group="seasons"] .chip', el).forEach((b) => b.setAttribute("aria-pressed", String(d.seasons.includes(b.dataset.v)))); mark("seasons"); }
     if (d.formality) { F("formality").value = Math.min(5, Math.max(1, Math.round(d.formality))); formVal(); mark("formality"); }
     const tags = d.styleTags || d.tags; if (Array.isArray(tags) && tags.length) { F("styleTags").value = tags.join(", "); mark("styleTags"); }
-    sizeHint();
+    sizeHint(); womenFields();
   }
 
   function read() {
@@ -104,6 +119,8 @@ export function itemForm(initial = {}) {
       formality: Number(F("formality").value),
       styleTags: F("styleTags").value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).slice(0, 8),
       care: F("care").value.trim() || null, notes: F("notes").value.trim() || null,
+      ...(isWomen() && BODY_TYPES.has(F("type").value) ? { sheer: getSingle("sheer"), neckline: getSingle("neckline") } : {}),
+      ...(BRA_TYPES.has(F("type").value) ? { braFinish: getSingle("braFinish") } : {}),
     };
   }
 

@@ -6,7 +6,13 @@ import { getLanguage, tr } from "./i18n.js";
 export const label = (entry) => entry ? (entry[getLanguage()] ?? tr(entry.es ?? entry.k)) : "";
 
 // capa = cómo se coloca en el maniquí (fase 2)
-export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory"];
+export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory", "under"];
+
+// Sección del armario (hombre|mujer): los tipos con w:true solo se ofrecen en la de mujer (main.js la fija con el perfil)
+let SECTION = "hombre";
+export const setCatalogSection = (s) => { SECTION = s === "mujer" ? "mujer" : "hombre"; };
+export const isWomen = () => SECTION === "mujer";
+export const shown = (x) => !x.w || SECTION === "mujer";
 
 export const GROUPS = [
   { k: "camisetas", es: "Camisetas y polos", layer: "top" },
@@ -17,6 +23,7 @@ export const GROUPS = [
   { k: "piezas", es: "Vestidos y monos", layer: "dress" },
   { k: "calzado", es: "Calzado", layer: "shoes" },
   { k: "complementos", es: "Complementos", layer: "accessory" },
+  { k: "interior", es: "Ropa interior", layer: "under", w: true },
 ];
 
 export const TYPES = [
@@ -26,6 +33,8 @@ export const TYPES = [
   { k: "tirantes", es: "Camiseta de tirantes", g: "camisetas" },
   { k: "camisa", es: "Camisa", g: "camisas" },
   { k: "camisa-mc", es: "Camisa de manga corta", g: "camisas" },
+  { k: "blusa", es: "Blusa", g: "camisas", w: true },
+  { k: "top", es: "Top / body", g: "camisetas", w: true },
   { k: "sobrecamisa", es: "Sobrecamisa", g: "camisas" },
   { k: "jersey", es: "Jersey", g: "punto" },
   { k: "cardigan", es: "Cárdigan", g: "punto" },
@@ -67,13 +76,24 @@ export const TYPES = [
   { k: "bolso", es: "Bolso / bandolera", g: "complementos" },
   { k: "joya", es: "Joya", g: "complementos" },
   { k: "otro", es: "Otro", g: "complementos" },
+  { k: "sujetador", es: "Sujetador", g: "interior", w: true },
+  { k: "sujetador-sin-tirantes", es: "Sujetador sin tirantes / multiposición", g: "interior", w: true },
+  { k: "bralette", es: "Bralette / top lencero", g: "interior", w: true },
+  { k: "sujetador-deportivo", es: "Sujetador deportivo", g: "interior", w: true },
 ];
+
+// Sujetadores y cómo se ven a través de la ropa (sección mujer)
+export const BRA_FINISH = [{ k: "liso", es: "Liso / sin costuras" }, { k: "relieve", es: "Con relieve (encaje, costuras, bordado)" }];
+export const SHEER = [{ k: "no", es: "No transparenta" }, { k: "algo", es: "Algo fina" }, { k: "si", es: "Transparente" }];
+export const NECKLINES = [{ k: "normal", es: "Normal" }, { k: "tirantes-finos", es: "Tirantes finos" }, { k: "sin-tirantes", es: "Palabra de honor / sin tirantes" }, { k: "espalda", es: "Espalda al aire" }, { k: "escote", es: "Escote profundo" }];
+export const BRA_TYPES = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
 
 // Familias de color para clasificar y filtrar (el tono exacto se guarda aparte en hex)
 export const COLORS = [
   { k: "blanco", es: "Blanco", hex: "#F5F5F2" },
   { k: "crudo", es: "Crudo", hex: "#EDE6D6" },
   { k: "beige", es: "Beige", hex: "#D8C6A5" },
+  { k: "nude", es: "Nude / color carne", hex: "#D9B39A" },
   { k: "camel", es: "Camel", hex: "#B5885A" },
   { k: "marron", es: "Marrón", hex: "#6E4B32" },
   { k: "gris-claro", es: "Gris claro", hex: "#C7C9CC" },

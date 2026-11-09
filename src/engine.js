@@ -7,7 +7,7 @@ const NEUTRAL = new Set(["blanco", "crudo", "beige", "camel", "marron", "gris-cl
 const SEMI = new Set(["oliva", "celeste", "burdeos"]); // casi neutros: combinan con casi todo
 const DARK = new Set(["negro", "antracita", "azul-marino", "marron", "burdeos", "oliva"]);
 const FORMALITY = { // 1 deporte · 2 diario · 3 arreglado · 4 elegante · 5 traje
-  camiseta: 2, "camiseta-ml": 2, polo: 3, tirantes: 1, camisa: 3.5, "camisa-mc": 2.5, sobrecamisa: 2.5,
+  camiseta: 2, "camiseta-ml": 2, polo: 3, tirantes: 1, camisa: 3.5, "camisa-mc": 2.5, sobrecamisa: 2.5, blusa: 3.5, top: 2.5,
   jersey: 3, cardigan: 3, sudadera: 1.5, "sudadera-capucha": 1.5, "chaleco-punto": 3,
   cazadora: 2.5, chaqueta: 3, americana: 4.5, abrigo: 4, gabardina: 4, plumifero: 2, parka: 2, chaleco: 2,
   pantalon: 3, chino: 3, vaquero: 2.5, "traje-pantalon": 4.5, jogger: 1, bermuda: 1.5,
@@ -18,7 +18,7 @@ const WARMTH = { // abrigo que da cada capa exterior / de punto
   jersey: 1.5, cardigan: 1.2, sudadera: 1.2, "sudadera-capucha": 1.2, "chaleco-punto": 0.8,
 };
 const SHORT = new Set(["camiseta", "polo", "tirantes", "camisa-mc"]);
-const BASE_TOP = new Set(["camiseta", "camiseta-ml", "polo", "tirantes", "camisa", "camisa-mc"]);
+const BASE_TOP = new Set(["camiseta", "camiseta-ml", "polo", "tirantes", "camisa", "camisa-mc", "blusa", "top"]);
 const MID = new Set(["jersey", "cardigan", "sudadera", "sudadera-capucha", "chaleco-punto"]);
 const OUTER = new Set(["cazadora", "chaqueta", "americana", "abrigo", "gabardina", "plumifero", "parka", "chaleco", "sobrecamisa"]);
 const BOTTOM = new Set(["pantalon", "chino", "vaquero", "traje-pantalon", "jogger", "bermuda", "falda"]);
@@ -502,4 +502,64 @@ export function matchStyle({ items, style }) {
   const off = scored.filter((x) => x.s < 0).sort((a, b) => a.s - b.s).map((x) => x.id);
   const score = Math.round(Math.max(5, Math.min(92, 30 + (fits.length / Math.max(1, items.length)) * 55 - (off.length / Math.max(1, items.length)) * 30)));
   return { score, fits: fits.slice(0, 10), off: off.slice(0, 8), note: `Calculado por la app: ${fits.length} de tus ${items.length} prendas encajan con la paleta y las prendas clave de tu estilo.`, engine: true };
+}
+
+/* ---------- sujetador (sección mujer): que no se marque ni se transparente ---------- */
+const LIGHT = new Set(["blanco", "crudo", "beige", "gris-claro", "celeste", "rosa", "amarillo", "nude"]);
+const SKIN = new Set(["nude", "beige", "camel"]);
+/** ¿Transparenta? Lo que diga la prenda; si no, por material y color (seda, gasa, lino, viscosa claros). */
+export function sheerOf(it) {
+  if (it.sheer) return it.sheer;
+  const words = `${it.name || ""} ${it.material || ""}`.toLowerCase();
+  if (/gasa|tul|organza|encaje|transparen|chiffon|crochet|ganchillo|malla/.test(words)) return "si";
+  const light = LIGHT.has(mainColor(it).k);
+  if (light && (["seda", "lino", "viscosa"].includes(it.materialKey) || /fin[oa]|satén|saten|popelín|popelin/.test(words))) return "algo";
+  if (light && ["camiseta", "tirantes", "top", "blusa", "camisa", "camisa-mc"].includes(it.type)) return "algo"; // blanco fino: mejor no arriesgar
+  return "no";
+}
+/**
+ * Elige el sujetador para un conjunto. Mira la prenda que va pegada al cuerpo (la de arriba o el vestido):
+ * si es clara o fina → color carne y sin relieve; si es ajustada o de punto fino → liso (el encaje se marca);
+ * palabra de honor / espalda al aire → sin tirantes; con poca tela o deporte → el que toca. Devuelve {id, why, warn}.
+ */
+export function pickUnder(items, all) {
+  const bras = all.filter((i) => BRA_TYPES_E.has(i.type) && i.status !== "sucia" && i.status !== "prestada");
+  // la prenda que va pegada al cuerpo: vestido/mono, si no la de arriba de base, si no el jersey
+  const base = items.find((i) => i.type === "vestido" || i.type === "mono") || items.find((i) => BASE_TOP.has(i.type)) || items.find((i) => MID.has(i.type));
+  if (!base) return null;
+  const sheer = sheerOf(base), col = mainColor(base).k, light = LIGHT.has(col), dark = !light && ["negro", "antracita", "azul-marino", "burdeos", "marron", "morado", "verde", "oliva"].includes(col);
+  const fitted = base.fit === "slim" || ["punto", "viscosa", "seda"].includes(base.materialKey) || base.type === "top";
+  const neck = base.neckline || "normal", sporty = formalityOf(base) <= 1.2 || /deport|gym|running/.test(`${base.name} ${(base.styleTags || []).join(" ")}`.toLowerCase());
+  const needStrapless = neck === "sin-tirantes" || neck === "espalda";
+  const reasons = [];
+  if (sheer !== "no" || light) reasons.push(sheer === "si" ? "transparenta" : light ? "es de color claro" : "es fina");
+  if (fitted) reasons.push("es ajustada");
+  const score = (b) => {
+    const bc = mainColor(b).k, finish = b.braFinish || (/encaje|bordad|puntilla/.test(`${b.name} ${b.material || ""}`.toLowerCase()) ? "relieve" : "liso");
+    let s = 0;
+    if (needStrapless) s += b.type === "sujetador-sin-tirantes" ? 5 : -6;
+    if (sporty) s += b.type === "sujetador-deportivo" ? 3 : 0; else if (b.type === "sujetador-deportivo") s -= 1.5;
+    if (fitted || sheer !== "no" || light) s += finish === "liso" ? 2.5 : -3;
+    if (light || sheer !== "no") { if (SKIN.has(bc)) s += 3; else if (bc === "blanco") s -= 1.5; else if (["negro", "rojo", "burdeos", "azul-marino", "morado"].includes(bc)) s -= 4; else s -= 1; }
+    else if (dark) { if (["negro", "antracita", "azul-marino", "burdeos", "marron"].includes(bc) || SKIN.has(bc)) s += 1; }
+    if (b.type === "bralette" && (neck === "escote" || neck === "tirantes-finos") && sheer === "no" && !light) s += 1.5; // se puede dejar ver a propósito
+    return s;
+  };
+  const what = sheer === "si" || light ? "color carne (nude) y sin costuras" : fitted ? "liso, sin costuras ni encaje" : needStrapless ? "sin tirantes" : "cualquiera cómodo";
+  if (!bras.length) return (sheer !== "no" || light || fitted || needStrapless) ? { id: null, why: "", warn: `Con «${base.name}» te iría un sujetador ${what}${reasons.length ? ` porque ${reasons.join(" y ")}` : ""}.` } : null;
+  const ranked = bras.map((b) => [b, score(b)]).sort((a, b) => b[1] - a[1]), [b, s] = ranked[0];
+  const bc = mainColor(b).k;
+  const why = [
+    needStrapless ? "sin tirantes por el escote" : "",
+    (light || sheer !== "no") && SKIN.has(bc) ? "el color carne no se ve a través" : "",
+    (fitted || light || sheer !== "no") && (b.braFinish || "liso") === "liso" ? "liso para que no se marque" : "",
+    sporty && b.type === "sujetador-deportivo" ? "deportivo para moverte" : "",
+  ].filter(Boolean).join(", ") || "va bien con este conjunto";
+  const warn = s < 0 ? `Con «${base.name}» lo ideal sería un sujetador ${what}${reasons.length ? ` porque ${reasons.join(" y ")}` : ""}; este es el que mejor queda de los que tienes.` : "";
+  return { id: b.id, why: why.charAt(0).toUpperCase() + why.slice(1), warn };
+}
+const BRA_TYPES_E = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
+/** Añade el sujetador a cada outfit (campo under, no va en itemIds ni en el lienzo). */
+export function addUnder(outfits, all) {
+  return outfits.map((o) => { const its = (o.itemIds || []).map((id) => all.find((i) => i.id === id)).filter(Boolean); const u = pickUnder(its, all); return u ? { ...o, under: u } : o; });
 }
