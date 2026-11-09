@@ -9,7 +9,7 @@ import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, de
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
-import { searchStores, canSearchStores, ALL_SOURCES, typeOk, allowedStores, allowedBrands } from "../storesearch.js";
+import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -147,14 +147,14 @@ export function renderShop(view) {
       const only = [...allowedStores(store.profile), ...allowedBrands(store.profile)], wantZara = only.includes("Zara");
       const [srv, dev] = await Promise.all([
         !wantZara ? Promise.resolve({ products: [], links: [] }) : api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
+        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, plain: wantsPlain(g), only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
       // aunque todo falle, siempre quedan los enlaces «Buscar en…» de cada tienda
       const verdict = (n) => !n || !g.priceMin ? null : n < g.priceMin * 0.6 ? "barato" : n > (g.priceMax || g.priceMin) * 1.35 ? "caro" : "justo";
       const devP = dev2.map(({ _hits, ...p }) => ({ ...p, verdict: verdict(p.priceNum) }));
       // intercalar tiendas para que no salga todo de la misma marca
-      const srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece)); // Zara también: que sea esa prenda
+      const srvP = (srv.products || []).filter((p) => typeOk(p.name, g.type, g.piece, p.url) && patternOk(p.name, p.url, wantsPlain(g))); // Zara también: esa prenda y lisa si toca
       // todas las tiendas por igual: se intercalan empezando por la que mejor encaja (Zara no va primero por norma)
       const all = [...devP, ...srvP], byStore = new Map();
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });

@@ -291,7 +291,7 @@ const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).re
 const N = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 // por tipo del catálogo: lo que el nombre tiene que decir (need) y lo que no puede decir (avoid)
 const TYPE_RULES = {
-  camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|manga larga|\btop\b|\bbody\b|tank/ },
+  camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|manga larga|m\/l\b|\bml\b|long ?sleeve|\bl\/s\b|\btop\b|\bbody\b|tank|termica|interior/ },
   "camiseta-ml": { need: /(\bcamisetas?\b|t-?shirt).*manga larga|manga larga.*(\bcamisetas?\b|t-?shirt)|long sleeve/, avoid: /tirantes|\bcamisas?\b|\bpolo|sudadera/ },
   polo: { need: /\bpolos?\b/, avoid: /cuello polo.*jersey|jersey|sudadera/ },
   tirantes: { need: /tirantes|sin mangas|tank/ },
@@ -332,13 +332,24 @@ const TYPE_RULES = {
   gorra: { need: /gorra|\bcap\b/ },
   calcetines: { need: /calcetin|socks?\b/ },
 };
-/** ¿El nombre es de esa prenda? (con tipo del catálogo; si no, que diga la palabra principal de la prenda entera) */
-export function typeOk(title, type, piece) {
-  const t = N(title), r = TYPE_RULES[type];
+/** ¿El nombre es de esa prenda? (con tipo del catálogo; si no, que diga la palabra principal de la prenda entera).
+ *  Mira también el enlace de la ficha: muchas tiendas ponen ahí «manga-larga», «estampado»… aunque el nombre no lo diga. */
+const slug = (url) => { try { return N(decodeURIComponent(new URL(url).pathname)).replace(/[-_/.]+/g, " "); } catch { return ""; } };
+export function typeOk(title, type, piece, url = "") {
+  const t = `${N(title)} ${slug(url)}`, r = TYPE_RULES[type];
+  if (r && (type === "camiseta" || type === "camisa" || type === "polo") && /futbol|equipacion|seleccion|replica|\bclub\b|\bfc\b|jersey de juego|oficial/.test(t)) return false; // ropa de fútbol: no
+  if (r) return r.need.test(N(title)) && !(r.avoid && r.avoid.test(t));
   if (r) return r.need.test(t) && !(r.avoid && r.avoid.test(t));
   const main = N(piece).split(/[^a-z]+/).find((w) => w.length > 3);
   return !main || new RegExp(`\\b${main.replace(/e?s$/, "")}(e?s)?\\b`).test(t);
 }
+/* ---------- estampado: si la prenda que buscas es lisa, nada de dibujos, logos, rayas ni letras ---------- */
+const PRINT = /estampad|\bprint|grafic|graphic|\blogo|dibujo|ilustrac|slogan|mensaje|letras|lettering|\btexto\b|rayas|\braya\b|stripe|cuadros|\bcheck|tartan|vichy|flores|floral|tropical|camuflaje|\bcamo\b|tie.?dye|bordad|parche|disney|marvel|\bnba\b|licencia|motivo|animal|leopardo|cebra|lunares|topos|paisley|jacquard|degradado|tropical|\bfoto\b|photo|\bband\b|\brock\b|anime|manga japonesa|personaje/;
+/** ¿Lo que buscas es liso? (sí, salvo que la prenda o su estampado digan otra cosa) */
+export const wantsPlain = (g) => (g?.pattern ? g.pattern === "liso" : !PRINT.test(N(`${g?.piece || ""} ${g?.searchTerm || ""}`)));
+/** ¿Encaja con el estampado buscado? Si buscas liso, fuera todo lo que diga dibujo, logo, rayas… (nombre o enlace). */
+export function patternOk(title, url, plain) { return !plain || !PRINT.test(`${N(title)} ${slug(url)}`); }
+
 /** ¿Es de la sección del perfil? Fuera mujer/niño en hombre, y hombre/niño en mujer (por nombre y por enlace). */
 export function sectionOk(title, url) {
   const t = `${N(title)} ${N(decodeURIComponent(url || ""))}`;
@@ -386,8 +397,11 @@ async function garmentColor(url) {
   const bg = lab(med(border)), inner = [];
   for (let y = Math.round(H * 0.2); y < H * 0.8; y++) for (let x = Math.round(W * 0.2); x < W * 0.8; x++) { const p = px(x, y); if (dE(lab(p), bg) > 12) inner.push(p); }
   // prenda casi del color del fondo (camiseta blanca sobre blanco): el color es el del fondo
-  if (inner.length < W * H * 0.36 * 0.12) return med(border);
-  return med(inner);
+  const color = inner.length < W * H * 0.36 * 0.12 ? med(border) : med(inner);
+  // ¿lisa? en el pecho (zona central) casi todo debe ser del mismo color; un dibujo o un logo grande lo rompe
+  const c0 = lab(color); let far = 0, n = 0;
+  for (let y = Math.round(H * 0.3); y < H * 0.62; y++) for (let x = Math.round(W * 0.3); x < W * 0.7; x++) { const q = lab(px(x, y)); if (dE(q, bg) < 8 && dE(c0, bg) > 12) continue; n++; if (dE(q, c0) > 24) far++; }
+  return { color, spread: n ? far / n : 0 };
 }
 
 /** Ficha de producto → {name, image, price}. JSON-LD Product o etiquetas og/product. */
@@ -425,13 +439,15 @@ export const canSearchStores = isNative;
  * Busca la prenda en muchas tiendas (sin Zara, que ya da el servidor).
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
-export async function searchStores({ term, piece, color, colorHex, type, only = null, skip = ["zara.com"], max = 14 }) {
+export async function searchStores({ term, piece, color, colorHex, type, plain = true, only = null, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const stores = ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
   const wanted = wantedColor(color || term, colorHex);
   const sec = apiDefaults.section || "hombre";
-  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids`;
+  const extra = [plain && !/\blis[ao]s?\b/i.test(term) ? "lisa" : "", type === "camiseta" && !/manga corta/i.test(term) ? "manga corta" : ""].filter(Boolean).join(" ");
+  const neg = [plain ? "-estampada -logo -print" : "", type === "camiseta" ? '-"manga larga"' : "", "-fútbol -equipación"].filter(Boolean).join(" ");
+  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${extra} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids ${neg}`.replace(/\s+/g, " ");
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
@@ -446,7 +462,7 @@ export async function searchStores({ term, piece, color, colorHex, type, only = 
       const clean = r.page.split("?")[0], title = cleanTitle(r.title);
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
-      if (!typeOk(title, type, piece) || !sectionOk(title, r.page)) continue; // que sea esa prenda y de su sección
+      if (!typeOk(title, type, piece, r.page) || !sectionOk(title, r.page) || !patternOk(title, r.page, plain)) continue; // esa prenda, de su sección y lisa si toca
       // que sea de ese color: si el nombre dice otro color (de otra familia), fuera
       const named = colorsInTitle(title);
       if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
@@ -460,11 +476,13 @@ export async function searchStores({ term, piece, color, colorHex, type, only = 
   if (wanted?.hex && /^#/.test(wanted.hex)) {
     const target = lab(rgbOf(wanted.hex));
     await pool(viaImg, 6, async (p) => {
-      if (colorsInTitle(p.name).some((k) => k === wanted.k)) { p._color = 0; return; } // el nombre ya lo dice
-      try { p._color = dE(lab(await garmentColor(p.thumb || p.image)), target); } catch { p._color = null; }
+      if (colorsInTitle(p.name).some((k) => k === wanted.k) && !plain) { p._color = 0; return; } // el nombre ya lo dice (si buscas liso, se mira igual la foto)
+      try { const st = await garmentColor(p.thumb || p.image); p._color = dE(lab(st.color), target); p._spread = st.spread; } catch { p._color = null; }
     });
     const limit = ["blanco", "crudo", "negro", "gris-claro"].includes(wanted.k) ? 22 : 34; // blanco y negro, más estrictos
     for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { viaImg.splice(i, 1); dropped++; }
+    // liso: si en el pecho hay mucho de otro color (dibujo, logo grande, rayas), fuera
+    if (plain) for (let i = viaImg.length - 1; i >= 0; i--) if ((viaImg[i]._spread || 0) > 0.3) { viaImg.splice(i, 1); dropped++; }
     viaImg.forEach((p) => { if (p._color != null) p._hits += Math.max(0, (limit - p._color) / limit) * 2; });
   }
   // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
@@ -487,12 +505,12 @@ export async function searchStores({ term, piece, color, colorHex, type, only = 
   const fails = [];
   const read = await pool(picked, 5, async (c) => { try { return { ...(await readProduct(c.url)), url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } });
   const ok = read.filter(Boolean);
-  const fromPages = ok.filter((p) => typeOk(p.name, type, piece) && sectionOk(p.name, p.url)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
+  const fromPages = ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
     return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
   });
   const seenU = new Set(), products = [...viaImg, ...fromPages].filter((p) => { const k = p.url.split("?")[0]; if (seenU.has(k)) return false; seenU.add(k); return true; })
     .sort((a, b) => b._hits - a._hits).slice(0, max);
-  diag.push(`por imágenes ${viaImg.length}${dropped ? `, ${dropped} quitadas por color` : ""} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
+  diag.push(`por imágenes ${viaImg.length}${dropped ? `, ${dropped} quitadas por color o estampado` : ""} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
   return { products, diag };
 }
