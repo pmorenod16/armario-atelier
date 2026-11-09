@@ -10,6 +10,20 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
+  <script>
+    // Arranque a prueba de cachés: si el móvil guardó una página vieja que apunta a archivos que ya no existen
+    // (cada versión nueva los cambia), la app no cargaba y se quedaba en el logo. Si un archivo falla o la app no
+    // arranca en 12 s, se recarga una vez saltándose la caché.
+    (function () {
+      var K = "boot-retry";
+      function retry() {
+        try { if (+sessionStorage.getItem(K) > Date.now() - 60000) return; sessionStorage.setItem(K, Date.now()); } catch (e) {}
+        var u = new URL(location.href); u.searchParams.set("r", Date.now()); location.replace(u.toString());
+      }
+      addEventListener("error", function (e) { var t = e.target; if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK") && !window.__booted) retry(); }, true);
+      setTimeout(function () { if (!window.__booted) retry(); }, 12000);
+    })();
+  </script>
 </head>
 <body>
   <div class="halo" aria-hidden="true"></div>

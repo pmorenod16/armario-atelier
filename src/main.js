@@ -18,6 +18,9 @@ import { startUpdater } from "./updater.js";
 
 translateDom();
 $$("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
+window.__booted = true; // el código ha cargado (index.html deja de vigilar el arranque)
+// si una parte de la app que se carga al momento ya no existe (versión nueva publicada), recargar
+window.addEventListener("vite:preloadError", (e) => { e.preventDefault?.(); try { if (sessionStorage.getItem("chunk-retry") === "1") return; sessionStorage.setItem("chunk-retry", "1"); } catch {} location.reload(); });
 const boot = $("#boot");
 const hideBoot = () => { boot.classList.add("gone"); setTimeout(() => boot.remove(), 450); };
 
