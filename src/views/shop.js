@@ -147,7 +147,7 @@ export function renderShop(view) {
       const only = [...allowedStores(store.profile), ...allowedBrands(store.profile)], wantZara = only.includes("Zara");
       const [srv, dev] = await Promise.all([
         !wantZara ? Promise.resolve({ products: [], links: [] }) : api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, plain: wantsPlain(g), only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; }),
+        Promise.race([new Promise((ok) => setTimeout(() => ok({ products: [], diag: ["se ha cortado a los 45 s"] }), 45000)), searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, plain: wantsPlain(g), only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; })]),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
       // aunque todo falle, siempre quedan los enlaces «Buscar en…» de cada tienda

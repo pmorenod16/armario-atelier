@@ -388,7 +388,7 @@ async function garmentColor(url) {
   const r = await CapacitorHttp.get({ url, responseType: "blob", headers: { "User-Agent": UA["User-Agent"] }, connectTimeout: 8000, readTimeout: 8000 });
   if (r.status >= 400 || typeof r.data !== "string") throw new Error("foto " + r.status);
   const mime = (r.headers?.["Content-Type"] || r.headers?.["content-type"] || "image/jpeg").split(";")[0];
-  const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = `data:${mime};base64,${r.data}`; });
+  const img = await new Promise((ok, ko) => { const i = new Image(); const to = setTimeout(() => ko(new Error("foto lenta")), 5000); i.onload = () => { clearTimeout(to); ok(i); }; i.onerror = (e) => { clearTimeout(to); ko(e); }; i.src = `data:${mime};base64,${r.data}`; });
   const W = 48, H = 60, c = document.createElement("canvas"); c.width = W; c.height = H;
   const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
   const d = g.getImageData(0, 0, W, H).data, px = (x, y) => { const i = (y * W + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
@@ -426,12 +426,24 @@ async function readProduct(url) {
   return { name: decodeHtml(name).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|H&M|Pull&Bear|Bershka|UNIQLO|COS|ARKET|Springfield|Scalpers|El Ganso).*$/i, "").trim(), image: new URL(image, url).href, price: price && price > 1 && price < 5000 ? Math.round(price * 100) / 100 : null, currency };
 }
 
-/** Pool de tareas con concurrencia limitada. */
-async function pool(list, n, fn) {
+/** Pool de tareas con concurrencia limitada. Con `until` (hora límite) deja de empezar tareas nuevas al llegar. */
+async function pool(list, n, fn, until = Infinity) {
   const out = []; let i = 0;
-  await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length) { const k = i++; try { out[k] = await fn(list[k]); } catch { out[k] = null; } } }));
+  await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length && Date.now() < until) { const k = i++; try { out[k] = await fn(list[k]); } catch { out[k] = null; } } }));
   return out;
 }
+/** Promesa con tiempo máximo (si tarda más, null). */
+const within = (p, ms) => Promise.race([p, new Promise((ok) => setTimeout(() => ok(null), ms))]);
+// qué grupos de marcas tienen sentido para cada tipo de prenda (para no preguntar a 140 webs)
+const GROUPS_FOR = (type) => {
+  const g = TYPE_GROUP[type] || "";
+  return g === "calzado" ? ["calzado", "deporte"] : g === "pantalones" ? ["pantalon", "denim", "clasico", "minimal"] : g === "abrigos" ? ["clasico", "deporte", "street", "minimal"]
+    : type === "traje-pantalon" || type === "americana" ? ["trajes", "clasico"] : type === "vestido" || type === "mono" ? ["fiesta", "mujer", "minimal"] : ["clasico", "minimal", "street", "mujer"];
+};
+const TYPE_GROUP = { zapatillas: "calzado", zapatos: "calzado", mocasines: "calzado", botas: "calzado", botines: "calzado", sandalias: "calzado",
+  pantalon: "pantalones", chino: "pantalones", vaquero: "pantalones", jogger: "pantalones", bermuda: "pantalones", "traje-pantalon": "pantalones",
+  abrigo: "abrigos", parka: "abrigos", plumifero: "abrigos", gabardina: "abrigos", cazadora: "abrigos", chaqueta: "abrigos" };
+const MAX_SOURCES = 18, TIME_LIMIT = 30000;
 
 export const canSearchStores = isNative;
 
@@ -442,7 +454,17 @@ export const canSearchStores = isNative;
 export async function searchStores({ term, piece, color, colorHex, type, plain = true, only = null, skip = ["zara.com"], max = 14 }) {
   const diag = [];
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
-  const stores = ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
+  const until = Date.now() + TIME_LIMIT; // la búsqueda nunca pasa de ~30 s: lo que haya a esa hora es lo que sale
+  let stores = ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
+  // con muchas tiendas y marcas marcadas, se pregunta a un máximo de 18: primero las tiendas, luego marcas del grupo que encaja con la prenda (al azar, para ir variando)
+  if (stores.length > MAX_SOURCES) {
+    const shops = stores.filter((s) => !s.group), brands = stores.filter((s) => s.group);
+    const fit = GROUPS_FOR(type), shuffle = (a) => a.map((x) => [Math.random(), x]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+    const good = shuffle(brands.filter((b) => fit.includes(b.group))), rest = shuffle(brands.filter((b) => !fit.includes(b.group)));
+    const nShops = Math.min(shops.length, 11);
+    stores = [...shuffle(shops).slice(0, nShops), ...good, ...rest].slice(0, MAX_SOURCES);
+    diag.push(`${stores.length} de ${ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n))).length} tiendas/marcas esta vez`);
+  }
   const wanted = wantedColor(color || term, colorHex);
   const sec = apiDefaults.section || "hombre";
   const extra = [plain && !/\blis[ao]s?\b/i.test(term) ? "lisa" : "", type === "camiseta" && !/manga corta/i.test(term) ? "manga corta" : ""].filter(Boolean).join(" ");
@@ -454,8 +476,8 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   const pieceWords = new Set(words(piece || term).map(stem));
   // 1) imágenes por tienda: foto, nombre y enlace sin abrir la ficha
   const viaImg = [];
-  await pool(stores, 4, async ([name, dom, pat]) => {
-    const res = await imageSearch(`${q} site:${dom}`, diag, name);
+  await pool(stores, 5, async ([name, dom, pat]) => {
+    const res = (await within(imageSearch(`${q} site:${dom}`, diag, name), 15000)) || [];
     let n = 0;
     for (const r of res) {
       const st = storeOf(r.page); if (!st || st[0] !== name) continue;
@@ -470,15 +492,15 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
       viaImg.push({ store: name, name: title.slice(0, 120), url: r.page, image: r.image || r.thumb, thumb: r.thumb || r.image, price: "", priceNum: null, color: "", _hits: [...tw].filter((w) => want.has(w)).length + (pat.test(clean) ? 0.5 : 0) });
       if (++n >= 3) break; // como mucho 3 por tienda
     }
-  });
+  }, until - 8000);
   // color de verdad: se mira la foto (los nombres a menudo no dicen el color). Lejos del pedido → fuera
   let dropped = 0;
   if (wanted?.hex && /^#/.test(wanted.hex)) {
     const target = lab(rgbOf(wanted.hex));
     await pool(viaImg, 6, async (p) => {
       if (colorsInTitle(p.name).some((k) => k === wanted.k) && !plain) { p._color = 0; return; } // el nombre ya lo dice (si buscas liso, se mira igual la foto)
-      try { const st = await garmentColor(p.thumb || p.image); p._color = dE(lab(st.color), target); p._spread = st.spread; } catch { p._color = null; }
-    });
+      try { const st = await within(garmentColor(p.thumb || p.image), 8000); if (st) { p._color = dE(lab(st.color), target); p._spread = st.spread; } else p._color = null; } catch { p._color = null; }
+    }, until - 4000);
     const limit = ["blanco", "crudo", "negro", "gris-claro"].includes(wanted.k) ? 22 : 34; // blanco y negro, más estrictos
     for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { viaImg.splice(i, 1); dropped++; }
     // liso: si en el pecho hay mucho de otro color (dibujo, logo grande, rayas), fuera
@@ -486,11 +508,13 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
     viaImg.forEach((p) => { if (p._color != null) p._hits += Math.max(0, (limit - p._color) / limit) * 2; });
   }
   // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
-  await pool(viaImg.slice(0, 14), 5, async (p) => {
-    try { const f = await readProduct(p.url); if (f.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
-  });
-  const groups = [stores.slice(0, 5), stores.slice(5, 9), stores.slice(9)].filter((g) => g.length);
-  const lists = await Promise.all([webSearch(`${q} comprar`, diag), ...groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))]);
+  await pool(viaImg.slice(0, 14), 6, async (p) => {
+    try { const f = await within(readProduct(p.url), 8000); if (f?.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
+  }, until - 3000);
+  // búsqueda web clásica: solo si queda tiempo y con pocos resultados de imágenes
+  const left = until - Date.now();
+  const groups = viaImg.length >= 8 || left < 6000 ? [] : [stores.slice(0, 6), stores.slice(6, 12)].filter((g) => g.length);
+  const lists = groups.length ? await within(Promise.all(groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))), left - 3000) || [] : [];
   const seen = new Set(), cand = [];
   let shopLinks = 0;
   for (const u of lists.flat()) {
@@ -503,7 +527,7 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   // como mucho 3 por tienda, para que salgan varias marcas
   const per = new Map(), picked = cand.filter((c) => { const n = per.get(c.st[0]) || 0; if (n >= 3) return false; per.set(c.st[0], n + 1); return true; }).slice(0, 18);
   const fails = [];
-  const read = await pool(picked, 5, async (c) => { try { return { ...(await readProduct(c.url)), url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } });
+  const read = await pool(picked, 6, async (c) => { try { const f = await within(readProduct(c.url), 7000); if (!f) throw new Error("lenta"); return { ...f, url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } }, until);
   const ok = read.filter(Boolean);
   const fromPages = ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
