@@ -9,6 +9,7 @@ import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, de
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
+import { openWhere, whereSummary } from "./storepicker.js";
 import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
@@ -77,6 +78,7 @@ export function renderShop(view) {
         ${g.pairsWith?.length ? `<div class="gap-pairs"><span class="muted small">${t("shop.pairs")}</span><div class="look-items">${strip(g.pairsWith)}</div></div>` : ""}
         <div class="row wrap">
           <button class="btn sm ${r ? "ghost" : "primary"}" type="button" data-search="${esc(g.id)}" ${searching.has(g.id) ? "disabled" : ""}>${icon(r ? "refresh" : "search")}${t(searching.has(g.id) ? "shop.searching" : r ? (isOpen ? "shop.searchAgain" : "shop.seeModels") : "shop.search")}</button>
+          <button class="btn sm ghost where-btn" type="button" data-where title="${t("where.title")}">${icon("bag")}${esc(whereSummary())}</button>
           ${r && isOpen ? `<span class="muted small">${t("shop.searchedAt", { date: fmtDate(r.searched) })}</span>` : ""}
         </div>
         ${r && isOpen ? `
@@ -97,6 +99,7 @@ export function renderShop(view) {
       <section class="card shop-advice"><div class="row between"><span class="kicker">${t("shop.diagnosis")}</span><button class="btn sm ghost" type="button" id="analyze">${icon("refresh")}${t("shop.reanalyze")}</button></div>
         <p class="lead">${esc(sh.advice || "")}</p>${sh.engine ? `<p class="muted small" style="margin:0">${t("engine.gapsByApp")}</p>` : ""}<p class="muted small" style="margin:0">${t("shop.analyzedAt", { date: fmtDate(sh.at), n: sh.items || store.items.length })}${sh.items && sh.items !== store.items.length ? ` · ${t("shop.stale")}` : ""}</p>
         <p class="status" id="st" aria-live="polite"></p></section>
+      <button type="button" class="card where-card" data-where><span class="grow"><span class="kicker">${t("where.title")}</span><b>${esc(whereSummary())}</b><small class="muted">${t("where.hint")}</small></span><span class="btn sm ghost">${t("where.change")}</span></button>
       <h2 class="display shop-h">${t("shop.listCombine")}</h2><p class="muted shop-hsub">${t("shop.listCombineSub")}</p>
       <div class="gaps">${(sh.combine || []).map(card).join("")}</div>
       <h2 class="display shop-h">${t("shop.listStyle")}</h2><p class="muted shop-hsub">${store.style?.summary ? t("shop.listStyleSub", { name: esc(store.style.name || "") }) : t("shop.listStyleNoStyle")}</p>
@@ -104,6 +107,7 @@ export function renderShop(view) {
     $("#analyze", pane).onclick = analyze;
     pane.onclick = async (e) => {
       const it = e.target.closest(".look-items [data-item]"); if (it) return (await import("./item.js")).openItem(it.dataset.item);
+      if (e.target.closest("[data-where]")) return openWhere(() => draw());
       const s = e.target.closest("[data-search]");
       if (s) {
         const id = s.dataset.search, has = !!res[id];

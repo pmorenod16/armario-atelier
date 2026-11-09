@@ -263,23 +263,26 @@ async function webSearch(q, diag) {
  * buscador, que siempre carga.
  */
 async function ddgImages(q) {
-  const home = await get(`https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images&kl=es-es`, 10000);
+  const home = await get(`https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images&kl=es-es`, 7000);
   const vqd = home.match(/vqd=["']?([\d-]+)["']?/)?.[1];
   if (!vqd) throw new Error("sin vqd");
-  const raw = await get(`https://duckduckgo.com/i.js?l=es-es&o=json&q=${encodeURIComponent(q)}&vqd=${vqd}&f=,,,,,&p=1`, 10000, { Referer: "https://duckduckgo.com/", Accept: "application/json" });
+  const raw = await get(`https://duckduckgo.com/i.js?l=es-es&o=json&q=${encodeURIComponent(q)}&vqd=${vqd}&f=,,,,,&p=1`, 7000, { Referer: "https://duckduckgo.com/", Accept: "application/json" });
   const j = JSON.parse(raw);
   return (j.results || []).map((r) => ({ title: r.title, page: r.url, image: r.image, thumb: r.thumbnail }));
 }
 async function bingImages(q) {
-  const html = await get(`https://www.bing.com/images/async?q=${encodeURIComponent(q)}&first=0&count=35&mmasync=1&setlang=es&cc=ES`, 10000);
+  const html = await get(`https://www.bing.com/images/async?q=${encodeURIComponent(q)}&first=0&count=35&mmasync=1&setlang=es&cc=ES`, 8000);
   const out = [];
   for (const m of html.matchAll(/\bm="(\{[^"]+\})"/g)) {
     try { const j = JSON.parse(decodeHtml(m[1])); if (j.purl && (j.turl || j.murl)) out.push({ title: j.t || "", page: j.purl, image: j.murl, thumb: j.turl }); } catch {}
   }
   return out;
 }
-async function imageSearch(q, diag, tag) {
-  for (const [name, fn] of [["DDG imágenes", ddgImages], ["Bing imágenes", bingImages]]) {
+// los dos buscadores se turnan (bingFirst) para no hacer 18 peticiones seguidas al mismo y que nos corte
+async function imageSearch(q, diag, tag, bingFirst = false) {
+  const engines = [["DDG imágenes", ddgImages], ["Bing imágenes", bingImages]];
+  if (bingFirst) engines.reverse();
+  for (const [name, fn] of engines) {
     try { const r = await fn(q); if (r.length) { diag.push(`${tag} ${name}: ${r.length}`); return r; } diag.push(`${tag} ${name}: 0`); }
     catch (e) { diag.push(`${tag} ${name}: ${e.message}`); }
   }
@@ -467,20 +470,21 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   }
   const wanted = wantedColor(color || term, colorHex);
   const sec = apiDefaults.section || "hombre";
-  const extra = [plain && !/\blis[ao]s?\b/i.test(term) ? "lisa" : "", type === "camiseta" && !/manga corta/i.test(term) ? "manga corta" : ""].filter(Boolean).join(" ");
-  const neg = [plain ? "-estampada -logo -print" : "", type === "camiseta" ? '-"manga larga"' : "", "-fútbol -equipación"].filter(Boolean).join(" ");
-  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${extra} ${sec} ${sec === "mujer" ? "-hombre" : "-mujer"} -niño -niña -kids ${neg}`.replace(/\s+/g, " ");
+  // consulta CORTA y solo con palabras en positivo: con «lisa», «manga corta», comillas o exclusiones (-logo…) los buscadores
+  // de imágenes con site: devolvían 0 y solo quedaba Zara (9/11/2026). Liso, manga, sección y color se filtran aquí después.
+  const q = `${term}${color && !String(term).toLowerCase().includes(String(color).toLowerCase()) ? " " + color : ""} ${sec}`.replace(/\s+/g, " ").trim();
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
   const pieceWords = new Set(words(piece || term).map(stem));
   // 1) imágenes por tienda: foto, nombre y enlace sin abrir la ficha
-  const viaImg = [];
-  await pool(stores, 5, async ([name, dom, pat]) => {
-    const res = (await within(imageSearch(`${q} site:${dom}`, diag, name), 15000)) || [];
-    let n = 0;
+  const viaImg = [], perStore = new Map();
+  const names = new Set(stores.map(([n]) => n));
+  const take = (res, only1) => {
     for (const r of res) {
-      const st = storeOf(r.page); if (!st || st[0] !== name) continue;
+      const st = storeOf(r.page); if (!st || !names.has(st[0]) || (only1 && st[0] !== only1)) continue;
+      const name = st[0], pat = st[2];
+      if ((perStore.get(name) || 0) >= 3) continue; // como mucho 3 por tienda
       const clean = r.page.split("?")[0], title = cleanTitle(r.title);
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
@@ -490,9 +494,17 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
       if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
       if (viaImg.some((p) => p.url.split("?")[0] === clean)) continue;
       viaImg.push({ store: name, name: title.slice(0, 120), url: r.page, image: r.image || r.thumb, thumb: r.thumb || r.image, price: "", priceNum: null, color: "", _hits: [...tw].filter((w) => want.has(w)).length + (pat.test(clean) ? 0.5 : 0) });
-      if (++n >= 3) break; // como mucho 3 por tienda
+      perStore.set(name, (perStore.get(name) || 0) + 1);
     }
-  }, until - 8000);
+  };
+  // 1a) una búsqueda general (sin site:) a la vez: suele traer varias tiendas de golpe; se queda solo lo de las marcadas
+  const general = within(imageSearch(`${q} comprar`, diag, "general", true), 12000).then((res) => take(res || []));
+  // 1b) por tienda/marca, alternando buscador
+  await pool(stores.map((s, i) => [s, i]), 4, async ([[name, dom], i]) => {
+    const res = (await within(imageSearch(`${q} site:${dom}`, diag, name, i % 2 === 1), 12000)) || [];
+    take(res, name);
+  }, until - 9000);
+  await within(general, 2000);
   // color de verdad: se mira la foto (los nombres a menudo no dicen el color). Lejos del pedido → fuera
   let dropped = 0;
   if (wanted?.hex && /^#/.test(wanted.hex)) {
@@ -502,9 +514,14 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
       try { const st = await within(garmentColor(p.thumb || p.image), 8000); if (st) { p._color = dE(lab(st.color), target); p._spread = st.spread; } else p._color = null; } catch { p._color = null; }
     }, until - 4000);
     const limit = ["blanco", "crudo", "negro", "gris-claro"].includes(wanted.k) ? 22 : 34; // blanco y negro, más estrictos
-    for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { viaImg.splice(i, 1); dropped++; }
+    var held = []; // lo descartado por la foto se guarda por si al final no queda casi nada
+    for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { held.push({ p: viaImg.splice(i, 1)[0], why: viaImg.length, bad: 2 }); dropped++; }
     // liso: si en el pecho hay mucho de otro color (dibujo, logo grande, rayas), fuera
-    if (plain) for (let i = viaImg.length - 1; i >= 0; i--) if ((viaImg[i]._spread || 0) > 0.3) { viaImg.splice(i, 1); dropped++; }
+    if (plain) for (let i = viaImg.length - 1; i >= 0; i--) if ((viaImg[i]._spread || 0) > 0.38) { held.push({ p: viaImg.splice(i, 1)[0], bad: 1 }); dropped++; }
+    // si los filtros de la foto lo han dejado casi vacío, se recuperan los que menos fallan (el análisis de la foto no es perfecto)
+    if (viaImg.length < 4 && held.length) {
+      held.sort((a, b) => a.bad - b.bad || (a.p._color || 0) - (b.p._color || 0)).slice(0, 6 - viaImg.length).forEach((h) => { h.p._hits -= 1; viaImg.push(h.p); dropped--; });
+    }
     viaImg.forEach((p) => { if (p._color != null) p._hits += Math.max(0, (limit - p._color) / limit) * 2; });
   }
   // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
