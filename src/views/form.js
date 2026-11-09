@@ -3,7 +3,7 @@
 import { t } from "../i18n.js";
 import {
   TYPES, GROUPS, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, label, sizeKeyOf,
-  shown, isWomen, BRA_FINISH, SHEER, NECKLINES, BRA_TYPES,
+  shown, isWomen, BRA_FINISH, SHEER, NECKLINES, BRA_TYPES, SOCK_LENGTHS,
 } from "../catalog.js";
 // prendas que van pegadas al cuerpo (para saber qué sujetador llevar debajo)
 const BODY_TYPES = new Set(["camiseta", "camiseta-ml", "polo", "tirantes", "camisa", "camisa-mc", "blusa", "top", "vestido", "mono", "jersey", "cardigan"]);
@@ -34,6 +34,9 @@ export function itemForm(initial = {}) {
   </div>
   <div class="section" id="wBra" hidden><h3>${t("under.braSection")}</h3>
     <div class="field ai-group" data-f="braFinish"><span>${t("under.finish")} ${aiMark()}</span><span class="hint">${t("under.finishHint")}</span>${chipGroup("braFinish", BRA_FINISH)}</div>
+  </div>
+  <div class="section" id="wSock" hidden><h3>${t("socks.title")}</h3>
+    <div class="field ai-group" data-f="sockLength"><span>${t("socks.length")} ${aiMark()}</span>${chipGroup("sockLength", SOCK_LENGTHS)}</div>
   </div>
   <div class="section"><h3>${t("item.section.details")}</h3>
     <div class="two">
@@ -75,6 +78,7 @@ export function itemForm(initial = {}) {
     const ty = F("type").value;
     $("#wBody", el).hidden = !(isWomen() && BODY_TYPES.has(ty));
     $("#wBra", el).hidden = !BRA_TYPES.has(ty);
+    $("#wSock", el).hidden = ty !== "calcetines";
   };
   el.addEventListener("change", (e) => { if (e.target.name === "type") { sizeHint(); womenFields(); } });
   el.addEventListener("click", (e) => {
@@ -102,7 +106,7 @@ export function itemForm(initial = {}) {
       colors = d.colors.filter((c) => COLOR[c.k] || c.hex).slice(0, 3).map((c) => ({ k: COLOR[c.k] ? c.k : "", hex: /^#[0-9a-f]{6}$/i.test(c.hex || "") ? c.hex : COLOR[c.k]?.hex || null }));
       renderColors(); mark("colors");
     }
-    for (const f of ["pattern", "materialKey", "fit", "sheer", "neckline", "braFinish"]) if (d[f]) { pressSingle(f, d[f]); mark(f); }
+    for (const f of ["pattern", "materialKey", "fit", "sheer", "neckline", "braFinish", "sockLength"]) if (d[f]) { pressSingle(f, d[f]); mark(f); }
     if (Array.isArray(d.seasons) && d.seasons.length) { $$('[data-group="seasons"] .chip', el).forEach((b) => b.setAttribute("aria-pressed", String(d.seasons.includes(b.dataset.v)))); mark("seasons"); }
     if (d.formality) { F("formality").value = Math.min(5, Math.max(1, Math.round(d.formality))); formVal(); mark("formality"); }
     const tags = d.styleTags || d.tags; if (Array.isArray(tags) && tags.length) { F("styleTags").value = tags.join(", "); mark("styleTags"); }
@@ -121,6 +125,7 @@ export function itemForm(initial = {}) {
       care: F("care").value.trim() || null, notes: F("notes").value.trim() || null,
       ...(isWomen() && BODY_TYPES.has(F("type").value) ? { sheer: getSingle("sheer"), neckline: getSingle("neckline") } : {}),
       ...(BRA_TYPES.has(F("type").value) ? { braFinish: getSingle("braFinish") } : {}),
+      ...(F("type").value === "calcetines" ? { sockLength: getSingle("sockLength") } : {}),
     };
   }
 

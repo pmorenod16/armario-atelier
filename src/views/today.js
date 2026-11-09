@@ -14,7 +14,7 @@ import { openItem } from "./item.js";
 import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
-import { suggestOutfits, packTrip, ensureGlasses, pickUnder } from "../engine.js";
+import { suggestOutfits, packTrip, ensureGlasses, pickUnder, pickSocks } from "../engine.js";
 import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
@@ -257,7 +257,7 @@ function tabToday(box) {
 
   async function generate(more = false) {
     const st = $("#st", box);
-    const avail = store.items.filter((i) => i.status === "disponible" && i.layer !== "under" && !BRA_TYPES.has(i.type)); // la ropa interior se elige aparte
+    const avail = store.items.filter((i) => i.status === "disponible" && i.layer !== "under" && !BRA_TYPES.has(i.type) && i.type !== "calcetines"); // ropa interior y calcetines se eligen aparte
     if (avail.length < 2) { say(st, t("today.needItems"), "error"); return; }
     const plan = planEl.value.trim() || t("today.defaultPlan");
     $("#go", box).disabled = true; say(st, t("today.thinking"));
@@ -341,7 +341,7 @@ function tabToday(box) {
       <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
-      ${underHTML(o.itemIds)}
+      ${underHTML(o.itemIds, td?.weather?.t ?? null)}
       ${o.how?.length ? `<h3 class="how-title">${t("today.how")}</h3><ol class="how">${o.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
       ${o.extras?.length ? `<h3 class="how-title">${t("today.extras")}</h3><div class="chips">${o.extras.map((x) => `<span class="chip">${icon("bag")}${esc(x)}</span>`).join("")}</div>` : ""}
       ${o.repeats?.length ? `<p class="muted small">${t("today.repeats", { names: esc(o.repeats.map(byId).filter(Boolean).map((i) => i.name).join(", ")) })}</p>` : ""}
@@ -504,7 +504,7 @@ function tabTrip(box) {
       keep();
       const st = $("#tst", box);
       if (!form.dest) { say(st, t("trip.needDest"), "error"); return; }
-      const avail = store.items.filter((i) => i.status !== "prestada" && !BRA_TYPES.has(i.type));
+      const avail = store.items.filter((i) => i.status !== "prestada" && !BRA_TYPES.has(i.type) && i.type !== "calcetines");
       $("#pack", box).disabled = true; say(st, t("trip.weather"));
       try {
         const w = await tripWeather(form.dest, form.start, form.days);
@@ -556,10 +556,14 @@ function tabTrip(box) {
 }
 
 /** Sección mujer: qué sujetador llevar debajo para que no se marque ni se transparente (se calcula al vuelo). */
-function underHTML(ids) {
-  if (!isWomen()) return "";
+function underHTML(ids, temp = null) {
   const its = (ids || []).map((id) => store.items.find((i) => i.id === id)).filter(Boolean);
-  const u = pickUnder(its, store.items); if (!u) return "";
-  const b = u.id && store.items.find((i) => i.id === u.id);
-  return `<div class="under">${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${t("under.title")}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}</div>`;
+  const row = (u, title) => {
+    if (!u) return "";
+    const b = u.id && store.items.find((i) => i.id === u.id);
+    return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}`;
+  };
+  // sujetador (sección mujer) y calcetines (todos), elegidos al vuelo para este conjunto
+  const html = (isWomen() ? row(pickUnder(its, store.items), t("under.title")) : "") + row(pickSocks(its, store.items, { temp }), t("socks.title"));
+  return html ? `<div class="under">${html}</div>` : "";
 }

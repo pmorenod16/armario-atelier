@@ -6,7 +6,7 @@ import { getLanguage, tr } from "./i18n.js";
 export const label = (entry) => entry ? (entry[getLanguage()] ?? tr(entry.es ?? entry.k)) : "";
 
 // capa = cómo se coloca en el maniquí (fase 2)
-export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory", "under"];
+export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory", "under", "socks"];
 
 // Sección del armario (hombre|mujer): los tipos con w:true solo se ofrecen en la de mujer (main.js la fija con el perfil)
 let SECTION = "hombre";
@@ -22,6 +22,7 @@ export const GROUPS = [
   { k: "pantalones", es: "Pantalones", layer: "bottom" },
   { k: "piezas", es: "Vestidos y monos", layer: "dress" },
   { k: "calzado", es: "Calzado", layer: "shoes" },
+  { k: "calcetines", es: "Calcetines", layer: "socks" },
   { k: "complementos", es: "Complementos", layer: "accessory" },
   { k: "interior", es: "Ropa interior", layer: "under", w: true },
 ];
@@ -64,6 +65,7 @@ export const TYPES = [
   { k: "botas", es: "Botas", g: "calzado" },
   { k: "botines", es: "Botines", g: "calzado" },
   { k: "sandalias", es: "Sandalias", g: "calzado" },
+  { k: "calcetines", es: "Calcetines", g: "calcetines" },
   { k: "gorra", es: "Gorra", g: "complementos" },
   { k: "gorro", es: "Gorro", g: "complementos" },
   { k: "bufanda", es: "Bufanda", g: "complementos" },
@@ -86,6 +88,8 @@ export const TYPES = [
 export const BRA_FINISH = [{ k: "liso", es: "Liso / sin costuras" }, { k: "relieve", es: "Con relieve (encaje, costuras, bordado)" }];
 export const SHEER = [{ k: "no", es: "No transparenta" }, { k: "algo", es: "Algo fina" }, { k: "si", es: "Transparente" }];
 export const NECKLINES = [{ k: "normal", es: "Normal" }, { k: "tirantes-finos", es: "Tirantes finos" }, { k: "sin-tirantes", es: "Palabra de honor / sin tirantes" }, { k: "espalda", es: "Espalda al aire" }, { k: "escote", es: "Escote profundo" }];
+// Calcetines: largo (lo que se ve entre el pantalón y el zapato)
+export const SOCK_LENGTHS = [{ k: "invisible", es: "Invisibles (no se ven)" }, { k: "tobillero", es: "Tobilleros" }, { k: "media", es: "Media caña" }, { k: "alto", es: "Altos / de vestir" }];
 export const BRA_TYPES = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
 
 // Familias de color para clasificar y filtrar (el tono exacto se guarda aparte en hex)

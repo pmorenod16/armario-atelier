@@ -12,6 +12,8 @@ const DICT = {
     "nav.shop": "Compras",
     "nav.looks": "Outfits",
     "under.title": "Debajo",
+    "socks.title": "Calcetines",
+    "socks.length": "Largo",
     "under.section": "Qué llevar debajo",
     "under.sheer": "¿Transparenta?",
     "under.sheerHint": "Para elegir un sujetador que no se vea a través",
