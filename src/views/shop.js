@@ -10,6 +10,7 @@ import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
 import { openWhere, whereSummary } from "./storepicker.js";
+import { LOCAL_DEFAULT } from "../storesearch.js";
 import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
@@ -92,7 +93,7 @@ export function renderShop(view) {
           ${r.size || size ? `<p class="muted small">${t("shop.sizeNote", { s: esc(r.size || size) })}</p>` : ""}
           ${!r.allStores ? `<p class="muted small">${t("shop.moreInApp")}</p>` : ""}
           ${r.diag && r.allStores ? `<details class="diag"><summary class="muted small">${t("shop.diag")}</summary><p class="muted small">${esc(r.diag)}</p></details>` : ""}
-          <div class="store-links"><span class="muted small">${t("shop.inStores")}</span>${(r.links || []).map((l) => `<a class="chip" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.store)} ${icon("external")}</a>`).join("")}</div>` : ""}
+          <div class="store-links"><span class="muted small">${t("shop.inStores")}</span>${topLinks(r).map((l) => `<a class="chip" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.store)} ${icon("external")}</a>`).join("")}</div>` : ""}
       </article>`;
     };
     pane.innerHTML = `
@@ -323,6 +324,13 @@ function priceNum(p) {
   const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** «Buscar en…»: solo los 9 principales (Polete, 9/11/2026: «no pongas todas»): primero las tiendas que han dado
+ * resultados, luego las de Girona por su orden (LOCAL_DEFAULT) y después el resto. */
+function topLinks(r) {
+  const withP = new Set((r.products || []).map((p) => p.store));
+  const rank = (l) => (withP.has(l.store) ? 0 : 100) + (LOCAL_DEFAULT.includes(l.store) ? LOCAL_DEFAULT.indexOf(l.store) : 50);
+  return [...(r.links || [])].map((l, i) => [l, rank(l) * 1000 + i]).sort((a, b) => a[1] - b[1]).slice(0, 9).map((x) => x[0]);
+}
 /** Enlaces al buscador de cada tienda (se hacen en la app: no dependen del servidor). */
 function storeLinks(g, only = null) {
   const sec = store.profile?.section === "mujer" ? "mujer" : "hombre";
