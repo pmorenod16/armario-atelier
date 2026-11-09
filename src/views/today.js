@@ -69,7 +69,8 @@ function drawWashCheck(host, today) {
   const dec = {};
   for (const it of items) {
     const lim = itemWashLimit(it), n = it.wearsSinceWash || 0;
-    dec[it.id] = lim && n >= lim ? (isDryClean(it) ? "tintoreria" : "sucia") : "limpia";
+    // sujetadores: nunca se proponen para lavar, siempre «sigue limpio» hasta que lo cambies tú (aguantan varios usos)
+    dec[it.id] = !BRA_TYPES.has(it.type) && lim && n >= lim ? (isDryClean(it) ? "tintoreria" : "sucia") : "limpia";
   }
   const when = (Date.parse(today) - Date.parse(wear.date)) / 864e5 === 1 ? t("washc.yesterday") : fmtDate(wear.date, { weekday: "long" });
   const draw = () => {
@@ -80,7 +81,7 @@ function drawWashCheck(host, today) {
         const lim = itemWashLimit(it), dry = isDryClean(it);
         return `<div class="wc-row">
           <span class="mini" style="--tint:${tintFor(it.tone) || "var(--surface-solid)"}">${it.thumb ? `<img src="${it.thumb}" alt="">` : ""}</span>
-          <div class="grow"><b>${esc(it.name)}</b><small class="muted">${lim ? t("washc.uses", { n: it.wearsSinceWash || 0, max: lim }) : t("washc.usesFree", { n: it.wearsSinceWash || 0 })}</small></div>
+          <div class="grow"><b>${esc(it.name)}</b><small class="muted">${BRA_TYPES.has(it.type) ? t("washc.braFree", { n: it.wearsSinceWash || 0 }) : lim ? t("washc.uses", { n: it.wearsSinceWash || 0, max: lim }) : t("washc.usesFree", { n: it.wearsSinceWash || 0 })}</small></div>
           <div class="seg wc-seg" data-id="${it.id}">
             <button type="button" data-d="limpia" aria-pressed="${dec[it.id] === "limpia"}">${t("washc.clean")}</button>
             <button type="button" data-d="${dry ? "tintoreria" : "sucia"}" aria-pressed="${dec[it.id] !== "limpia"}">${t(dry ? "washc.dry" : "washc.wash")}</button>

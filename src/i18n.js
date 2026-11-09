@@ -19,6 +19,7 @@ const DICT = {
     "stores.all": "Marcar todas",
     "stats.btn": "Estadísticas",
     "share.btn": "Compartir",
+    "washc.braFree": "{n} usos · tú decides cuándo lavarlo",
     "offline.toast": "Sin conexión: tu armario, el calendario y los outfits de la app siguen funcionando. La IA y las tiendas vuelven cuando haya internet.",
     "offline.badge": "Sin conexión",
     "photo.add": "Foto del look",
