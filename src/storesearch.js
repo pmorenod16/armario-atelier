@@ -26,6 +26,10 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
   ["Cortefiel", "cortefiel.com", /\/p\/|\d{6,}\.html/i],
   ["Celio", "celio.com", /\d{6,}\.html|\/p\//i],
   ["Decathlon", "decathlon.es", /\/p\/|_\d{6,}/i],
+  // trajes, ceremonia y vestidos
+  ["El Corte Inglés", "elcorteingles.es", /\/\d{3}-\d+|\/p\/|-\d{6,}/i],
+  ["Suitsupply", "suitsupply.com", /\.html|\/p\//i],
+  ["Adolfo Domínguez", "adolfodominguez.com", /\.html|\/p\//i],
 ];
 // Tiendas con tienda física en Girona o alrededores (Espai Gironès, centro): las que se buscan por defecto.
 // Polete puede cambiarlas en Perfil → Ajustes → Tiendas (perfil.stores).
@@ -34,7 +38,7 @@ export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bea
 // Por defecto ninguna: Polete marca las que le gustan en Perfil → Ajustes → Tiendas (perfil.brands).
 export const BRAND_GROUPS = [
   ["clasico", "Clásico / old money"], ["minimal", "Básicos premium y minimal"], ["street", "Streetwear / starboy"],
-  ["pantalon", "Pantalones y chinos"], ["denim", "Vaqueros"], ["calzado", "Calzado"], ["deporte", "Montaña y deporte con estilo"], ["mujer", "Sobre todo de mujer"],
+  ["trajes", "Trajes y ceremonia"], ["fiesta", "Vestidos y fiesta"], ["pantalon", "Pantalones y chinos"], ["denim", "Vaqueros"], ["calzado", "Calzado"], ["deporte", "Montaña y deporte con estilo"], ["mujer", "Sobre todo de mujer"],
 ];
 // [nombre, dominio, grupo, cómo es] — para ir descubriéndolas
 const BRAND_LIST = [
@@ -161,6 +165,26 @@ const BRAND_LIST = [
   ["Golden Goose", "goldengoose.com", "calzado", "Zapatillas «desgastadas» italianas"],
   ["Ecco", "ecco.com", "calzado", "Danesa: zapatos y zapatillas comodísimos de piel"],
   ["Blundstone", "blundstone.com", "calzado", "Australiana: botines chelsea indestructibles"],
+  // trajes y ceremonia
+  ["Lander Urquijo", "landerurquijo.com", "trajes", "Española: trajes y americanas con aire clásico y moderno"],
+  ["Roberto Verino", "robertoverino.com", "trajes", "Española: sastrería y ceremonia elegante"],
+  ["Reiss", "reiss.com", "trajes", "Británica: trajes entallados y prendas de vestir modernas"],
+  ["Ted Baker", "tedbaker.com", "trajes", "Británica: trajes con forros y detalles de color"],
+  ["Ermenegildo Zegna", "zegna.com", "trajes", "Italiana: los tejidos de traje más famosos (lujo, para inspirarse)"],
+  ["Canali", "canali.com", "trajes", "Sastrería italiana clásica de gama alta"],
+  // vestidos y fiesta
+  ["Pronovias", "pronovias.com", "fiesta", "Barcelona: novia y fiesta, la referencia en vestidos de ceremonia"],
+  ["Rosa Clará", "rosaclara.es", "fiesta", "Barcelona: vestidos de novia, madrina e invitada"],
+  ["Jesús Peiró", "jesuspeiro.com", "fiesta", "Barcelona: vestidos de novia y fiesta de líneas limpias"],
+  ["Cherubina", "cherubina.com", "fiesta", "Española: vestidos de invitada con mucho color y volantes"],
+  ["Coosy", "coosy.es", "fiesta", "Española: vestidos de invitada y tocados"],
+  ["Matilde Cano", "matildecano.es", "fiesta", "Española: vestidos de fiesta a buen precio"],
+  ["Sophie et Voilà", "sophieetvoila.com", "fiesta", "Española: vestidos de invitada con estampados"],
+  ["Redondo Brand", "redondobrand.com", "fiesta", "Española: vestidos de fiesta muy de redes"],
+  ["Lola Casademunt", "lolacasademunt.com", "fiesta", "Catalana (Maçanet de la Selva): vestidos con lazos y estampados"],
+  ["Self-Portrait", "self-portrait.com", "fiesta", "Británica: vestidos de encaje y fiesta muy buscados"],
+  ["Reformation", "thereformation.com", "fiesta", "Americana: vestidos favorecedores y sostenibles"],
+  ["Purificación García", "purificaciongarcia.com", "fiesta", "Española: elegante y sobria, buena para ceremonias"],
   ["Bimba y Lola", "bimbaylola.com", "mujer", "Española: bolsos, estampados y color"],
   ["& Other Stories", "stories.com", "mujer", "Del grupo H&M: prendas con más diseño"],
   ["Sézane", "sezane.com", "mujer", "Parisina: romántica y atemporal"],
