@@ -8,7 +8,7 @@ import { locate, placeName, searchCity } from "../places.js";
 import { auth, logOut } from "../firebase.js";
 import { BUILD, checkUpdate } from "../updater.js";
 import { canNotify, setMorningReminder, canCalendar, planFromCalendar } from "../native.js";
-import { STORES, BRANDS, BRAND_GROUPS, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
+import { STORES, BRANDS, BRAND_GROUPS, MULTI, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
 import { isAdmin, watchAccessList, setAccess, removeAccess } from "../access.js";
 
 const SIZE_PH = { camiseta: "M", jersey: "M", calzado: "43" };
@@ -119,7 +119,13 @@ export function renderProfile(view) {
         </details></section>
       <section class="card" data-pt="settings" id="cStores"><h2 class="display">${t("stores.title")}</h2>
         <p class="muted small">${t("stores.hint")}</p>
-        <div class="chips" id="storeChips">${STORES.map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
+        <div id="storeChips">
+          <div class="chips">${STORES.filter(([n]) => !MULTI[n]).map(([n]) => `<button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button>`).join("")}</div>
+          <details class="brand-group" open><summary><b>${t("stores.multi")}</b></summary>
+            <p class="muted small">${t("stores.multiHint")}</p>
+            ${STORES.filter(([n]) => MULTI[n]).map(([n]) => `<div class="brand-row"><button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${allowedStores(p).includes(n)}">${esc(n)}</button><span class="muted small">${esc(MULTI[n])}</span></div>`).join("")}
+          </details>
+        </div>
         <h3 class="sub-h">${t("brands.title")}</h3>
         <p class="muted small">${t("brands.hint")}</p>
         <div id="brandChips">${BRAND_GROUPS.map(([g, title]) => { const list = BRANDS.filter((b) => b.group === g); const on = list.filter((b) => allowedBrands(p).includes(b[0])).length;

@@ -27,10 +27,31 @@ export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
   ["Celio", "celio.com", /\d{6,}\.html|\/p\//i],
   ["Decathlon", "decathlon.es", /\/p\/|_\d{6,}/i],
   // trajes, ceremonia y vestidos
-  ["El Corte Inglés", "elcorteingles.es", /\/\d{3}-\d+|\/p\/|-\d{6,}/i],
   ["Suitsupply", "suitsupply.com", /\.html|\/p\//i],
   ["Adolfo Domínguez", "adolfodominguez.com", /\.html|\/p\//i],
+  // grandes almacenes y multimarca (muchas marcas bajo un mismo techo)
+  ["El Corte Inglés", "elcorteingles.es", /\/\d{3}-\d+|\/p\/|-\d{6,}/i],
+  ["Sprinter", "sprinter.es", /\.html|\/p\//i],
+  ["JD Sports", "jdsports.es", /\/product\//i],
+  ["Foot Locker", "footlocker.es", /\/product\/|\.html/i],
+  ["Deichmann", "deichmann.com", /\/p\/|_\d{6,}/i],
+  ["Kiabi", "kiabi.es", /_P\d+|\/p\//i],
+  ["C&A", "c-and-a.com", /\/p\/|\d{6,}/i],
+  ["Mango Outlet", "mangooutlet.com", /\/p\/|_\d{6,}/i],
+  ["Zalando", "zalando.es", /\.html/i],
 ];
+// grandes almacenes, multimarca y outlets: se enseñan aparte en Perfil, con qué son
+export const MULTI = {
+  "El Corte Inglés": "Grandes almacenes: muchísimas marcas (Hackett, Lacoste, Levi's, Tommy, Emidio Tucci…) en una sola tienda",
+  "Sprinter": "Deporte y zapatillas de muchas marcas (Nike, Adidas, New Balance…)",
+  "JD Sports": "Zapatillas y ropa deportiva de marca, ediciones especiales",
+  "Foot Locker": "Zapatillas de marca (Nike, Jordan, Asics, New Balance…)",
+  "Deichmann": "Zapatería multimarca a buen precio",
+  "Kiabi": "Moda para toda la familia a precios bajos",
+  "C&A": "Básicos y ropa de diario a buen precio",
+  "Mango Outlet": "Mango de temporadas pasadas con descuento (sobre todo online)",
+  "Zalando": "Solo online: casi todas las marcas, envío y devolución gratis",
+};
 // Tiendas con tienda física en Girona o alrededores (Espai Gironès, centro): las que se buscan por defecto.
 // Polete puede cambiarlas en Perfil → Ajustes → Tiendas (perfil.stores).
 export const LOCAL_DEFAULT = ["Zara", "Massimo Dutti", "Mango", "H&M", "Pull&Bear", "Bershka", "Springfield", "Primark", "Lefties", "Cortefiel", "Jack & Jones", "Decathlon", "Celio"];

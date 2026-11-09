@@ -16,6 +16,8 @@ const DICT = {
     "stores.title": "Tiendas",
     "stores.hint": "En Compras solo se buscan modelos de las tiendas marcadas. Vienen marcadas las que tienen tienda física en Girona o alrededores (centro y Espai Gironès); cambia las que quieras.",
     "stores.reset": "Volver a las de Girona",
+    "stores.multi": "Grandes almacenes, multimarca y outlets",
+    "stores.multiHint": "Tiendas con muchas marcas a la vez. Cerca de Girona, en Espai Gironès (Salt) hay varias cadenas y tiendas de deporte; El Corte Inglés y La Roca Village (outlet de marcas, junto a Barcelona) quedan a una hora. Márcalas si te vienen bien.",
     "brands.title": "Marcas",
     "brands.hint": "Marcas para ir descubriendo, agrupadas por estilo. Se buscan en su web oficial (muchas se venden en tiendas multimarca). Marca las que te gusten y saldrán en Compras.",
     "stores.atLeastOne": "Deja al menos una tienda marcada",
