@@ -468,7 +468,7 @@ const DICT = {
     "shop.prio.media": "Media",
     "shop.prio.baja": "Baja",
     "shop.search": "Buscar modelos",
-    "shop.searching": "Buscando en las tiendas (hasta 30 s)…",
+    "shop.searching": "Buscando y revisando fotos (hasta 1 min)…",
     "shop.seeModels": "Ver modelos",
     "shop.searchAgain": "Buscar otra vez",
     "shop.searchedAt": "Buscado el {date}",

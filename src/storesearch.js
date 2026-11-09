@@ -3,7 +3,7 @@
 // Las tiendas bloquean a los servidores, pero no a un móvil: por eso se hace aquí y no en el Worker.
 import { CapacitorHttp } from "@capacitor/core";
 import { isNative } from "./ui.js";
-import { apiDefaults } from "./api.js";
+import { api, apiDefaults } from "./api.js";
 import { COLORS } from "./catalog.js";
 
 export const STORES = [ // [nombre, dominio, patrón de ficha de producto]
@@ -338,11 +338,13 @@ const TYPE_RULES = {
 /** ¿El nombre es de esa prenda? (con tipo del catálogo; si no, que diga la palabra principal de la prenda entera).
  *  Mira también el enlace de la ficha: muchas tiendas ponen ahí «manga-larga», «estampado»… aunque el nombre no lo diga. */
 const slug = (url) => { try { return N(decodeURIComponent(new URL(url).pathname)).replace(/[-_/.]+/g, " "); } catch { return ""; } };
+const SPORT = /running|\btrail\b|ciclismo|\bbici|fitness|\bgym\b|entrenamiento|training|deportiv|tecnica|termica|compresion|x-bionic|xbionic|merino|icebreaker|senderismo|montana|trekking|\bsport\b|dry.?fit|quechua|kalenji|domyos|kiprun/;
 export function typeOk(title, type, piece, url = "") {
   const t = `${N(title)} ${slug(url)}`, r = TYPE_RULES[type];
   if (r && (type === "camiseta" || type === "camisa" || type === "polo") && /futbol|equipacion|seleccion|replica|\bclub\b|\bfc\b|jersey de juego|oficial/.test(t)) return false; // ropa de fútbol: no
+  // ropa técnica de deporte (running, merino de montaña…) solo si la prenda lo pide
+  if (!SPORT.test(N(piece || "")) && SPORT.test(t)) return false;
   if (r) return r.need.test(N(title)) && !(r.avoid && r.avoid.test(t));
-  if (r) return r.need.test(t) && !(r.avoid && r.avoid.test(t));
   const main = N(piece).split(/[^a-z]+/).find((w) => w.length > 3);
   return !main || new RegExp(`\\b${main.replace(/e?s$/, "")}(e?s)?\\b`).test(t);
 }
@@ -351,7 +353,12 @@ const PRINT = /monogram|emblem|escudo|insignia|badge|\bpatch|embroider|signature
 /** ¿Lo que buscas es liso? (sí, salvo que la prenda o su estampado digan otra cosa) */
 export const wantsPlain = (g) => (g?.pattern ? g.pattern === "liso" : !PRINT.test(N(`${g?.piece || ""} ${g?.searchTerm || ""}`)));
 /** ¿Encaja con el estampado buscado? Si buscas liso, fuera todo lo que diga dibujo, logo, rayas… (nombre o enlace). */
-export function patternOk(title, url, plain) { return !plain || !PRINT.test(`${N(title)} ${slug(url)}`); }
+export function patternOk(title, url, plain, type = "") {
+  if (!plain) return true;
+  const t = `${N(title)} ${slug(url)}`;
+  if (PRINT.test(t)) return false;
+  return !(TOPS.test(type) && LOGO_RE.test(t)); // multimarca: «Armani Exchange camiseta básica» lleva logo
+}
 
 /** ¿Es de la sección del perfil? Fuera mujer/niño en hombre, y hombre/niño en mujer (por nombre y por enlace). */
 export function sectionOk(title, url) {
@@ -387,58 +394,129 @@ function lab([r, g, b]) {
 }
 const dE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 /** Color de la prenda en una foto de tienda: se quita el fondo (color de los bordes) y se mira el centro. */
-async function garmentColor(url) {
-  const r = await CapacitorHttp.get({ url, responseType: "blob", headers: { "User-Agent": UA["User-Agent"] }, connectTimeout: 8000, readTimeout: 8000 });
-  if (r.status >= 400 || typeof r.data !== "string") throw new Error("foto " + r.status);
-  const mime = (r.headers?.["Content-Type"] || r.headers?.["content-type"] || "image/jpeg").split(";")[0];
-  const img = await new Promise((ok, ko) => { const i = new Image(); const to = setTimeout(() => ko(new Error("foto lenta")), 5000); i.onload = () => { clearTimeout(to); ok(i); }; i.onerror = (e) => { clearTimeout(to); ko(e); }; i.src = `data:${mime};base64,${r.data}`; });
-  const W = 72, H = 90, c = document.createElement("canvas"); c.width = W; c.height = H;
-  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
-  const d = g.getImageData(0, 0, W, H).data, px = (x, y) => { const i = (y * W + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
-  const border = []; for (let x = 0; x < W; x++) { border.push(px(x, 0), px(x, H - 1)); } for (let y = 0; y < H; y++) { border.push(px(0, y), px(W - 1, y)); }
-  const med = (arr) => [0, 1, 2].map((k) => arr.map((v) => v[k]).sort((a, b) => a - b)[arr.length >> 1]);
-  const bg = lab(med(border)), inner = [];
-  for (let y = Math.round(H * 0.2); y < H * 0.8; y++) for (let x = Math.round(W * 0.2); x < W * 0.8; x++) { const p = px(x, y); if (dE(lab(p), bg) > 12) inner.push(p); }
-  // prenda casi del color del fondo (camiseta blanca sobre blanco): el color es el del fondo
-  const color = inner.length < W * H * 0.36 * 0.12 ? med(border) : med(inner);
-  // ¿lisa? en el pecho (zona central) casi todo debe ser del mismo color; un dibujo o un logo grande lo rompe
-  const c0 = lab(color); let far = 0, n = 0;
-  for (let y = Math.round(H * 0.3); y < H * 0.62; y++) for (let x = Math.round(W * 0.3); x < W * 0.7; x++) { const q = lab(px(x, y)); if (dE(q, bg) < 8 && dE(c0, bg) > 12) continue; n++; if (dE(q, c0) > 24) far++; }
-  return { color, spread: n ? far / n : 0, logo: chestLogo(px, W, H, c0, bg) };
-}
-/**
- * ¿Logo o dibujo pequeño en el pecho? (9/11/2026, «sigue dándome logos»: un logo bordado no llega al 38 % del pecho).
- * Busca manchas compactas de un color muy distinto al de la prenda dentro de la zona del pecho, que no toquen los bordes
- * de esa zona (brazos, cuello, pelo): una mancha cerrada y maciza es un logo; las arrugas y sombras son largas y finas.
- * Devuelve la parte del pecho que ocupa la mayor (0 si no hay).
- */
-const LOGO_MIN = 0.0045; // parte del pecho: un logo bordado pequeño en la foto de la tienda ya pasa
-function chestLogo(px, W, H, c0, bg) {
-  const x0 = Math.round(W * 0.24), x1 = Math.round(W * 0.76), y0 = Math.round(H * 0.24), y1 = Math.round(H * 0.6);
-  const w = x1 - x0, h = y1 - y0, m = new Uint8Array(w * h);
-  const L = new Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = (L[y * w + x] = lab(px(x0 + x, y0 + y))); m[y * w + x] = dE(q, c0) > 30 && !(dE(q, bg) < 8 && dE(c0, bg) > 12) ? 1 : 0; }
-  let best = 0;
-  const seen = new Uint8Array(w * h), st = [];
-  for (let i = 0; i < m.length; i++) {
-    if (!m[i] || seen[i]) continue;
-    let n = 0, edge = false, sl = 0, sa = 0, sb = 0, minx = w, maxx = 0, miny = h, maxy = 0; st.push(i); seen[i] = 1;
-    while (st.length) {
-      const k = st.pop(), x = k % w, y = (k / w) | 0; n++; sl += L[k][0]; sa += L[k][1]; sb += L[k][2];
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge = true;
-      minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y);
-      for (const j of [k - 1, k + 1, k - w, k + w]) if (j >= 0 && j < m.length && m[j] && !seen[j] && Math.abs((j % w) - x) <= 1) { seen[j] = 1; st.push(j); }
+// ── Revisar la foto de un modelo (9/11/2026, segunda vuelta: «aún hay logos y colores que no tocan») ──
+// Antes: si la revisión no llegaba a hacerse (sin tiempo o la descarga fallaba) la prenda pasaba igual, y el color se medía
+// en el centro de la foto (con modelo, mezclaba camiseta y vaquero). Ahora: el color se mide en el pecho sin fondo ni piel,
+// el logo/dibujo se busca como «agujeros» de otro color rodeados de tela, y lo que no se ha podido revisar NO pasa.
+async function photoData(url) {
+  try {
+    const r = await within(CapacitorHttp.get({ url, responseType: "blob", headers: { "User-Agent": UA["User-Agent"] }, connectTimeout: 6000, readTimeout: 6000 }), 7000);
+    if (r && r.status < 400 && typeof r.data === "string" && r.data.length > 200) {
+      const mime = (r.headers?.["Content-Type"] || r.headers?.["content-type"] || "image/jpeg").split(";")[0];
+      return `data:${/^image\//.test(mime) ? mime : "image/jpeg"};base64,${r.data}`;
     }
-    const bw = maxx - minx + 1, bh = maxy - miny + 1, fill = n / (bw * bh), asp = Math.max(bw, bh) / Math.min(bw, bh);
-    const skin = sl / n > 40 && sl / n < 85 && sa / n > 8 && sa / n < 30 && sb / n > 12 && sb / n < 40; // una mano o el cuello de la modelo no es un logo
-    if (!edge && !skin && n >= 4 && fill >= 0.3 && asp <= 3.5) best = Math.max(best, n / (w * h));
+  } catch {}
+  // si el móvil no puede bajarla, la baja el servidor
+  const r = await within(api("/api/image", { url }, { timeout: 8000 }), 9000);
+  if (r?.image) return `data:${r.mime || "image/jpeg"};base64,${r.image}`;
+  throw new Error("no se pudo bajar la foto");
+}
+const loadImg = (src) => new Promise((ok, ko) => { const i = new Image(); const to = setTimeout(() => ko(new Error("foto lenta")), 5000); i.onload = () => { clearTimeout(to); ok(i); }; i.onerror = (e) => { clearTimeout(to); ko(e); }; i.src = src; });
+const isSkin = (q) => q[0] > 28 && q[0] < 90 && q[1] > 5 && q[1] < 32 && q[2] > 8 && q[2] < 42;
+const SHIRTY = /^(camisa|camisa-mc|polo|sobrecamisa|cardigan|chaqueta|americana|cazadora)/; // tienen botones o cremallera en el centro
+
+/** Analiza una foto ya cargada: { color (rgb), c0 (Lab), logo (parte de la prenda con dibujo/logo), print (dibujo grande) }. */
+export function analyzePhoto(img, type = "") {
+  const W = 96, H = 120, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
+  const d = g.getImageData(0, 0, W, H).data, N = W * H;
+  const R = new Array(N), L = new Array(N);
+  for (let i = 0; i < N; i++) { R[i] = [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]]; L[i] = lab(R[i]); }
+  const med = (arr) => [0, 1, 2].map((k) => arr.map((v) => v[k]).sort((a, b) => a - b)[arr.length >> 1]);
+  const border = []; for (let x = 0; x < W; x++) border.push(R[x], R[(H - 1) * W + x]); for (let y = 0; y < H; y++) border.push(R[y * W], R[y * W + W - 1]);
+  const bgRgb = med(border), bg = lab(bgRgb);
+  // color de la prenda: el pecho (25-50 % de alto, 30-70 % de ancho), sin fondo ni piel
+  const cx0 = Math.round(W * 0.3), cx1 = Math.round(W * 0.7), cy0 = Math.round(H * 0.25), cy1 = Math.round(H * 0.5);
+  const chest = [], chestAll = []; let win = 0;
+  for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) { const i = y * W + x; win++; if (isSkin(L[i]) && dE(L[i], bg) > 7) continue; chestAll.push(R[i]); if (dE(L[i], bg) > 7) chest.push(R[i]); }
+  const onBg = chest.length < win * 0.15; // prenda casi del color del fondo (camiseta blanca sobre blanco): se mide todo el pecho
+  const color = med(onBg ? (chestAll.length ? chestAll : [bgRgb]) : chest), c0 = lab(color);
+  // tela de la prenda: de su color y (si se distingue del fondo) que no sea fondo
+  const G = new Uint8Array(N); for (let i = 0; i < N; i++) G[i] = dE(L[i], c0) < 20 && (onBg || dE(L[i], bg) > 7) ? 1 : 0;
+  const comps = (mask, test) => { // componentes 4-conexas de los píxeles con mask=1 que cumplen test
+    const seen = new Uint8Array(N), out = [];
+    for (let i = 0; i < N; i++) {
+      if (!mask[i] || seen[i] || !test(i)) continue;
+      const st = [i], px = []; seen[i] = 1;
+      while (st.length) { const k = st.pop(); px.push(k); const x = k % W;
+        for (const j of [x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, k - W, k + W]) if (j >= 0 && j < N && mask[j] && !seen[j] && test(j)) { seen[j] = 1; st.push(j); } }
+      out.push(px);
+    }
+    return out;
+  };
+  const blobInfo = (px) => { let x0 = W, x1 = 0, y0 = H, y1 = 0, l = 0, a = 0, b = 0; for (const k of px) { const x = k % W, y = (k / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); l += L[k][0]; a += L[k][1]; b += L[k][2]; } const n = px.length; return { n, x0, x1, y0, y1, bw: x1 - x0 + 1, bh: y1 - y0 + 1, m: [l / n, a / n, b / n] }; };
+  // rayas, cuadros o dibujo grande: mucha parte del pecho de un color lejano al de la prenda
+  let far = 0, nn = 0;
+  for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) { const q = L[y * W + x]; if (isSkin(q) || (!onBg && dE(q, bg) < 7)) continue; nn++; if (dE(q, c0) > 26) far++; }
+  let logo = 0, print = nn > win * 0.2 && far / nn > 0.28 ? far / nn : 0;
+  if (onBg) {
+    // no se puede separar prenda y fondo: solo manchas cerradas dentro del pecho
+    const inWin = (i) => { const x = i % W, y = (i / W) | 0; return x >= cx0 && x < cx1 && y >= cy0 && y < cy1; };
+    const notG = G.map((v) => 1 - v);
+    let other = 0;
+    for (const px of comps(notG, inWin)) {
+      const f = blobInfo(px), skin = isSkin(f.m), edge = f.x0 <= cx0 || f.x1 >= cx1 - 1 || f.y0 <= cy0 || f.y1 >= cy1 - 1;
+      if (skin || dE(f.m, c0) < 26) continue;
+      other += f.n;
+      const fill = f.n / (f.bw * f.bh), asp = Math.max(f.bw, f.bh) / Math.min(f.bw, f.bh);
+      if (!edge && f.n >= 3 && fill >= 0.3 && asp <= 3.5) logo += f.n / win;
+    }
+    print = Math.max(print, other / win);
+  } else {
+    // la prenda = zona del color de la prenda que toca el pecho; agujeros = lo que no es prenda y queda rodeado por ella
+    const seeds = new Uint8Array(N); for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) seeds[y * W + x] = 1;
+    const parts = comps(G, () => true).filter((px) => px.some((k) => seeds[k]));
+    const main = new Uint8Array(N); let area = 0; parts.forEach((px) => px.forEach((k) => { main[k] = 1; area++; }));
+    if (area < N * 0.04) return { color, c0, logo: 0, print: 0, weak: true };
+    const mb = blobInfo(parts.flat()), mcx = (mb.x0 + mb.x1) / 2;
+    // lo que se alcanza desde el borde de la foto sin pisar la prenda es fondo, piel, pelo, pantalón…
+    const outside = new Uint8Array(N), st = [];
+    for (let i = 0; i < N; i++) { const x = i % W, y = (i / W) | 0; if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && !main[i]) { outside[i] = 1; st.push(i); } }
+    while (st.length) { const k = st.pop(), x = k % W; for (const j of [x > 0 ? k - 1 : -1, x < W - 1 ? k + 1 : -1, k - W, k + W]) if (j >= 0 && j < N && !main[j] && !outside[j]) { outside[j] = 1; st.push(j); } }
+    const hole = new Uint8Array(N); for (let i = 0; i < N; i++) hole[i] = !main[i] && !outside[i] ? 1 : 0;
+    for (const px of comps(hole, () => true)) {
+      const f = blobInfo(px);
+      if (f.n < 3 || isSkin(f.m) || dE(f.m, c0) < 28) continue; // arrugas y sombras: poco contraste
+      const cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2;
+      if (f.y0 < mb.y0 + 1 || cy > mb.y0 + mb.bh * 0.85) continue; // por encima (pelo) o abajo (manos, pantalón)
+      const edgeBand = cx < mb.x0 + mb.bw * 0.1 || cx > mb.x1 - mb.bw * 0.1;
+      if (edgeBand && f.bh < mb.bh * 0.25) continue; // relojes, pulseras, manos en el costado; un ribete largo sí cuenta
+      const share = f.n / area;
+      if (SHIRTY.test(type) && Math.abs(cx - mcx) < mb.bw * 0.07 && share < 0.012) continue; // botones o cremallera
+      if (share < 0.006 && cy < mb.y0 + mb.bh * 0.15 && Math.abs(cx - mcx) < mb.bw * 0.15) continue; // etiqueta del cuello
+      const fill = f.n / (f.bw * f.bh), asp = Math.max(f.bw, f.bh) / Math.min(f.bw, f.bh);
+      if (share < 0.02 && (fill < 0.25 || asp > 4)) continue; // líneas finas: costuras, reflejos
+      logo += share; if (share >= 0.02) print += share;
+    }
   }
-  return best;
+  return { color, c0, logo, print };
 }
-/** Para fotos de otras fuentes (Zara del servidor): ¿se ve lisa? */
-export async function photoPlain(url) {
-  try { const st = await within(garmentColor(url), 8000); return !st || (st.spread <= 0.38 && st.logo < LOGO_MIN); } catch { return true; }
+const LOGO_MIN = 0.0008; // parte de la prenda: el logo diminuto de Cortefiel (foto de su búsqueda) da 0,001; las lisas de tienda, 0
+
+/** ¿El color de la foto es el pedido? Blanco/negro/gris se miran también por saturación (el beige o el menta no son blanco). */
+export function colorFits(st, wanted) {
+  if (!wanted?.hex || !/^#/.test(wanted.hex)) return true;
+  const [l, a, b] = st.c0, chroma = Math.hypot(a, b), k = wanted.k;
+  // medido con fotos reales de tiendas (9/11/2026): blancas a −0,5…1,4 b −1,8…−0,3; menta a −4; beige b +4
+  if (k === "blanco") return l > 76 && a > -2.2 && a < 2.5 && b > -6 && b < 2.5;
+  if (k === "negro") return l < 30 && chroma < 8;
+  if (k === "gris-claro") return l > 58 && l < 88 && chroma < 6;
+  if (k === "gris" || k === "gris-oscuro" || k === "antracita") return l > 20 && l < 70 && chroma < 7;
+  return dE(st.c0, lab(rgbOf(wanted.hex))) < (["crudo", "beige", "camel", "marino"].includes(k) ? 22 : 32);
 }
+
+/** Revisa una foto: { ok, why } (why: color | logo | dibujo | sin revisar). */
+export async function checkPhoto(url, { wanted, plain, type } = {}) {
+  try {
+    const st = analyzePhoto(await loadImg(await photoData(url)), type);
+    if (wanted && !colorFits(st, wanted)) return { ok: false, why: "color", st };
+    if (plain && TOPS.test(type || "") && (st.logo >= LOGO_MIN || st.print >= 0.06)) return { ok: false, why: "logo", st };
+    if (plain && st.print >= 0.12) return { ok: false, why: "dibujo", st };
+    return { ok: true, st };
+  } catch (e) { return { ok: null, why: "sin revisar" }; }
+}
+/** Para fotos de otras fuentes (Zara del servidor). */
+export async function photoPlain(url, opts) { const r = await within(checkPhoto(url, opts), 15000); return r?.ok !== false; }
 
 /** Ficha de producto → {name, image, price}. JSON-LD Product o etiquetas og/product. */
 async function readProduct(url) {
@@ -481,6 +559,7 @@ const TYPE_GROUP = { zapatillas: "calzado", zapatos: "calzado", mocasines: "calz
   abrigo: "abrigos", parka: "abrigos", plumifero: "abrigos", gabardina: "abrigos", cazadora: "abrigos", chaqueta: "abrigos" };
 const LOGO_BRANDS = new Set(["Ralph Lauren", "Tommy Hilfiger", "Lacoste", "Hackett", "Gant", "Fred Perry", "Hugo Boss", "Calvin Klein", "Armani Exchange", "Carhartt WIP", "Stüssy", "Stone Island", "Diesel", "Levi's", "Pepe Jeans", "Timberland", "Nike", "Adidas", "The North Face", "New Balance", "Converse", "Vans", "Champion", "Puma", "Napapijri", "Polo Club", "Guess", "Kappa", "Ellesse", "Fila", "Lyle & Scott", "Nautica", "Tiffosi"]);
 const TOPS = /^(camiseta|camiseta-ml|polo|camisa|camisa-mc|sobrecamisa|sudadera|jersey|cardigan|chaleco|tirantes|blusa|top)/;
+const LOGO_RE = new RegExp(`\\b(${[...LOGO_BRANDS].map((b) => N(b).replace(/[^a-z0-9 ]/g, ".?")).join("|")})\\b`);
 const MAX_SOURCES = 18, TIME_LIMIT = 30000;
 
 export const canSearchStores = isNative;
@@ -525,7 +604,7 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
       const clean = r.page.split("?")[0], title = cleanTitle(r.title);
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
-      if (!typeOk(title, type, piece, r.page) || !sectionOk(title, r.page) || !patternOk(title, r.page, plain)) continue; // esa prenda, de su sección y lisa si toca
+      if (!typeOk(title, type, piece, r.page) || !sectionOk(title, r.page) || !patternOk(title, r.page, plain, type)) continue; // esa prenda, de su sección y lisa si toca
       // que sea de ese color: si el nombre dice otro color (de otra familia), fuera
       const named = colorsInTitle(title);
       if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
@@ -540,34 +619,12 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   await pool(stores.map((s, i) => [s, i]), 4, async ([[name, dom], i]) => {
     const res = (await within(imageSearch(`${q} site:${dom}`, diag, name, i % 2 === 1), 12000)) || [];
     take(res, name);
-  }, until - 9000);
+  }, until - 12000);
   await within(general, 2000);
-  // la foto: color de verdad (los nombres a menudo no lo dicen) y, si buscas liso, que no tenga dibujo ni logo
   let dropped = 0;
-  const hasHex = !!(wanted?.hex && /^#/.test(wanted.hex));
-  if (hasHex || plain) {
-    const target = hasHex ? lab(rgbOf(wanted.hex)) : null;
-    await pool(viaImg, 6, async (p) => {
-      if (!plain && colorsInTitle(p.name).some((k) => k === wanted?.k)) { p._color = 0; return; } // el nombre ya lo dice
-      try { const st = await within(garmentColor(p.thumb || p.image), 8000); if (st) { p._color = target ? dE(lab(st.color), target) : null; p._spread = st.spread; p._logo = st.logo; } else p._color = null; } catch { p._color = null; }
-    }, until - 4000);
-    const limit = ["blanco", "crudo", "negro", "gris-claro"].includes(wanted?.k) ? 22 : 34; // blanco y negro, más estrictos
-    const held = []; // lo descartado SOLO por color se guarda por si al final no queda casi nada
-    // liso: dibujo, rayas o logo (aunque sea pequeño) → fuera, y no se recupera nunca
-    if (plain) for (let i = viaImg.length - 1; i >= 0; i--) if ((viaImg[i]._spread || 0) > 0.38 || (viaImg[i]._logo || 0) >= LOGO_MIN) { viaImg.splice(i, 1); dropped++; }
-    if (target) for (let i = viaImg.length - 1; i >= 0; i--) if (viaImg[i]._color != null && viaImg[i]._color > limit) { held.push(viaImg.splice(i, 1)[0]); dropped++; }
-    if (viaImg.length < 4 && held.length) {
-      held.sort((a, b) => (a._color || 0) - (b._color || 0)).slice(0, 6 - viaImg.length).forEach((p) => { p._hits -= 1; viaImg.push(p); dropped--; });
-    }
-    viaImg.forEach((p) => { if (p._color != null && target) p._hits += Math.max(0, (limit - p._color) / limit) * 2; if (p._logo) p._hits -= 1; });
-  }
-  // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
-  await pool(viaImg.slice(0, 14), 6, async (p) => {
-    try { const f = await within(readProduct(p.url), 8000); if (f?.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
-  }, until - 3000);
   // búsqueda web clásica: solo si queda tiempo y con pocos resultados de imágenes
   const left = until - Date.now();
-  const groups = viaImg.length >= 8 || left < 6000 ? [] : [stores.slice(0, 6), stores.slice(6, 12)].filter((g) => g.length);
+  const groups = viaImg.length >= 8 || left < 9000 ? [] : [stores.slice(0, 6), stores.slice(6, 12)].filter((g) => g.length);
   const lists = groups.length ? await within(Promise.all(groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))), left - 3000) || [] : [];
   const seen = new Set(), cand = [];
   let shopLinks = 0;
@@ -583,12 +640,30 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   const fails = [];
   const read = await pool(picked, 6, async (c) => { try { const f = await within(readProduct(c.url), 7000); if (!f) throw new Error("lenta"); return { ...f, url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } }, until);
   const ok = read.filter(Boolean);
-  const fromPages = ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
+  const fromPages = ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain, type)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
     return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
   });
-  const seenU = new Set(), products = [...viaImg, ...fromPages].filter((p) => { const k = p.url.split("?")[0]; if (seenU.has(k)) return false; seenU.add(k); return true; })
-    .sort((a, b) => b._hits - a._hits).slice(0, max);
-  diag.push(`por imágenes ${viaImg.length}${dropped ? `, ${dropped} quitadas por color o estampado` : ""} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
+  const seenU = new Set();
+  let all = [...viaImg, ...fromPages].filter((p) => { const k = p.url.split("?")[0]; if (seenU.has(k)) return false; seenU.add(k); return true; });
+  // la foto de cada uno: color de verdad y, si buscas liso, sin logo ni dibujo. Tiene su propio tiempo (al menos 14 s)
+  const why = {}; let checked = 0;
+  if (wanted?.hex || plain) {
+    const photoUntil = Math.max(until, Date.now() + 14000);
+    all.sort((a, b) => b._hits - a._hits); all = all.slice(0, 30);
+    await pool(all, 6, async (p) => { const r = await within(checkPhoto(p.thumb || p.image, { wanted, plain, type }), 10000); p._ok = r?.ok ?? null; if (r?.ok != null) checked++; if (r && r.ok === false) why[r.why] = (why[r.why] || 0) + 1; }, photoUntil);
+    const unchecked = all.filter((p) => p._ok == null).length;
+    // lo que no cumple, fuera; lo que no se ha podido mirar, también (si no se pudo mirar NINGUNA foto, se deja y se avisa)
+    all = all.filter((p) => p._ok === true || (p._ok == null && checked === 0));
+    dropped = Object.values(why).reduce((a, b) => a + b, 0);
+    diag.push(`fotos revisadas ${checked}${unchecked ? `, sin revisar ${unchecked}${checked ? " (fuera)" : " (se dejan: no se pudo mirar ninguna)"}` : ""}${dropped ? ` · fuera por ${Object.entries(why).map(([k, n]) => `${k} ${n}`).join(", ")}` : ""}`);
+  }
+  const products = all.sort((a, b) => b._hits - a._hits).slice(0, max);
+  // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
+  await pool(products.filter((p) => !p.priceNum), 6, async (p) => {
+    try { const f = await within(readProduct(p.url), 6000); if (f?.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
+  }, Date.now() + 4000);
+
+  diag.push(`por imágenes ${viaImg.length} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
   return { products, diag };
 }
