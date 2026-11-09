@@ -13,6 +13,7 @@ const DICT = {
     "nav.looks": "Outfits",
     "under.title": "Debajo",
     "socks.title": "Calcetines",
+    "under.suggest": "no tienes, te iría",
     "socks.length": "Largo",
     "under.section": "Qué llevar debajo",
     "under.sheer": "¿Transparenta?",

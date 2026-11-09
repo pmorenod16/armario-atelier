@@ -546,7 +546,7 @@ export function pickUnder(items, all) {
     return s;
   };
   const what = sheer === "si" || light ? "color carne (nude) y sin costuras" : fitted ? "liso, sin costuras ni encaje" : needStrapless ? "sin tirantes" : "cualquiera cómodo";
-  if (!bras.length) return (sheer !== "no" || light || fitted || needStrapless) ? { id: null, why: "", warn: `Con «${base.name}» te iría un sujetador ${what}${reasons.length ? ` porque ${reasons.join(" y ")}` : ""}.` } : null;
+  if (!bras.length) return { id: null, suggest: `Sujetador ${what}`, why: reasons.length ? `Porque «${base.name}» ${reasons.join(" y ")}` : sporty ? "Uno deportivo para moverte" : "Con esta prenda no se nota: el que te resulte más cómodo", warn: "" };
   const ranked = bras.map((b) => [b, score(b)]).sort((a, b) => b[1] - a[1]), [b, s] = ranked[0];
   const bc = mainColor(b).k;
   const why = [
@@ -579,18 +579,25 @@ const sockLen = (s) => s.sockLength || (/invisible|pinkie|no.?show/i.test(s.name
  */
 export function pickSocks(items, all, { temp = null } = {}) {
   const shoe = items.find(isKind(SHOES)); if (!shoe) return null;
-  if (shoe.type === "sandalias") return { id: null, why: "", warn: "Con sandalias, sin calcetines." };
+  if (shoe.type === "sandalias") return { id: null, suggest: "Sin calcetines", why: "Con sandalias, mejor el pie al aire", warn: "" };
   const bottom = items.find(isKind(BOTTOM)) || items.find((i) => i.type === "vestido" || i.type === "mono");
   const f = items.reduce((a, it) => a + formalityOf(it), 0) / items.length;
   const short = bottom && (bottom.type === "bermuda" || bottom.type === "falda" || bottom.type === "vestido");
   const dressy = ["zapatos", "mocasines"].includes(shoe.type) && f >= 3, hot = temp != null && temp >= 22, cold = temp != null && temp < 10;
   let want, ideal;
   if (short || (shoe.type === "mocasines" && (hot || !cold && f < 3.5))) { want = ["invisible"]; ideal = "invisibles"; }
-  else if (dressy) { want = ["alto", "media"]; ideal = `finos y altos${bottom ? ` en ${label(COLOR[mainColor(bottom).k]) || "el color del pantalón"}` : " oscuros"}`; }
+  else if (dressy) { want = ["alto", "media"]; ideal = `finos y altos${bottom ? ` en ${(label(COLOR[mainColor(bottom).k]) || "el color del pantalón").toLowerCase()}` : " oscuros"}`; }
   else if (shoe.type === "botas" || shoe.type === "botines") { want = ["media", "alto"]; ideal = cold ? "de lana, media caña o altos" : "de media caña"; }
   else { want = hot ? ["invisible", "tobillero", "media"] : ["media", "tobillero", "invisible"]; ideal = "blancos, grises o del color del pantalón"; }
   const socks = all.filter((i) => i.type === "calcetines" && i.status !== "sucia" && i.status !== "prestada");
-  if (!socks.length) return { id: null, why: "", warn: `Te irían unos calcetines ${ideal}.` };
+  if (!socks.length) {
+    // sin calcetines en el armario: igualmente, cómo deberían ser
+    const reason = want[0] === "invisible" ? (short ? "Con la pierna al aire, que no se vean" : "Con mocasines queda más limpio sin calcetín a la vista")
+      : dressy ? "En un look arreglado, finos y del color del pantalón para no cortar la pierna"
+      : shoe.type === "botas" || shoe.type === "botines" ? (cold ? "Con botas y frío, más altos y abrigados" : "Que suban por encima de la bota para que no roce")
+      : hot ? "Con calor y zapatillas, cortos y finos" : "Con zapatillas, blancos o neutros quedan bien siempre";
+    return { id: null, suggest: `Calcetines ${ideal}`, why: reason, warn: "" };
+  }
   const bfam = bottom ? FAM(mainColor(bottom).k) : null, sfam = FAM(mainColor(shoe).k);
   const plainLook = items.every((i) => !i.pattern || i.pattern === "liso");
   const score = (s) => {

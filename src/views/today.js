@@ -561,6 +561,8 @@ function underHTML(ids, temp = null) {
   const row = (u, title) => {
     if (!u) return "";
     const b = u.id && store.items.find((i) => i.id === u.id);
+    if (!b && u.suggest) // no tienes ninguno que encaje: cómo debería ser
+      return `<div class="under-item suggest"><span class="ph">${icon("spark")}</span><span><small>${title} · ${t("under.suggest")}</small><b>${esc(u.suggest)}</b><em>${esc(u.why)}</em></span></div>`;
     return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}`;
   };
   // sujetador (sección mujer) y calcetines (todos), elegidos al vuelo para este conjunto
