@@ -163,7 +163,20 @@ if (isNative) {
 
 /* ---------- web instalable ---------- */
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.__installEvt = e; });
-if (!isNative && import.meta.env.PROD && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+// también en el APK (carga la web publicada): así se abre y se usa el armario sin conexión
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").then(() => {
+    // guardar todo lo que la app ha cargado (y lo que vaya cargando: pantallas que se abren al momento)
+    const send = () => navigator.serviceWorker.controller?.postMessage({ type: "cache", urls: performance.getEntriesByType("resource").map((r) => r.name).filter((u) => u.startsWith(location.origin) && u.includes("/assets/")) });
+    setTimeout(send, 8000); setInterval(send, 5 * 60 * 1000);
+  }).catch(() => {});
+}
+// aviso de sin conexión: el armario, el calendario y los outfits de la app siguen funcionando
+const netState = () => { document.body.classList.toggle("is-offline", !navigator.onLine); };
+window.addEventListener("offline", () => { netState(); toastOffline(); });
+window.addEventListener("online", netState);
+netState();
+function toastOffline() { import("./ui.js").then((m) => m.toast(t("offline.toast"))); }
 
 /* ---------- actualizaciones ---------- */
 startUpdater();

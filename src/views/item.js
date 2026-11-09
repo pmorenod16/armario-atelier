@@ -35,7 +35,7 @@ export function openItem(id) {
         <div class="preview" id="pv" style="--tint:${tintFor(item.tone) || "var(--surface-solid)"}">${item.thumb ? `<img src="${item.thumb}" alt="${esc(item.name)}">` : ""}</div>
         <div class="stack">
           <div><div class="kicker">${esc(label(groupOf(item.type)))}</div><h2 class="display">${esc(item.name)}</h2></div>
-          <div class="seg" role="group" aria-label="${t("item.status")}">${STATUSES.map((s) => `<button type="button" data-s="${s}" aria-pressed="${item.status === s}">${t("status." + s)}</button>`).join("")}</div>
+          <div class="seg seg-wrap" role="group" aria-label="${t("item.status")}">${STATUSES.map((s) => `<button type="button" data-s="${s}" aria-pressed="${item.status === s}">${t("status." + s)}</button>`).join("")}</div>
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
           ${BRA_TYPES.has(item.type) || item.type === "calcetines" ? "" : `<button class="btn primary" type="button" id="combine">${icon("spark")}${t("combine.title")}</button>`}
           <details class="wash-item"><summary>${icon("wash")}${t("wash.itemTitle")}<small class="muted"> · ${itemWashLimit(item) ? t("wash.itemEvery", { n: itemWashLimit(item) }) : t("wash.never")}${isDryClean(item) ? ` · ${t("washc.dry")}` : ""}</small></summary>

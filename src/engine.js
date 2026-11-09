@@ -314,7 +314,7 @@ function bestGlasses(list, c, f, used = new Map()) {
 
 /** Para outfits que vienen de la IA: si tiene gafas de ver y el outfit no las lleva, se las pone (las mejores para ese conjunto). */
 export function ensureGlasses(outfits, items) {
-  const glasses = items.filter((i) => i.type === "gafas-ver" && i.status !== "prestada"); if (!glasses.length) return outfits;
+  const glasses = items.filter((i) => i.type === "gafas-ver" && !["prestada", "arreglo"].includes(i.status)); if (!glasses.length) return outfits;
   const used = new Map(), byId = new Map(items.map((i) => [i.id, i]));
   return outfits.map((o) => {
     const its = (o.itemIds || []).map((id) => byId.get(id)).filter(Boolean);
@@ -523,7 +523,7 @@ export function sheerOf(it) {
  * palabra de honor / espalda al aire → sin tirantes; con poca tela o deporte → el que toca. Devuelve {id, why, warn}.
  */
 export function pickUnder(items, all) {
-  const bras = all.filter((i) => BRA_TYPES_E.has(i.type) && i.status !== "sucia" && i.status !== "prestada");
+  const bras = all.filter((i) => BRA_TYPES_E.has(i.type) && (i.status || "disponible") === "disponible");
   // la prenda que va pegada al cuerpo: vestido/mono, si no la de arriba de base, si no el jersey
   const base = items.find((i) => i.type === "vestido" || i.type === "mono") || items.find((i) => BASE_TOP.has(i.type)) || items.find((i) => MID.has(i.type));
   if (!base) return null;
@@ -589,7 +589,7 @@ export function pickSocks(items, all, { temp = null } = {}) {
   else if (dressy) { want = ["alto", "media"]; ideal = `finos y altos${bottom ? ` en ${(label(COLOR[mainColor(bottom).k]) || "el color del pantalón").toLowerCase()}` : " oscuros"}`; }
   else if (shoe.type === "botas" || shoe.type === "botines") { want = ["media", "alto"]; ideal = cold ? "de lana, media caña o altos" : "de media caña"; }
   else { want = hot ? ["invisible", "tobillero", "media"] : ["media", "tobillero", "invisible"]; ideal = "blancos, grises o del color del pantalón"; }
-  const socks = all.filter((i) => i.type === "calcetines" && i.status !== "sucia" && i.status !== "prestada");
+  const socks = all.filter((i) => i.type === "calcetines" && (i.status || "disponible") === "disponible");
   if (!socks.length) {
     // sin calcetines en el armario: igualmente, cómo deberían ser
     const reason = want[0] === "invisible" ? (short ? "Con la pierna al aire, que no se vean" : "Con mocasines queda más limpio sin calcetín a la vista")

@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
   saveLook, deleteLook, lookSaved, reviewWear, itemWashLimit, isDryClean, dayPlan,
+  wornIds, saveWearPhoto, readWearPhoto, deleteWearPhoto,
 } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
@@ -43,6 +44,12 @@ export function renderToday(view, only = null) {
     cleanupTab = { hoy: tabToday, outfits: tabLooks, calendario: tabCalendar, maleta: tabTrip }[state.tab](box) || null;
   };
   if (!only) $(".tabs", view).onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) { state.tab = b.dataset.tab; show(); } };
+  // foto del look (en la tarjeta del outfit que te has puesto)
+  if (!view.__photoWired) { // una sola vez por vista (renderToday se llama en cada visita)
+    view.__photoWired = true;
+    view.addEventListener("change", (e) => { if (e.target.dataset?.photo && !e.target.closest(".sheet")) uploadPhoto(e.target); });
+    view.addEventListener("click", (e) => { const b = e.target.closest("[data-seephoto]"); if (b) openDay(b.dataset.seephoto); });
+  }
   view.addEventListener("click", (e) => { const m = e.target.closest("[data-item]"); if (m) openItem(m.dataset.item); });
   show();
   return () => cleanupTab?.();
@@ -57,7 +64,7 @@ function drawWashCheck(host, today) {
   if (host.dataset.sig === sig) return; // no rehacer mientras eliges
   host.dataset.sig = sig;
   if (!wear) { host.innerHTML = ""; return; }
-  const items = (wear.itemIds || []).map(byId).filter((it) => it && it.status === "disponible" && !["complementos", "calzado"].includes(TYPE[it.type]?.g));
+  const items = wornIds(wear).map(byId).filter((it) => it && it.status === "disponible" && !["complementos", "calzado"].includes(TYPE[it.type]?.g));
   if (!items.length) { reviewWear(wear.date, {}).catch(() => {}); return; }
   const dec = {};
   for (const it of items) {
@@ -146,14 +153,16 @@ function openLook(id) {
     <div class="row wrap">
       <button class="btn sm primary" type="button" id="w">${icon("check")}${t("today.wear")}</button>
       <button class="btn sm" type="button" id="e">${icon("edit")}${t("looks.editItems")}</button>
+      <button class="btn sm" type="button" id="sh">${icon("share")}${t("share.btn")}</button>
       <button class="btn sm ghost danger" type="button" id="d">${icon("trash")}${t("looks.delete")}</button>
     </div>`, { label: l.title, wide: true });
   hydrateBoard(sh.el);
   wireBoardEdit($("#ls", sh.el), () => toast(t("board.saved")));
   sh.el.onclick = async (e) => {
     if (e.target.closest("[data-close]")) return sh.close();
-    if (e.target.closest("#w")) { try { await logWear({ itemIds: ids, title: l.title, plan: "", how: l.how || [] }); toast(t("today.wornSaved")); } catch { toast(t("item.saveFail"), "error"); } }
+    if (e.target.closest("#w")) { try { await logWear({ itemIds: ids, extraIds: extrasFor(ids), title: l.title, plan: "", how: l.how || [] }); toast(t("today.wornSaved")); } catch { toast(t("item.saveFail"), "error"); } }
     if (e.target.closest("#e")) { sh.close(); editLook(l); }
+    if (e.target.closest("#sh")) shareIt(ids, l.title);
     const d = e.target.closest("#d");
     if (d) { if (!d.dataset.sure) { d.dataset.sure = 1; d.lastChild.textContent = t("looks.deleteSure"); return; } await deleteLook(l.id); sh.close(); toast(t("looks.removed")); }
   };
@@ -284,7 +293,7 @@ function tabToday(box) {
     });
     try {
       let r, note = "";
-      if (engineMode() === "app") r = local();
+      if (engineMode() === "app" || !navigator.onLine) r = local(); // sin conexión: el motor propio
       else {
         try { r = await api("/api/outfits", payload, { timeout: 30000 }); }
         catch (e) { console.warn("IA no disponible, uso el motor de la app", e); r = local(); note = t("engine.fallback"); }
@@ -337,7 +346,8 @@ function tabToday(box) {
       opts.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset?.o) { e.preventDefault(); e.target.click(); } };
     }
     $("#info", result).innerHTML = `
-      ${worn ? `<p class="worn-note">${icon("check")} ${t(tomorrow ? "day.readyNote" : "today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })} <button class="linklike" type="button" id="unwear2">${t("today.cancelWear")}</button></p>` : ""}
+      ${worn ? `<p class="worn-note">${icon("check")} ${t(tomorrow ? "day.readyNote" : "today.wornToday", { title: esc(worn.title || t("today.yourOutfit")) })} <button class="linklike" type="button" id="unwear2">${t("today.cancelWear")}</button></p>
+        ${!tomorrow ? `<div class="row wrap"><label class="btn sm">${icon("camera")}${t(worn.photo ? "photo.change" : "photo.add")}<input type="file" accept="image/*" data-photo="${worn.date}" hidden></label>${worn.photo ? `<button class="btn sm ghost" type="button" data-seephoto="${worn.date}">${icon("image")}${t("photo.see")}</button>` : ""}</div>` : ""}` : ""}
       <span class="kicker">${t("today.optionN", { n: state.sel + 1, total: outfits.length })}${o.engine ? ` · ${t("engine.byApp")}` : ""}</span>
       <h2 class="display">${esc(o.title)}</h2>
       <p class="why">${esc(o.why)}</p>
@@ -348,6 +358,7 @@ function tabToday(box) {
       <div class="row wrap look-actions">
         <button class="btn sm ${fb?.liked === true ? "on" : ""}" type="button" id="like" aria-pressed="${fb?.liked === true}">${icon("up")}${t("today.like")}</button>
         <button class="btn sm ${fb?.liked === false ? "on" : ""}" type="button" id="dislike" aria-pressed="${fb?.liked === false}">${icon("down")}${t("today.dislike")}</button>
+        <button class="btn sm" type="button" id="shareLook">${icon("share")}${t("share.btn")}</button>
         <button class="btn sm ${lookSaved(o.itemIds) ? "on" : ""}" type="button" id="saveLook" aria-pressed="${!!lookSaved(o.itemIds)}">${icon("bookmark")}${t(lookSaved(o.itemIds) ? "looks.saved" : "looks.save")}</button>
         ${isWorn
           ? `<button class="btn sm ghost" type="button" id="unwear">${icon("close")}${t(tomorrow ? "day.unwear" : "today.unwear")}</button>`
@@ -361,12 +372,13 @@ function tabToday(box) {
         try { await saveFeedback({ itemIds: o.itemIds, liked, title: o.title, plan: td?.plan || "" }); toast(t(liked ? "today.liked" : "today.disliked")); } catch { toast(t("item.saveFail"), "error"); }
       }
       if (e.target.closest("#wear")) {
-        try { await logWear({ date: today, itemIds: o.itemIds, title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t(tomorrow ? "day.saved" : "today.wornSaved")); }
+        try { await logWear({ date: today, itemIds: o.itemIds, extraIds: extrasFor(o.itemIds, td?.weather?.t ?? null), title: o.title, plan: td?.plan || "", how: o.how || [], weather: td?.weather || null }); toast(t(tomorrow ? "day.saved" : "today.wornSaved")); }
         catch { toast(t("item.saveFail"), "error"); }
       }
       if (e.target.closest("#unwear") || e.target.closest("#unwear2")) {
         try { await deleteWear(today); toast(t("today.wearCancelled")); } catch { toast(t("item.saveFail"), "error"); }
       }
+      if (e.target.closest("#shareLook")) shareIt(o.itemIds, o.title);
       if (e.target.closest("#saveLook")) {
         const ex = lookSaved(o.itemIds);
         try { if (ex) { await deleteLook(ex.id); toast(t("looks.removed")); } else { await saveLook({ title: o.title, itemIds: o.itemIds, how: o.how || [], source: o.engine ? "app" : "hoy" }); toast(t("looks.savedToast")); } }
@@ -441,16 +453,21 @@ function openDay(date) {
   const sh = openSheet(`
     <div class="sheet-head"><h2 class="display">${esc(title)}</h2><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div>
     ${w ? `
+      ${w.photo ? `<div class="wear-photo"><img id="dp" alt="${t("photo.alt")}"></div>` : ""}
       ${w.title ? `<p><b>${esc(w.title)}</b>${w.plan ? ` · <span class="muted">${esc(w.plan)}</span>` : ""}</p>` : ""}
       ${w.weather ? `<p class="muted small">${icon(describe(w.weather.code).icon)} ${describe(w.weather.code).text} · ${w.weather.min}–${w.weather.max} °C</p>` : ""}
       ${boardHTML(w.itemIds, { small: true })}
       ${w.how?.length ? `<ol class="how">${w.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
+      <div class="row wrap"><label class="btn sm">${icon("camera")}${t(w.photo ? "photo.change" : "photo.add")}<input type="file" accept="image/*" data-photo="${date}" hidden></label>${w.photo ? `<button class="btn sm ghost danger" type="button" id="dpDel">${icon("trash")}${t("photo.remove")}</button>` : ""}</div>
       <div class="sheet-foot"><button class="btn danger" type="button" id="del">${icon("trash")}${t("cal.delete")}</button><button class="btn" type="button" id="edit">${icon("edit")}${t("cal.change")}</button></div>`
     : `<p class="muted">${t("cal.empty")}</p><div class="sheet-foot"><button class="btn primary" type="button" id="edit">${icon("plus")}${t("cal.log")}</button></div>`}`,
   { label: title });
+  if (w?.photo) readWearPhoto(date).then((u) => { const im = $("#dp", sh.el); if (u && im) im.src = u; });
+  sh.el.addEventListener("change", async (e) => { if (e.target.dataset.photo) { await uploadPhoto(e.target); sh.close(); openDay(date); } });
   sh.el.onclick = async (e) => {
     if (e.target.closest("[data-close]")) return sh.close();
     const it = e.target.closest("[data-item]"); if (it) return openItem(it.dataset.item);
+    if (e.target.closest("#dpDel")) { await deleteWearPhoto(date).catch(() => {}); sh.close(); openDay(date); return; }
     if (e.target.closest("#del")) { try { await deleteWear(date); sh.close(); } catch { toast(t("item.saveFail"), "error"); } }
     if (e.target.closest("#edit")) {
       const ids = await pickItems(w?.itemIds || [], { title: t("cal.pickTitle") });
@@ -504,7 +521,7 @@ function tabTrip(box) {
       keep();
       const st = $("#tst", box);
       if (!form.dest) { say(st, t("trip.needDest"), "error"); return; }
-      const avail = store.items.filter((i) => i.status !== "prestada" && !BRA_TYPES.has(i.type) && i.type !== "calcetines");
+      const avail = store.items.filter((i) => !["prestada", "arreglo"].includes(i.status) && !BRA_TYPES.has(i.type) && i.type !== "calcetines");
       $("#pack", box).disabled = true; say(st, t("trip.weather"));
       try {
         const w = await tripWeather(form.dest, form.start, form.days);
@@ -513,7 +530,7 @@ function tabTrip(box) {
         const items = avail;
         const localPack = () => packTrip({ items, weather: w, plan: form.plan, style: store.style, days: form.days });
         let r;
-        if (engineMode() === "app") r = localPack();
+        if (engineMode() === "app" || !navigator.onLine) r = localPack();
         else try { r = await api("/api/packing", {
           wardrobe: avail.map((i) => ({ id: i.id, name: i.name, type: label(TYPE[i.type]) || i.type, colors: (i.colors || []).map((c) => label(COLOR[c.k]) || c.k), pattern: label(PATTERN[i.pattern]), material: i.material || label(MATERIAL[i.materialKey]), formality: i.formality, seasons: i.seasons, styleTags: i.styleTags })),
           destination: `${form.dest.name} (${form.dest.region || ""})`, days: form.days, plan: form.plan, weather: wText, style: styleText(store.style),
@@ -568,4 +585,29 @@ function underHTML(ids, temp = null) {
   // sujetador (sección mujer) y calcetines (todos), elegidos al vuelo para este conjunto
   const html = (isWomen() ? row(pickUnder(its, store.items), t("under.title")) : "") + row(pickSocks(its, store.items, { temp }), t("socks.title"));
   return html ? `<div class="under">${html}</div>` : "";
+}
+
+/** Calcetines y sujetador elegidos para un conjunto (cuentan como usados al decir «me lo pongo»). */
+function extrasFor(ids, temp = null) {
+  const its = (ids || []).map((id) => store.items.find((i) => i.id === id)).filter(Boolean);
+  return [pickSocks(its, store.items, { temp })?.id, isWomen() ? pickUnder(its, store.items)?.id : null].filter(Boolean);
+}
+
+/** Compartir el outfit como imagen (WhatsApp, galería…). */
+async function shareIt(ids, title) {
+  toast(t("share.making"));
+  try { const m = await import("../shareimg.js"); await m.shareOutfit(ids, title || ""); }
+  catch (e) { console.warn("compartir", e); toast(t("share.fail"), "error"); }
+}
+
+/** Foto tuya con el outfit puesto: se reduce (≤1080 px) y se guarda con el día. */
+async function uploadPhoto(input) {
+  const f = input.files?.[0], date = input.dataset.photo; input.value = ""; if (!f) return;
+  toast(t("photo.saving"));
+  try {
+    const { shrinkPhoto } = await import("../cutout.js");
+    let blob = await shrinkPhoto(f, 1080);
+    if (blob.size > 700000) blob = await shrinkPhoto(blob, 800);
+    await saveWearPhoto(date, blob); toast(t("photo.saved"));
+  } catch (e) { console.warn("foto", e); toast(t("photo.fail"), "error"); }
 }

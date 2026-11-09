@@ -9,7 +9,7 @@ import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment,
+  collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment,
 } from "firebase/firestore";
 import { firebaseConfig } from "./config.js";
 
@@ -63,4 +63,4 @@ export const userCol = (name) => collection(fs, `${base()}/${name}`);
 
 export const accessDoc = (uid) => doc(fs, `access/${uid}`);
 export const accessCol = () => collection(fs, "access");
-export { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment };
+export { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment };

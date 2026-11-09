@@ -45,6 +45,13 @@ function autoLayout(items) {
   return out;
 }
 
+/** Cajas de cada prenda: la colocación guardada o la automática ({id: [l, t, w, h, z]}). */
+export function boxesFor(itemIds) {
+  const items = itemIds.map((id) => store.items.find((i) => i.id === id)).filter(Boolean);
+  const saved = store.layouts?.[layoutKey(itemIds)]?.boxes, auto = autoLayout(items);
+  return Object.fromEntries(items.map((it) => [it.id, saved?.[it.id] || auto[it.id]]));
+}
+
 /** HTML del lienzo (miniaturas; hydrateBoard las cambia por la foto grande). */
 export function boardHTML(itemIds, { small = false } = {}) {
   const items = itemIds.map((id) => store.items.find((i) => i.id === id)).filter(Boolean);

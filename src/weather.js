@@ -20,7 +20,21 @@ async function getJson(url) {
 }
 
 /** Tiempo de hoy en un sitio: ahora, máxima/mínima, lluvia, viento y unas horas clave. */
-export async function todayWeather({ lat, lon }, offset = 0) {
+/** Tiempo de hoy (o mañana). Sin conexión, el último que se descargó para ese sitio y día. */
+export async function todayWeather(place, offset = 0) {
+  const key = `wx:${(+place.lat).toFixed(2)},${(+place.lon).toFixed(2)}:${offset}`;
+  try {
+    const w = await fetchTodayWeather(place, offset);
+    try { localStorage.setItem(key, JSON.stringify(w)); } catch {}
+    return w;
+  } catch (e) {
+    let saved = null; try { saved = JSON.parse(localStorage.getItem(key) || "null"); } catch {}
+    const want = new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+    if (saved && saved.date === want) return { ...saved, cached: true };
+    throw e;
+  }
+}
+async function fetchTodayWeather({ lat, lon }, offset = 0) {
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=auto&forecast_days=2`
     + "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,is_day"
     + "&hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code"

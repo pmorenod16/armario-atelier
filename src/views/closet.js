@@ -43,7 +43,7 @@ const SORTS = {
 
 export function renderCloset(view) {
   view.innerHTML = `
-    <header class="head"><div><h1 class="display">${t("closet.title")}</h1><div class="sub" id="count"></div></div><button class="btn sm" type="button" id="wash" hidden>${icon("wash")}<span></span></button></header>
+    <header class="head"><div><h1 class="display">${t("closet.title")}</h1><div class="sub" id="count"></div></div><div class="row wrap head-actions"><button class="btn sm" type="button" id="wash" hidden>${icon("wash")}<span></span></button><button class="btn sm ghost" type="button" id="stats">${icon("chart")}${t("stats.btn")}</button></div></header>
     <div id="notice"></div>
     <div class="toolbar">
       <label class="searchbox">${icon("search")}<input class="input" type="search" id="q" placeholder="${t("closet.search")}" value="${esc(state.q)}" aria-label="${t("closet.search")}"></label>
@@ -72,6 +72,7 @@ export function renderCloset(view) {
   function draw() {
     const all = store.items;
     $("#count", view).textContent = all.length === 1 ? t("closet.countOne") : t("closet.count", { n: all.length });
+    $("#stats", view).onclick = () => import("./stats.js").then((m) => m.openStats());
     const dirty = store.items.filter((i) => i.status === "sucia" || i.status === "tintoreria").length, wb = $("#wash", view);
     wb.hidden = !dirty; wb.lastChild.textContent = t("wash.all", { n: dirty });
     $("#notice", view).innerHTML = store.error ? `<div class="notice">${t("common.loadFail")}</div>` : store.offline && all.length ? `<div class="notice">${t("common.offline")}</div>` : "";

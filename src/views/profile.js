@@ -150,6 +150,14 @@ export function renderProfile(view) {
         <p class="status" id="langSt" aria-live="polite"></p>
         <p class="muted small" style="margin:0">${t("profile.language.note")}</p></section>
       ${isAdmin() ? `<section class="card span2" data-pt="account" id="cAccess"><h2 class="display">${t("access.title")}</h2><p class="muted small" style="margin:0">${t("access.adminHint")}</p><div id="accList"><p class="muted">${t("common.loading")}</p></div></section>` : ""}
+      <section class="card span2" data-pt="account" id="cBackup"><h2 class="display">${t("backup.title")}</h2>
+        <p class="muted small">${t("backup.hint")}</p>
+        <div class="row wrap">
+          <button class="btn sm primary" type="button" id="bkDown">${icon("download")}${t("backup.download")}</button>
+          <label class="btn sm ghost">${icon("upload")}${t("backup.restore")}<input type="file" id="bkUp" accept="application/json,.json" hidden></label>
+        </div>
+        <p class="muted small" id="bkSt"></p>
+      </section>
       <section class="card span2" data-pt="account"><h2 class="display">${t("profile.account")}</h2>
         <div class="field"><span>${t("profile.uid")}</span><div class="row"><code class="uid" style="flex:1">${esc(user?.uid || "")}</code><button class="btn sm" type="button" id="copy">${icon("copy")}${t("profile.copy")}</button></div></div>
         <div class="field"><span>${t("profile.version")}</span><div class="row"><code class="uid" style="flex:1">${esc(BUILD)}${isNative ? ` · ${esc(location.host)}` : ""}</code><button class="btn sm" type="button" id="upd">${icon("refresh")}${t("profile.checkUpdate")}</button></div></div>
@@ -216,6 +224,21 @@ export function renderProfile(view) {
     const b = e.target.closest("[data-sec]"); if (!b) return;
     $("#section", view).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     change({ section: b.dataset.sec });
+  };
+  // copia de seguridad
+  const bkSt = $("#bkSt", view);
+  $("#bkDown", view).onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; bkSt.textContent = t("backup.making");
+    try { const r = await (await import("../backup.js")).downloadBackup((c) => (bkSt.textContent = t("backup.step", { c }))); bkSt.textContent = t("backup.done", { name: r.name, mb: r.mb }); }
+    catch (err) { console.warn(err); bkSt.textContent = t("backup.fail"); }
+    b.disabled = false;
+  };
+  $("#bkUp", view).onchange = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+    if (!confirm(t("backup.confirm"))) return;
+    bkSt.textContent = t("backup.restoring");
+    try { const n = await (await import("../backup.js")).restoreFromFile(f, (c, k) => (bkSt.textContent = t("backup.restStep", { c, n: k }))); bkSt.textContent = t("backup.restored", { n }); }
+    catch (err) { bkSt.textContent = err?.message === "ARCHIVO" ? t("backup.badFile") : t("backup.fail"); }
   };
   $("#storeChips", view).onclick = (e) => {
     const b = e.target.closest("[data-store]"); if (!b) return;

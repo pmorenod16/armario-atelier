@@ -1,6 +1,6 @@
 // Datos del usuario en Firestore: prendas, imágenes y perfil. Todo bajo users/{uid}.
 import {
-  fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
+  fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
 } from "./firebase.js";
 import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
 import { layerOf, setCatalogSection } from "./catalog.js";
@@ -129,14 +129,18 @@ export function fullImage(item) {
 export const todayKey = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 /** Apunta un outfit en el calendario (un registro por día; si ya había, lo sustituye) y suma usos a las prendas. */
-export async function logWear({ date = todayKey(), itemIds, title = "", plan = "", how = [], weather = null }) {
+/** Lo que cuenta como puesto ese día: las prendas del outfit + calcetines y sujetador elegidos (extraIds, fuera del lienzo). */
+export const wornIds = (w) => [...(w?.itemIds || []), ...(w?.extraIds || [])];
+export async function logWear({ date = todayKey(), itemIds, extraIds = [], title = "", plan = "", how = [], weather = null }) {
   const prev = store.wear.find((w) => w.date === date);
   const b = writeBatch(fs);
-  b.set(doc(userCol("wear"), date), { date, itemIds, title, plan, how, weather, createdAt: Date.now() });
-  const added = itemIds.filter((id) => !prev?.itemIds?.includes(id)), removed = (prev?.itemIds || []).filter((id) => !itemIds.includes(id));
+  extraIds = extraIds.filter((id) => id && !itemIds.includes(id));
+  b.set(doc(userCol("wear"), date), { date, itemIds, extraIds, title, plan, how, weather, createdAt: Date.now(), ...(prev?.photo ? { photo: true } : {}) });
+  const all = [...itemIds, ...extraIds], before = wornIds(prev);
+  const added = all.filter((id) => !before.includes(id)), removed = before.filter((id) => !all.includes(id));
   // con «preguntarme al día siguiente» (por defecto) no se marca nada aquí: se decide en la revisión de Hoy
   const auto = store.profile?.autoDirty !== false && store.profile?.washCheck === false;
-  const madeDirty = (prev?.madeDirty || []).filter((id) => itemIds.includes(id));
+  const madeDirty = (prev?.madeDirty || []).filter((id) => all.includes(id));
   for (const id of added) {
     const it = store.items.find((i) => i.id === id); if (!it) continue;
     const upd = { wearCount: increment(1), lastWorn: date, wearsSinceWash: increment(1) };
@@ -207,7 +211,8 @@ export async function deleteWear(date) {
   const prev = store.wear.find((w) => w.date === date); if (!prev) return;
   const b = writeBatch(fs);
   b.delete(doc(userCol("wear"), date));
-  for (const id of prev.itemIds || []) undoWearOn(b, id, date, prev);
+  if (prev.photo) b.delete(doc(userCol("wearPhotos"), date));
+  for (const id of wornIds(prev)) undoWearOn(b, id, date, prev);
   await b.commit();
 }
 
@@ -304,4 +309,49 @@ export async function restoreImage(id) {
   b.delete(backupDoc(id));
   await b.commit(); imageCache.delete(id);
   return true;
+}
+
+/* ---------- copia de seguridad: todo el armario en un archivo ---------- */
+const BACKUP_COLS = ["items", "images", "wear", "wearPhotos", "looks", "layouts", "feedback", "trips", "wishlist", "meta"];
+/** Descarga todo lo tuyo (prendas con sus fotos, outfits, calendario, estilo, compras, perfil) en un objeto. */
+export async function exportBackup(onStep = () => {}) {
+  const out = { app: "armario-atelier", version: 1, exportedAt: new Date().toISOString(), data: {} };
+  for (const c of BACKUP_COLS) {
+    onStep(c);
+    try { const snap = await getDocs(userCol(c)); out.data[c] = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); }
+    catch (e) { console.warn("copia", c, e); out.data[c] = {}; }
+  }
+  return out;
+}
+/** Restaura una copia (añade y sobrescribe lo que tenga el mismo id; no borra nada de lo que ya tienes). */
+export async function importBackup(obj, onStep = () => {}) {
+  if (obj?.app !== "armario-atelier" || !obj.data) throw new Error("ARCHIVO");
+  let n = 0;
+  for (const c of BACKUP_COLS) {
+    const docs = Object.entries(obj.data[c] || {});
+    // las fotos pesan: de una en una; el resto en lotes
+    if (c === "images") { for (const [id, d] of docs) { await setDoc(doc(userCol("images"), id), d); onStep(c, ++n); } continue; }
+    for (let i = 0; i < docs.length; i += 300) {
+      const b = writeBatch(fs);
+      docs.slice(i, i + 300).forEach(([id, d]) => b.set(doc(userCol(c), id), d));
+      await b.commit(); n += Math.min(300, docs.length - i); onStep(c, n);
+    }
+  }
+  return n;
+}
+
+/* ---------- foto tuya con el outfit puesto (diario de looks): users/{uid}/wearPhotos/{fecha} ---------- */
+export async function saveWearPhoto(date, blob) {
+  const data = (await blobToBase64(blob)).replace(/^data:[^,]+,/, "");
+  if (data.length > 980000) throw new Error("GRANDE");
+  await setDoc(doc(userCol("wearPhotos"), date), { data, mime: blob.type || "image/jpeg", at: Date.now() });
+  await setDoc(doc(userCol("wear"), date), { photo: true }, { merge: true });
+}
+export async function readWearPhoto(date) {
+  const s = await getDoc(doc(userCol("wearPhotos"), date)).catch(() => null);
+  return s?.exists() ? URL.createObjectURL(base64ToBlob(s.data().data, s.data().mime || "image/jpeg")) : null;
+}
+export async function deleteWearPhoto(date) {
+  await deleteDoc(doc(userCol("wearPhotos"), date));
+  await setDoc(doc(userCol("wear"), date), { photo: false }, { merge: true });
 }
