@@ -294,7 +294,7 @@ const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).re
 const N = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 // por tipo del catálogo: lo que el nombre tiene que decir (need) y lo que no puede decir (avoid)
 const TYPE_RULES = {
-  camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|manga larga|m\/l\b|\bml\b|long ?sleeve|\bl\/s\b|\btop\b|\bbody\b|tank|termica|interior/ },
+  camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|mangas? largas?|manga comprida|mangas compridas|manches longues|manica lunga|maniche lunghe|langarm|m\/l\b|\bml\b|long ?sleeves?|longsleeve|\bl\/s\b|\btop\b|\bbody\b|tank|termica|interior/ },
   "camiseta-ml": { need: /(\bcamisetas?\b|t-?shirt).*manga larga|manga larga.*(\bcamisetas?\b|t-?shirt)|long sleeve/, avoid: /tirantes|\bcamisas?\b|\bpolo|sudadera/ },
   polo: { need: /\bpolos?\b/, avoid: /cuello polo.*jersey|jersey|sudadera/ },
   tirantes: { need: /tirantes|sin mangas|tank/ },
@@ -365,7 +365,11 @@ export function sectionOk(title, url) {
   const t = `${N(title)} ${N(decodeURIComponent(url || ""))}`;
   const kids = /\bnin[oa]s?\b|kids?\b|\bbebe|junior|\bboys?\b|\bgirls?\b|infantil|teen/;
   if (kids.test(t)) return false;
-  return (apiDefaults.section || "hombre") === "mujer" ? !/\bhombres?\b|\/(man|men|hombre)\/|\bmen\b|\bman\b/.test(t) : !/\bmujer(es)?\b|\/(woman|women|mujer|ella|she)\/|\bwomen\b|\bwoman\b|\bfemenin/.test(t);
+  // en varios idiomas: las webs de Massimo Dutti, Mango… salen a veces en portugués, francés, italiano o alemán
+  // («T-Shirts Brancas de Senhora» de Massimo Dutti se coló el 10/11/2026)
+  const WOMEN = /\bmujer(es)?\b|\bwom[ae]n\b|\bladies\b|\blady\b|\bfemenin|\bsenhoras?\b|\bmulher(es)?\b|\bfemmes?\b|\bdonna\b|\bdonne\b|\bdamen\b|\bdames\b|\bchicas?\b|\bdona\b|\bnoia\b|\/(woman|women|mujer|mulher|femme|donna|damen|ella|she)\//;
+  const MEN = /\bhombres?\b|\bm[ae]n\b|\bhomem\b|\bhomens\b|\bhommes?\b|\buomo\b|\bherren\b|\bheren\b|\bchicos?\b|\/(man|men|hombre|homem|homme|uomo|herren)\//;
+  return (apiDefaults.section || "hombre") === "mujer" ? !MEN.test(t) : !WOMEN.test(t);
 }
 
 /* ---------- color: que la prenda de la foto sea del color que buscas ---------- */
