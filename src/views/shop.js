@@ -11,7 +11,7 @@ import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
 import { openWhere, whereSummary } from "./storepicker.js";
 import { LOCAL_DEFAULT } from "../storesearch.js";
-import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, wantsPlain, photoPlain, wantedColor, allowedStores, allowedBrands } from "../storesearch.js";
+import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, sectionOk, checkPhoto, wantsPlain, photoPlain, wantedColor, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = (id) => store.items.find((i) => i.id === id);
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
@@ -58,6 +58,9 @@ export function renderShop(view) {
 
   /* ---------- Te falta ---------- */
   function drawGaps(pane) {
+    // búsquedas ya hechas: se vuelven a pasar por los filtros nuevos (Polete, 10/11/2026: «no me actualiza las búsquedas que ya se han hecho»)
+    const sh0 = store.shopping || {};
+    [...(sh0.combine || []), ...(sh0.style || [])].forEach((g) => { const r = sh0.results?.[g.id]; if (r && (r.fv || 0) < FILTER_V) recheck(g, r); });
     const sh = store.shopping?.combine ? store.shopping : null;
     const enough = store.items.length >= 3;
     if (!sh) {
@@ -83,7 +86,7 @@ export function renderShop(view) {
           ${r && isOpen ? `<span class="muted small">${t("shop.searchedAt", { date: fmtDate(r.searched) })}</span>` : ""}
         </div>
         ${r && isOpen ? `
-          ${r.products?.length ? `<div class="products">${r.products.map((p, k) => `
+          ${r.products?.some((p) => textOk(g, p)) ? `<div class="products">${r.products.map((p, k) => !textOk(g, p) ? "" : `
             <div class="product">
               <a class="p-img" href="${esc(p.url)}" target="_blank" rel="noopener">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"${p.thumb && p.thumb !== p.image ? ` onerror="this.onerror=null;this.src='${esc(p.thumb)}'"` : ""}>` : icon("bag")}</a>
               <div class="p-info"><span class="muted small">${esc(p.store)}</span><a href="${esc(p.url)}" target="_blank" rel="noopener" class="p-name">${esc(p.name)}</a>
@@ -166,7 +169,7 @@ export function renderShop(view) {
       all.forEach((p) => { if (!byStore.has(p.store)) byStore.set(p.store, []); byStore.get(p.store).push(p); });
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
-      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: storeLinks(g, only), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
+      const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: storeLinks(g, only), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), fv: FILTER_V, allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
       searching.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));
@@ -325,6 +328,28 @@ function priceNum(p) {
   const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+// versión de los filtros de búsqueda: al subirla, las búsquedas guardadas se revisan solas al abrir Compras
+const FILTER_V = 4;
+/** Filtros de texto (prenda, sección hombre/mujer en varios idiomas, liso/logo) para lo ya guardado. */
+function textOk(g, p) { return typeOk(p.name, g.type, g.piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, wantsPlain(g), g.type); }
+const rechecking = new Set();
+/** Revisa los resultados guardados de un hueco con los filtros actuales (texto y, en el móvil, también la foto) y los guarda. */
+async function recheck(g, r) {
+  if (rechecking.has(g.id)) return; rechecking.add(g.id);
+  try {
+    let list = (r.products || []).filter((p) => textOk(g, p));
+    if (canSearchStores && list.length) {
+      const wanted = wantedColor(g.color || g.piece, g.colorHex), plain = wantsPlain(g);
+      const res = [];
+      for (let i = 0; i < list.length; i += 4) res.push(...(await Promise.all(list.slice(i, i + 4).map((p) => checkPhoto(p.thumb || p.image, { wanted, plain, type: g.type })))));
+      if (res.some((x) => x.ok != null)) list = list.filter((_, i) => res[i].ok !== false); // si no se pudo mirar ninguna (sin red), no se toca y se reintenta otro día
+      else return rechecking.delete(g.id);
+    }
+    const gone = (r.products || []).length - list.length;
+    await saveShopResult(g.id, { ...r, products: list, fv: FILTER_V });
+    if (gone > 0) toast(t("shop.rechecked", { n: gone, piece: g.piece }));
+  } catch { rechecking.delete(g.id); }
+}
 /** «Buscar en…»: solo los 9 principales (Polete, 9/11/2026: «no pongas todas»): primero las tiendas que han dado
  * resultados, luego las de Girona por su orden (LOCAL_DEFAULT) y después el resto. */
 function topLinks(r) {
