@@ -802,4 +802,5 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
 .where-btn { max-width: 100%; }
 
 /* Deslizar entre pantallas (main.js): la pantalla vecina se pinta en .view.peek, fija y pegada al lado */
+.view.settled .tile, .view.settled .bd-item, .view.settled .onb-step, .view.settled .preview img { animation: none !important; }
 .view.peek { position: fixed; inset: 0; margin: 0 auto; overflow: hidden; pointer-events: none; z-index: 1; will-change: transform; contain: layout paint; }

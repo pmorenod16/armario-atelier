@@ -87,6 +87,7 @@ function route() {
   if (adopted === r) { adopted = null; return; } // ya pintada al deslizar
   if (cleanup) cleanup();
   setHalo(null);
+  view.classList.remove("settled");
   cleanup = ROUTES[r](view) || null;
   window.scrollTo({ top: 0 });
 }
@@ -116,7 +117,7 @@ function buildPeek(name, dir) {
   if (peek?.name === name) return peek;
   dropPeek();
   const el = document.createElement("div");
-  el.className = "view peek"; el.setAttribute("aria-hidden", "true"); el.inert = true;
+  el.className = "view peek settled"; el.setAttribute("aria-hidden", "true"); el.inert = true;
   $("#app").appendChild(el);
   window.__peek = true; window.__peekHalo = null;
   let cleanup = null;
@@ -164,9 +165,12 @@ function endSwipe() {
     const old = view, p = peek; peek = null;
     if (cleanup) { try { cleanup(); } catch {} }
     cleanup = p.cleanup || null;
-    p.el.className = "view"; p.el.id = "view"; p.el.tabIndex = -1; p.el.removeAttribute("aria-hidden"); p.el.inert = false;
+    // sin mover el nodo de sitio (moverlo reinicia las animaciones de entrada de las prendas = parpadeo): se quita la vieja
+    // y la capa, que ya estaba detrás en #app, queda en su lugar. «settled» = sin animaciones de entrada en lo ya pintado
+    old.remove();
+    p.el.className = "view settled"; p.el.id = "view"; p.el.tabIndex = -1; p.el.removeAttribute("aria-hidden"); p.el.inert = false;
     p.el.style.cssText = "";
-    old.replaceWith(p.el); view = p.el;
+    view = p.el;
     window.scrollTo(0, 0);
     if (p.halo) setHalo(...p.halo); else setHalo(null);
     adopted = next; location.hash = `#/${next}`;
