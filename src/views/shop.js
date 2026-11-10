@@ -2,7 +2,7 @@
 // lista de deseos y modo tienda (foto a una prenda → ¿me la compro?).
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, esc, icon, toast, say, setHalo, pickPhoto, isCancel, openSheet } from "../ui.js";
+import { $, esc, icon, toast, say, setHalo, viewHalo, pickPhoto, isCancel, openSheet } from "../ui.js";
 import { api, blobToBase64, base64ToBlob } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
 import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, deleteWish } from "../data.js";
@@ -39,7 +39,7 @@ export function renderShop(view) {
   const searching = new Set();
 
   function draw() {
-    setHalo(null);
+    viewHalo(view, null);
     const wl = store.wishlist.filter((w) => !w.bought);
     view.innerHTML = `
       <header class="head"><div><h1 class="display">${t("shop.title")}</h1><div class="sub">${t("shop.sub")}</div></div></header>
@@ -53,7 +53,7 @@ export function renderShop(view) {
     const pane = $("#pane", view);
     if (tab === "gaps") drawGaps(pane); else if (tab === "wish") drawWish(pane); else drawStore(pane);
     const gc = tab === "gaps" ? [...(store.shopping?.combine || []), ...(store.shopping?.style || [])].map((g) => g.colorHex).filter(Boolean) : [];
-    setHalo(gc[0] || null, gc[1] || gc[0]);
+    viewHalo(view, gc[0] || null, gc[1] || gc[0]);
   }
 
   /* ---------- Te falta ---------- */
@@ -315,7 +315,7 @@ export function renderShop(view) {
   let sig = sigOf();
   return subscribe(() => {
     const now = sigOf();
-    if (now !== sig && !busy) { sig = now; if (tab === "store") return; const y = scrollY; draw(); scrollTo(0, y); }
+    if (now !== sig && !busy) { sig = now; if (tab === "store") return; const y = view.scrollTop || scrollY; draw(); view.scrollTop = y; scrollTo(0, y); /* en el móvil se desplaza #view, no la ventana */ }
   });
 }
 

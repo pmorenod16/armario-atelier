@@ -69,6 +69,7 @@ $("#authForgot").onclick = async () => {
 };
 
 /* ---------- secciones ---------- */
+const peekCache = new Map(); // pantallas vecinas ya pintadas (deslizar): nombre → { el, name, cleanup, halo }
 let view = $("#view"); // let: al deslizar, la capa de la pantalla vecina pasa a ser #view (sin volver a pintarla)
 let cleanup = null;
 const soon = (k) => (v) => {
@@ -84,12 +85,14 @@ function route() {
   if (!ROUTES[name]) history.replaceState(null, "", `#/${DEFAULT}`);
   const navR = r;
   $$("#nav a").forEach((a) => (a.dataset.route === navR ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  if (adopted === r) { adopted = null; return; } // ya pintada al deslizar
+  if (adopted === r) { adopted = null; prebuildPeeks(); return; } // ya pintada al deslizar
+  destroyPeeks();
   if (cleanup) cleanup();
   setHalo(null);
   view.classList.remove("settled");
   cleanup = ROUTES[r](view) || null;
-  window.scrollTo({ top: 0 });
+  window.scrollTo({ top: 0 }); view.scrollTop = 0;
+  prebuildPeeks();
 }
 window.addEventListener("hashchange", route);
 
@@ -112,17 +115,37 @@ const scrollsX = (el) => {
 const curIndex = () => SWIPE_ORDER.indexOf((location.hash.match(/^#\/(\w+)/) || [])[1] || DEFAULT);
 const move = (el, x, ms) => { if (!el) return; el.style.transition = ms ? `transform ${ms}ms ${EASE}` : "none"; el.style.transform = `translate3d(${x}px,0,0)`; };
 const clearView = () => { view.style.transition = view.style.transform = view.style.willChange = ""; };
-function dropPeek() { if (!peek) return; try { peek.cleanup?.(); } catch {} peek.el.remove(); peek = null; }
-function buildPeek(name, dir) {
+// La vecina se aparca fuera de la pantalla en vez de borrarla: si vuelves a deslizar, ya está lista (y sus fotos decodificadas).
+function dropPeek() { if (!peek) return; park(peek); peek = null; }
+const park = (p) => { p.el.style.transition = "none"; p.el.style.transform = "translate3d(300vw,0,0)"; };
+function destroyPeeks() { for (const p of peekCache.values()) { try { p.cleanup?.(); } catch {} p.el.remove(); } peekCache.clear(); peek = null; }
+// Al llegar a una pantalla, en un rato libre se pintan sus dos vecinas (solo en el móvil), para que al empezar a deslizar
+// ya estén hechas: sin tirón al principio y sin fotos que aparecen de golpe.
+let prebuildTimer = 0;
+function prebuildPeeks() {
+  clearTimeout(prebuildTimer);
+  if (!matchMedia("(pointer: coarse)").matches || innerWidth >= 900) return;
+  prebuildTimer = setTimeout(() => {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+    const i = curIndex();
+    [SWIPE_ORDER[i + 1], SWIPE_ORDER[i - 1]].filter(Boolean).forEach((n) => idle(() => { if (i === curIndex() && !peekCache.has(n) && !sw) park(makePeek(n)); }));
+  }, 600);
+}
+function buildPeek(name) {
   if (peek?.name === name) return peek;
   dropPeek();
+  return (peek = peekCache.get(name) || makePeek(name));
+}
+function makePeek(name) {
   const el = document.createElement("div");
   el.className = "view peek settled"; el.setAttribute("aria-hidden", "true"); el.inert = true;
   $("#app").appendChild(el);
   window.__peek = true; window.__peekHalo = null;
   let cleanup = null;
   try { cleanup = ROUTES[name](el) || null; } catch {} finally { window.__peek = false; }
-  return (peek = { el, name, dir, cleanup, halo: window.__peekHalo });
+  const p = { el, name, cleanup, halo: window.__peekHalo };
+  peekCache.set(name, p);
+  return p;
 }
 $("#app").addEventListener("touchstart", (e) => {
   if (!view.contains(e.target)) return void (sw = null);
@@ -143,7 +166,7 @@ $("#app").addEventListener("touchmove", (e) => {
   const i = curIndex(), dir = dx < 0 ? 1 : -1, next = i >= 0 ? SWIPE_ORDER[i + dir] : null;
   sw.dx = next ? dx : dx * 0.25; // en la primera/última pantalla, resistencia de goma
   sw.pts.push([tp.clientX, performance.now()]); if (sw.pts.length > 5) sw.pts.shift();
-  if (next) { const p = buildPeek(next, dir); move(p.el, sw.dx + dir * innerWidth); } else dropPeek();
+  if (next) { const p = buildPeek(next); move(p.el, sw.dx + dir * innerWidth); } else dropPeek();
   move(view, sw.dx);
 }, { passive: false });
 function endSwipe() {
@@ -162,7 +185,7 @@ function endSwipe() {
   move(view, -dir * innerWidth, ms); move(peek.el, 0, ms);
   setTimeout(() => {
     // la vecina ya ocupa la pantalla: la capa PASA A SER #view tal cual (sin volver a pintarla: así no parpadea)
-    const old = view, p = peek; peek = null;
+    const old = view, p = peek; peek = null; peekCache.delete(p.name); destroyPeeks(); // las demás eran vecinas de la anterior
     if (cleanup) { try { cleanup(); } catch {} }
     cleanup = p.cleanup || null;
     // sin mover el nodo de sitio (moverlo reinicia las animaciones de entrada de las prendas = parpadeo): se quita la vieja
@@ -171,8 +194,7 @@ function endSwipe() {
     p.el.className = "view settled"; p.el.id = "view"; p.el.tabIndex = -1; p.el.removeAttribute("aria-hidden"); p.el.inert = false;
     p.el.style.cssText = "";
     view = p.el;
-    window.scrollTo(0, 0);
-    if (p.halo) setHalo(...p.halo); else setHalo(null);
+    const h = p.el.__halo || p.halo; if (h) setHalo(...h); else setHalo(null);
     adopted = next; location.hash = `#/${next}`;
   }, ms);
 }

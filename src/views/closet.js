@@ -3,7 +3,7 @@ import { t } from "../i18n.js";
 import {
   GROUPS, TYPE, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, STATUSES, label, groupOf, TYPES,
 } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, tilt, setHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, tilt, setHalo, viewHalo } from "../ui.js";
 import { store, subscribe, washAll } from "../data.js";
 import { openItem } from "./item.js";
 import { toast } from "../ui.js";
@@ -66,7 +66,7 @@ export function renderCloset(view) {
   // el halo sigue al ratón solo en el ordenador (en el móvil, al deslizar, repintaba la pantalla a cada toque)
   grid.addEventListener("pointerover", (e) => { if (e.pointerType !== "mouse") return; const tl = e.target.closest(".tile"); if (tl) setHalo(tl.dataset.tone); });
   let tops = null, lastKey = "";
-  grid.addEventListener("pointerleave", () => setHalo(...(tops || [null])));
+  grid.addEventListener("pointerleave", () => viewHalo(view, ...(tops || [null])));
   tilt(grid, ".tile");
 
   function draw() {
@@ -102,7 +102,7 @@ export function renderCloset(view) {
     const top = [...cnt].sort((a, b) => b[1] - a[1]).map(([h]) => h);
     const vivid = top.slice(0, 6).sort((a, b) => chroma(b) - chroma(a))[0]; // el más vivo de los habituales, para que no salga siempre gris
     tops = top.length ? [top[0], vivid || top[1] || top[0]] : null;
-    setHalo(...(tops || [null]));
+    viewHalo(view, ...(tops || [null]));
   }
   draw();
   return subscribe(draw);

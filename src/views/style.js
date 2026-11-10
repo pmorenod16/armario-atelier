@@ -2,7 +2,7 @@
 // Un tablero principal (los campos de arriba de meta/style) y otros para usos concretos (salir, eventos…) en `extra`.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, esc, icon, toast, say, setHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
+import { $, esc, icon, toast, say, setHalo, viewHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
 import { api, blobToBase64 } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
 import { store, subscribe, saveStyle, saveBoard, addBoard, removeBoard, boardsOf, styleText, logWear, saveLook } from "../data.js";
@@ -31,7 +31,7 @@ export function renderStyle(view) {
   function draw() {
     const all = boards(), b = curBoard(), s = b.summary ? b : null;
     const pal = s?.palette || [];
-    if (pal.length) setHalo(pal[0].hex, pal[1]?.hex || pal[0].hex); else setHalo(null);
+    if (pal.length) viewHalo(view, pal[0].hex, pal[1]?.hex || pal[0].hex); else viewHalo(view, null);
     const isMain = b.id === "main";
     view.innerHTML = `
       <header class="head"><div><h1 class="display">${t("style.title")}</h1><div class="sub">${s ? t("style.from", { src: s.source === "capturas" ? t("style.fromShots") : "Pinterest", date: fmt(s.analyzedAt) }) : t("style.sub")}</div></div></header>
@@ -196,7 +196,7 @@ export function renderStyle(view) {
   let sig = sigOf();
   return subscribe(() => {
     const now = sigOf();
-    if (now !== sig && !busy) { sig = now; const y = scrollY; draw(); scrollTo(0, y); }
+    if (now !== sig && !busy) { sig = now; const y = view.scrollTop || scrollY; draw(); view.scrollTop = y; scrollTo(0, y); /* en el móvil se desplaza #view, no la ventana */ }
     else if (now !== sig) sig = now;
   });
 }

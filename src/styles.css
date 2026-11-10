@@ -804,3 +804,9 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
 /* Deslizar entre pantallas (main.js): la pantalla vecina se pinta en .view.peek, fija y pegada al lado */
 .view.settled .tile, .view.settled .bd-item, .view.settled .onb-step, .view.settled .preview img { animation: none !important; }
 .view.peek { position: fixed; inset: 0; margin: 0 auto; overflow: hidden; pointer-events: none; z-index: 1; will-change: transform; contain: layout paint; }
+/* En el móvil cada pantalla es una hoja fija que se desplaza sola (como las páginas de Instagram): así, al terminar de
+   deslizar, la pantalla que entra ya está colocada y en su capa, y no hay que redibujarla (era el parpadeo, 10/11/2026) */
+@media (max-width: 899px) {
+  .view { position: fixed; inset: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; will-change: transform; -webkit-overflow-scrolling: touch; }
+  .view.peek { overflow-y: hidden; contain: none; }
+}

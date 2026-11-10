@@ -144,6 +144,14 @@ function paint(a, b) {
 let specific = false;
 export function setHalo(a, b) { if (window.__peek) { window.__peekHalo = [a, b]; return; } specific = !!a; if (a) paint(a, b); else paint(base?.[0], base?.[1]); }
 /** Colores de fondo cuando la pantalla no enseña nada concreto (la paleta de tu estilo). */
+/** Halo pedido desde una pantalla: si esa pantalla es la vecina pintada de antemano para deslizar (.view.peek) o ya no está,
+ *  no toca el halo de la que se ve; se guarda en la capa y se aplica si llega a entrar. */
+export function viewHalo(el, a = null, b = null) {
+  if (el && !el.isConnected) return;
+  const pk = el?.closest?.(".view.peek");
+  if (pk) { pk.__halo = [a, b]; return; }
+  setHalo(a, b);
+}
 export function setHaloBase(a, b) {
   base = a ? [a, b || a] : null;
   if (!specific) paint(base?.[0], base?.[1]);

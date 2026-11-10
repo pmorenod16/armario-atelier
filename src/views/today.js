@@ -2,7 +2,7 @@
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label, isWomen, BRA_TYPES } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, toast, say, setHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, toast, say, setHalo, viewHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
@@ -38,7 +38,7 @@ export function renderToday(view, only = null) {
     <div id="tab"></div>`;
   let cleanupTab = null;
   const show = () => {
-    cleanupTab?.(); setHalo(null);
+    cleanupTab?.(); viewHalo(view, null);
     $$(".tabs button", view).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === state.tab)));
     const box = $("#tab", view);
     cleanupTab = { hoy: tabToday, outfits: tabLooks, calendario: tabCalendar, maleta: tabTrip }[state.tab](box) || null;
@@ -232,7 +232,7 @@ function tabToday(box) {
     const el = $("#wx", box); if (!el) return;
     try {
       wx = await todayWeather(place, off);
-      const d = describe(wx.code), [a, b] = HALO[d.icon] || HALO.cloud; setHalo(a, b);
+      const d = describe(wx.code), [a, b] = HALO[d.icon] || HALO.cloud; viewHalo(el, a, b);
       el.innerHTML = `
         <button type="button" class="wx-place" id="place">${icon("pin")}<span>${esc(place.name)}</span>${icon("chevron")}</button>
         <div class="wx-main">${icon(d.icon, "wx-ic")}<span class="wx-t">${wx.now.t}°</span>
@@ -399,7 +399,7 @@ function tabToday(box) {
     stage.innerHTML = boardHTML(o.itemIds);
     hydrateBoard(stage);
     const tones = o.itemIds.map(byId).filter(Boolean).map((i) => i.tone).filter(Boolean);
-    if (tones.length) setHalo(tones[0], tones[1] || tones[0]);
+    if (tones.length) viewHalo(stage, tones[0], tones[1] || tones[0]);
   }
 
   drawResult();
