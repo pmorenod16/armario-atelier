@@ -800,3 +800,10 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
 .where .chips { margin-top: 4px; }
 .where-foot { justify-content: space-between; margin-top: 16px; position: sticky; bottom: 0; padding: 10px 0 4px; background: var(--bg); }
 .where-btn { max-width: 100%; }
+
+/* Deslizar entre pantallas (main.js): entrada desde el lado */
+#view[data-enter="left"] { animation: enter-left .28s cubic-bezier(.2,.8,.2,1); }
+#view[data-enter="right"] { animation: enter-right .28s cubic-bezier(.2,.8,.2,1); }
+@keyframes enter-left { from { transform: translateX(14%); opacity: .4; } }
+@keyframes enter-right { from { transform: translateX(-14%); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { #view[data-enter] { animation: none; } }

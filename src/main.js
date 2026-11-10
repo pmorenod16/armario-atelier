@@ -90,6 +90,35 @@ function route() {
   window.scrollTo({ top: 0 });
 }
 window.addEventListener("hashchange", route);
+
+// Deslizar el dedo de lado = pantalla siguiente/anterior, en el orden de la barra (Polete, 10/11/2026).
+// No se activa si el gesto empieza en algo que ya se desliza de lado (carruseles, pestañas, chips), en un campo,
+// en el lienzo del outfit al colocar prendas, ni pegado al borde (ahí está el gesto «atrás» de Android).
+const SWIPE_ORDER = ["hoy", "armario", "outfits", "estilo", "compras", "perfil"];
+let sw = null;
+const scrollsX = (el) => {
+  for (let e = el; e && e !== view; e = e.parentElement) {
+    if (e.matches?.("input, textarea, select, [contenteditable], .board.editing, .board.editing *, [data-noswipe]")) return true;
+    if (e.scrollWidth > e.clientWidth + 4 && /(auto|scroll)/.test(getComputedStyle(e).overflowX)) return true;
+  }
+  return false;
+};
+view.addEventListener("touchstart", (e) => {
+  const tp = e.touches[0];
+  sw = e.touches.length === 1 && tp.clientX > 28 && tp.clientX < innerWidth - 28 && !scrollsX(e.target) ? { x: tp.clientX, y: tp.clientY, t: Date.now() } : null;
+}, { passive: true });
+view.addEventListener("touchend", (e) => {
+  if (!sw) return;
+  const tp = e.changedTouches[0], dx = tp.clientX - sw.x, dy = tp.clientY - sw.y, dt = Date.now() - sw.t; sw = null;
+  if (Math.abs(dx) < Math.max(70, innerWidth * 0.22) || Math.abs(dy) > Math.abs(dx) * 0.5 || dt > 700) return;
+  if (document.body.classList.contains("has-sheet") || getSelection()?.toString()) return;
+  const cur = (location.hash.match(/^#\/(\w+)/) || [])[1] || DEFAULT, i = SWIPE_ORDER.indexOf(cur);
+  const next = SWIPE_ORDER[i + (dx < 0 ? 1 : -1)];
+  if (i < 0 || !next) return;
+  view.dataset.enter = dx < 0 ? "left" : "right";
+  location.hash = `#/${next}`;
+  setTimeout(() => delete view.dataset.enter, 320);
+}, { passive: true });
 $("#addBtn").onclick = () => openAdd();
 
 // arrastrar una foto a cualquier parte en el ordenador = añadir prenda
