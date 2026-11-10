@@ -92,13 +92,14 @@ function route() {
 window.addEventListener("hashchange", route);
 
 // Deslizar el dedo de lado = pantalla siguiente/anterior, en el orden de la barra (Polete, 10/11/2026).
-// Como en Instagram (2.ª versión, «un poco ortopédico»): la pantalla sigue al dedo mientras deslizas; al soltar, si has
-// pasado el 25 % del ancho o lo has lanzado rápido, sale por ese lado y entra la siguiente desde el otro; si no, vuelve.
+// Como en Instagram (3.ª versión, «que vea la pantalla a la que deslizo»): al empezar a arrastrar se pinta la pantalla vecina
+// en una capa (.view.peek) pegada al lado; las dos siguen al dedo. Al soltar, si has pasado el 25 % del ancho o lo has lanzado
+// rápido, termina de entrar la vecina; si no, vuelven las dos. Mientras se pinta la vecina, window.__peek evita que cambie el halo.
 // No se activa si el gesto empieza en algo que ya se desliza de lado (carruseles, pestañas, chips), en un campo,
 // en el lienzo del outfit al colocar prendas, ni pegado al borde (ahí está el gesto «atrás» de Android).
 const SWIPE_ORDER = ["hoy", "armario", "outfits", "estilo", "compras", "perfil"];
 const EASE = "cubic-bezier(.22,.8,.25,1)";
-let sw = null;
+let sw = null, peek = null; // peek = { el, name, dir, cleanup }
 const scrollsX = (el) => {
   for (let e = el; e && e !== view; e = e.parentElement) {
     if (e.matches?.("input, textarea, select, [contenteditable], .board.editing, .board.editing *, [data-noswipe]")) return true;
@@ -107,12 +108,20 @@ const scrollsX = (el) => {
   return false;
 };
 const curIndex = () => SWIPE_ORDER.indexOf((location.hash.match(/^#\/(\w+)/) || [])[1] || DEFAULT);
-const setX = (x, ms = 0, fade = true) => {
-  view.style.transition = ms ? `transform ${ms}ms ${EASE}, opacity ${ms}ms ${EASE}` : "none";
-  view.style.transform = x ? `translate3d(${x}px,0,0)` : "";
-  view.style.opacity = fade && x ? String(Math.max(0.55, 1 - Math.abs(x) / innerWidth * 0.6)) : "";
-};
-const clearX = () => { view.style.transition = view.style.transform = view.style.opacity = view.style.willChange = ""; };
+const move = (el, x, ms) => { if (!el) return; el.style.transition = ms ? `transform ${ms}ms ${EASE}` : "none"; el.style.transform = `translate3d(${x}px,0,0)`; };
+const clearView = () => { view.style.transition = view.style.transform = view.style.willChange = ""; };
+function dropPeek() { if (!peek) return; try { peek.cleanup?.(); } catch {} peek.el.remove(); peek = null; }
+function buildPeek(name, dir) {
+  if (peek?.name === name) return peek;
+  dropPeek();
+  const el = document.createElement("div");
+  el.className = "view peek"; el.setAttribute("aria-hidden", "true"); el.inert = true;
+  $("#app").appendChild(el);
+  window.__peek = true;
+  let cleanup = null;
+  try { cleanup = ROUTES[name](el) || null; } catch {} finally { window.__peek = false; }
+  return (peek = { el, name, dir, cleanup });
+}
 view.addEventListener("touchstart", (e) => {
   const tp = e.touches[0];
   sw = e.touches.length === 1 && tp.clientX > 28 && tp.clientX < innerWidth - 28 && !document.body.classList.contains("has-sheet") && !scrollsX(e.target)
@@ -128,30 +137,35 @@ view.addEventListener("touchmove", (e) => {
     view.style.willChange = "transform";
   }
   e.preventDefault(); // mientras se arrastra de lado, la página no hace scroll
-  const i = curIndex(), hasNext = SWIPE_ORDER[i + (dx < 0 ? 1 : -1)] && i >= 0;
-  sw.dx = hasNext ? dx : dx * 0.25; // en la primera/última pantalla, resistencia de goma
+  const i = curIndex(), dir = dx < 0 ? 1 : -1, next = i >= 0 ? SWIPE_ORDER[i + dir] : null;
+  sw.dx = next ? dx : dx * 0.25; // en la primera/última pantalla, resistencia de goma
   sw.pts.push([tp.clientX, performance.now()]); if (sw.pts.length > 5) sw.pts.shift();
-  setX(sw.dx);
+  if (next) { const p = buildPeek(next, dir); move(p.el, sw.dx + dir * innerWidth); } else dropPeek();
+  move(view, sw.dx);
 }, { passive: false });
-const endSwipe = () => {
+function endSwipe() {
   if (!sw) return;
   const s = sw; sw = null;
   if (s.lock !== "x") return;
   const [a, b] = [s.pts[0], s.pts[s.pts.length - 1]], v = (b[0] - a[0]) / Math.max(1, b[1] - a[1]); // px/ms
   const i = curIndex(), dir = s.dx < 0 ? 1 : -1, next = SWIPE_ORDER[i + dir];
-  const go = i >= 0 && next && (Math.abs(s.dx) > innerWidth * 0.25 || (Math.abs(v) > 0.45 && Math.sign(v) === Math.sign(s.dx) && Math.abs(s.dx) > 30));
-  if (!go) { setX(0, 220); setTimeout(clearX, 230); return; }
-  const out = -dir * innerWidth;
-  const ms = Math.round(Math.max(110, Math.min(220, (innerWidth - Math.abs(s.dx)) / Math.max(1.2, Math.abs(v))))); // sale al ritmo del dedo
-  setX(out, ms);
+  const go = i >= 0 && next && peek?.name === next && (Math.abs(s.dx) > innerWidth * 0.25 || (Math.abs(v) > 0.45 && Math.sign(v) === Math.sign(s.dx) && Math.abs(s.dx) > 30));
+  if (!go) { // vuelven las dos
+    move(view, 0, 240); if (peek) move(peek.el, dir * innerWidth, 240);
+    setTimeout(() => { clearView(); dropPeek(); }, 250);
+    return;
+  }
+  const ms = Math.round(Math.max(140, Math.min(260, (innerWidth - Math.abs(s.dx)) / Math.max(1.1, Math.abs(v))))); // al ritmo del dedo
+  move(view, -dir * innerWidth, ms); move(peek.el, 0, ms);
   setTimeout(() => {
-    setX(dir * innerWidth * 0.35, 0); // la nueva entra desde el otro lado
+    // la vecina ya ocupa la pantalla: se pinta de verdad en #view (igual que la capa) y se quita la capa
+    view.style.transition = "none"; view.style.transform = "translate3d(0,0,0)"; view.style.visibility = "hidden";
     location.hash = `#/${next}`;
-    requestAnimationFrame(() => requestAnimationFrame(() => { setX(0, 260, false); setTimeout(clearX, 270); }));
+    requestAnimationFrame(() => { view.style.visibility = ""; clearView(); dropPeek(); });
   }, ms);
-};
+}
 view.addEventListener("touchend", endSwipe, { passive: true });
-view.addEventListener("touchcancel", () => { if (sw?.lock === "x") { sw = null; setX(0, 200); setTimeout(clearX, 210); } else sw = null; }, { passive: true });
+view.addEventListener("touchcancel", () => { if (sw?.lock === "x") { sw = null; move(view, 0, 200); setTimeout(() => { clearView(); dropPeek(); }, 210); } else sw = null; }, { passive: true });
 $("#addBtn").onclick = () => openAdd();
 
 // arrastrar una foto a cualquier parte en el ordenador = añadir prenda
