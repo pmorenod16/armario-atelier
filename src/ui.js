@@ -142,7 +142,7 @@ function paint(a, b) {
   if (g) { st.setProperty("--glow-l", g.light); st.setProperty("--glow-d", g.dark); }
 }
 let specific = false;
-export function setHalo(a, b) { if (window.__peek) return; specific = !!a; if (a) paint(a, b); else paint(base?.[0], base?.[1]); }
+export function setHalo(a, b) { if (window.__peek) { window.__peekHalo = [a, b]; return; } specific = !!a; if (a) paint(a, b); else paint(base?.[0], base?.[1]); }
 /** Colores de fondo cuando la pantalla no enseña nada concreto (la paleta de tu estilo). */
 export function setHaloBase(a, b) {
   base = a ? [a, b || a] : null;

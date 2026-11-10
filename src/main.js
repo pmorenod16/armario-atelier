@@ -69,7 +69,7 @@ $("#authForgot").onclick = async () => {
 };
 
 /* ---------- secciones ---------- */
-const view = $("#view");
+let view = $("#view"); // let: al deslizar, la capa de la pantalla vecina pasa a ser #view (sin volver a pintarla)
 let cleanup = null;
 const soon = (k) => (v) => {
   v.innerHTML = `<div class="soon"><div class="soon-card"><div class="soon-orb"></div><span class="pill">${t(`soon.${k}.phase`)}</span><h1 class="display">${t(`soon.${k}.title`)}</h1><p>${t(`soon.${k}.body`)}</p></div></div>`;
@@ -84,6 +84,7 @@ function route() {
   if (!ROUTES[name]) history.replaceState(null, "", `#/${DEFAULT}`);
   const navR = r;
   $$("#nav a").forEach((a) => (a.dataset.route === navR ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+  if (adopted === r) { adopted = null; return; } // ya pintada al deslizar
   if (cleanup) cleanup();
   setHalo(null);
   cleanup = ROUTES[r](view) || null;
@@ -99,7 +100,7 @@ window.addEventListener("hashchange", route);
 // en el lienzo del outfit al colocar prendas, ni pegado al borde (ahí está el gesto «atrás» de Android).
 const SWIPE_ORDER = ["hoy", "armario", "outfits", "estilo", "compras", "perfil"];
 const EASE = "cubic-bezier(.22,.8,.25,1)";
-let sw = null, peek = null; // peek = { el, name, dir, cleanup }
+let sw = null, peek = null, adopted = null; // peek = { el, name, dir, cleanup, halo }
 const scrollsX = (el) => {
   for (let e = el; e && e !== view; e = e.parentElement) {
     if (e.matches?.("input, textarea, select, [contenteditable], .board.editing, .board.editing *, [data-noswipe]")) return true;
@@ -117,17 +118,18 @@ function buildPeek(name, dir) {
   const el = document.createElement("div");
   el.className = "view peek"; el.setAttribute("aria-hidden", "true"); el.inert = true;
   $("#app").appendChild(el);
-  window.__peek = true;
+  window.__peek = true; window.__peekHalo = null;
   let cleanup = null;
   try { cleanup = ROUTES[name](el) || null; } catch {} finally { window.__peek = false; }
-  return (peek = { el, name, dir, cleanup });
+  return (peek = { el, name, dir, cleanup, halo: window.__peekHalo });
 }
-view.addEventListener("touchstart", (e) => {
+$("#app").addEventListener("touchstart", (e) => {
+  if (!view.contains(e.target)) return void (sw = null);
   const tp = e.touches[0];
   sw = e.touches.length === 1 && tp.clientX > 28 && tp.clientX < innerWidth - 28 && !document.body.classList.contains("has-sheet") && !scrollsX(e.target)
     ? { x: tp.clientX, y: tp.clientY, lock: null, dx: 0, pts: [[tp.clientX, performance.now()]] } : null;
 }, { passive: true });
-view.addEventListener("touchmove", (e) => {
+$("#app").addEventListener("touchmove", (e) => {
   if (!sw) return;
   const tp = e.touches[0], dx = tp.clientX - sw.x, dy = tp.clientY - sw.y;
   if (!sw.lock) {
@@ -158,14 +160,20 @@ function endSwipe() {
   const ms = Math.round(Math.max(140, Math.min(260, (innerWidth - Math.abs(s.dx)) / Math.max(1.1, Math.abs(v))))); // al ritmo del dedo
   move(view, -dir * innerWidth, ms); move(peek.el, 0, ms);
   setTimeout(() => {
-    // la vecina ya ocupa la pantalla: se pinta de verdad en #view (igual que la capa) y se quita la capa
-    view.style.transition = "none"; view.style.transform = "translate3d(0,0,0)"; view.style.visibility = "hidden";
-    location.hash = `#/${next}`;
-    requestAnimationFrame(() => { view.style.visibility = ""; clearView(); dropPeek(); });
+    // la vecina ya ocupa la pantalla: la capa PASA A SER #view tal cual (sin volver a pintarla: así no parpadea)
+    const old = view, p = peek; peek = null;
+    if (cleanup) { try { cleanup(); } catch {} }
+    cleanup = p.cleanup || null;
+    p.el.className = "view"; p.el.id = "view"; p.el.tabIndex = -1; p.el.removeAttribute("aria-hidden"); p.el.inert = false;
+    p.el.style.cssText = "";
+    old.replaceWith(p.el); view = p.el;
+    window.scrollTo(0, 0);
+    if (p.halo) setHalo(...p.halo); else setHalo(null);
+    adopted = next; location.hash = `#/${next}`;
   }, ms);
 }
-view.addEventListener("touchend", endSwipe, { passive: true });
-view.addEventListener("touchcancel", () => { if (sw?.lock === "x") { sw = null; move(view, 0, 200); setTimeout(() => { clearView(); dropPeek(); }, 210); } else sw = null; }, { passive: true });
+$("#app").addEventListener("touchend", endSwipe, { passive: true });
+$("#app").addEventListener("touchcancel", () => { if (sw?.lock === "x") { sw = null; move(view, 0, 200); setTimeout(() => { clearView(); dropPeek(); }, 210); } else sw = null; }, { passive: true });
 $("#addBtn").onclick = () => openAdd();
 
 // arrastrar una foto a cualquier parte en el ordenador = añadir prenda
