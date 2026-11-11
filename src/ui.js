@@ -25,6 +25,34 @@ export function toast(text, kind = "") {
 
 /* ---------- hojas: panel a pantalla completa en el móvil, ventana centrada en el ordenador ---------- */
 const sheets = [];
+/** En el móvil la hoja se puede arrastrar hacia abajo para cerrarla (sigue al dedo; al soltar, cierra si has bajado bastante o rápido). */
+function dragToClose(wrap, sheet, api) {
+  if (!matchMedia("(pointer: coarse)").matches) return;
+  const back = $(".sheet-backdrop", wrap);
+  let st = null;
+  sheet.addEventListener("touchstart", (e) => {
+    const t = e.touches[0]; if (e.touches.length !== 1) return (st = null);
+    // solo desde arriba del todo (asa) o cuando la hoja no está desplazada
+    st = { y: t.clientY, x: t.clientX, dy: 0, t0: performance.now(), lock: null, top: sheet.scrollTop <= 0 || t.clientY - sheet.getBoundingClientRect().top < 44 };
+  }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (!st || !st.top) return;
+    const t = e.touches[0], dy = t.clientY - st.y, dx = t.clientX - st.x;
+    if (!st.lock) { if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return; st.lock = dy > Math.abs(dx) * 1.2 ? "y" : "x"; if (st.lock === "x") return; }
+    if (st.lock !== "y" || dy < 0) { if (dy < 0) { st.dy = 0; sheet.style.transform = ""; } return; }
+    e.preventDefault();
+    st.dy = dy; sheet.style.transition = "none"; sheet.style.transform = `translateY(${dy}px)`;
+    back.style.transition = "none"; back.style.opacity = String(Math.max(.2, 1 - dy / 500));
+  }, { passive: false });
+  const end = () => {
+    if (!st) return; const { dy, t0 } = st; st = null;
+    const v = dy / Math.max(1, performance.now() - t0);
+    sheet.style.transition = ""; back.style.transition = ""; back.style.opacity = "";
+    if (dy > 110 || (v > .5 && dy > 30)) { sheet.style.transform = ""; api.close(); } else sheet.style.transform = "";
+  };
+  sheet.addEventListener("touchend", end, { passive: true });
+  sheet.addEventListener("touchcancel", end, { passive: true });
+}
 export function openSheet(content, { label = "", wide = false, onClose } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "sheet-wrap";
@@ -45,6 +73,7 @@ export function openSheet(content, { label = "", wide = false, onClose } = {}) {
     },
   };
   $(".sheet-backdrop", wrap).onclick = () => api.close();
+  dragToClose(wrap, sheet, api);
   sheets.push(api);
   setTimeout(() => sheet.focus({ preventScroll: true }), 50);
   return api;

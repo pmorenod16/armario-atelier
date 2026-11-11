@@ -93,9 +93,10 @@ button { cursor: pointer; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 46px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line-2);
   background: var(--surface-solid); font-weight: 550; letter-spacing: -.01em;
-  transition: transform .18s var(--ease), background .2s, box-shadow .2s, opacity .2s;
+  transition: transform .34s var(--spring), background .2s, box-shadow .25s, opacity .2s;
 }
-.btn:active { transform: scale(.97); }
+.btn:active { transform: scale(.96); transition-duration: .08s; }
+@media (hover: hover) { .btn:hover { box-shadow: var(--shadow); } .btn.primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg), 0 10px 30px -8px color-mix(in oklab, var(--glow) 80%, transparent); } }
 .btn:disabled { opacity: .5; pointer-events: none; }
 .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; box-shadow: var(--shadow); }
 .btn.ghost { background: transparent; }
@@ -129,9 +130,9 @@ button { cursor: pointer; }
 .chip {
   display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--line-2); background: var(--surface-solid); font-size: 14px; font-weight: 500; white-space: nowrap;
-  transition: background .18s, color .18s, border-color .18s, transform .15s var(--ease);
+  transition: background .18s, color .18s, border-color .18s, transform .3s var(--spring);
 }
-.chip:active { transform: scale(.96); }
+.chip:active { transform: scale(.94); transition-duration: .08s; }
 .chip[aria-pressed="true"], .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .chip .count { font-size: 12px; opacity: .55; font-variant-numeric: tabular-nums; }
 .swatch { width: 16px; height: 16px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
@@ -149,7 +150,8 @@ button { cursor: pointer; }
 .sw-btn:active { transform: scale(.92); }
 
 .seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 4px; gap: 2px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); }
-.seg button { border: 0; background: none; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 550; color: var(--muted); transition: background .2s, color .2s; }
+.seg button { border: 0; background: none; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 550; color: var(--muted); transition: background .25s var(--ease), color .2s, transform .3s var(--spring), box-shadow .25s; }
+.seg button:active { transform: scale(.95); transition-duration: .08s; }
 .seg button[aria-pressed="true"] { background: var(--surface-solid); color: var(--ink); box-shadow: var(--shadow); }
 
 input[type="range"] { width: 100%; accent-color: var(--ink); height: 28px; }
@@ -183,6 +185,7 @@ input[type="range"] { width: 100%; accent-color: var(--ink); height: 28px; }
 .nav-add span { display: none; }
 .nav-add .ic { width: 50px; height: 50px; padding: 13px; border-radius: 18px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow); transition: transform .25s var(--spring); }
 .nav-add:active .ic { transform: scale(.9) rotate(45deg); }
+@media (hover: hover) { .nav-add:hover .ic { transform: rotate(90deg) scale(1.04); } }
 
 @media (min-width: 900px) {
   :root { --nav-h: 0px; }
@@ -229,7 +232,7 @@ input[type="range"] { width: 100%; accent-color: var(--ink); height: 28px; }
   transition: transform .5s var(--ease), box-shadow .3s; animation: rise .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 28ms);
 }
 .tile:hover { box-shadow: var(--shadow-lg); }
-.tile:active { transform: scale(.97); }
+.tile:active { transform: scale(.97); transition-duration: .1s; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 .tile-img {
   position: relative; aspect-ratio: 4 / 5; min-width: 0;
@@ -256,10 +259,11 @@ input[type="range"] { width: 100%; accent-color: var(--ink); height: 28px; }
 /* ---------- hojas ---------- */
 .sheet-wrap { position: fixed; inset: 0; z-index: 40; display: grid; align-items: end; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgba(8, 9, 12, .38); opacity: 0; transition: opacity .3s var(--ease); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+@media (min-width: 760px) { .sheet-backdrop { -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); } }
 .sheet {
   position: relative; max-height: calc(100dvh - 20px - var(--safe-t)); overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg); border-radius: 28px 28px 0 0; box-shadow: var(--shadow-lg); outline: none;
-  padding: 10px 18px calc(24px + var(--safe-b)); transform: translateY(100%); transition: transform .36s var(--ease);
+  padding: 10px 18px calc(24px + var(--safe-b)); transform: translateY(100%); transition: transform .42s cubic-bezier(.22, 1, .36, 1);
 }
 .sheet::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line-2); margin: 0 auto 10px; }
 .sheet-wrap.open .sheet { transform: none; }
@@ -696,7 +700,7 @@ a.btn { text-decoration: none; color: inherit; }
 .nav { box-shadow: var(--shadow-lg), 0 0 0 1px var(--glow-soft), 0 12px 44px -12px color-mix(in oklab, var(--glow) 55%, transparent); }
 .nav a[aria-current="page"] .ic { color: var(--glow); filter: drop-shadow(0 0 6px color-mix(in oklab, var(--glow) 70%, transparent)); }
 .nav a { position: relative; }
-.nav a[aria-current="page"]::after { content: ""; position: absolute; left: 50%; bottom: -2px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 8px var(--glow); }
+.nav a[aria-current="page"]::after { content: none; position: absolute; left: 50%; bottom: -2px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 8px var(--glow); }
 .nav-add .ic { box-shadow: var(--shadow), 0 6px 22px -6px color-mix(in oklab, var(--glow) 80%, transparent); }
 .kicker { color: color-mix(in oklab, var(--glow) 60%, var(--muted)); }
 .chip[aria-pressed="true"] { box-shadow: 0 0 0 1px var(--glow-soft), 0 6px 18px -8px color-mix(in oklab, var(--glow) 70%, transparent); }
@@ -720,7 +724,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 .only-looks .looks-head { background: none; border: 0; box-shadow: none; padding: 0; }
 
 /* ---------- fluidez: en el móvil nada de 3D por tarjeta, ni desenfoques que se recalculen al desplazar ---------- */
-.halo { will-change: transform; }
+.halo { will-change: transform; transform: translate3d(0, calc(var(--sy, 0) * -.22px), 0); }
 .glow-ring { will-change: transform; }
 .grid.no-rise .tile { animation: none; }
 .tile { content-visibility: auto; contain-intrinsic-size: auto 260px; }
@@ -796,3 +800,16 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
   .view { position: fixed; inset: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; will-change: transform; -webkit-overflow-scrolling: touch; }
   .view.peek { overflow-y: hidden; contain: none; }
 }
+
+/* ---------- sensación: entrada escalonada, punto de la barra que se desliza, elevación al pasar el ratón ---------- */
+.view.entering > * { animation: rise .55s var(--ease) both; }
+.view.entering > :nth-child(2) { animation-delay: 45ms; } .view.entering > :nth-child(3) { animation-delay: 90ms; } .view.entering > :nth-child(4) { animation-delay: 135ms; }
+.view.entering > :nth-child(5) { animation-delay: 180ms; } .view.entering > :nth-child(6) { animation-delay: 225ms; } .view.entering > :nth-child(n+7) { animation-delay: 270ms; }
+.view.entering .tile { animation-delay: calc(90ms + var(--i, 0) * 28ms); }
+.nav-ind { position: absolute; left: 0; top: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 8px var(--glow); opacity: 0; pointer-events: none; transition: transform .5s var(--spring), opacity .25s, background .6s; }
+.nav-ind.on { opacity: 1; }
+@media (hover: hover) {
+  .product, .where-card, .stats-item, .look-card { transition: transform .3s var(--spring), box-shadow .3s; }
+  .product:hover, .where-card:hover, .stats-item:hover, .look-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+}
+@media (prefers-reduced-motion: reduce) { .view.entering > *, .view.entering .tile { animation: none !important; } .nav-ind { transition: opacity .2s; } .halo { transform: none; } }

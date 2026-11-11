@@ -71,7 +71,21 @@ $("#authForgot").onclick = async () => {
 /* ---------- secciones ---------- */
 const peekCache = new Map(); // pantallas vecinas ya pintadas (deslizar): nombre → { el, name, cleanup, halo }
 let view = $("#view"); // let: al deslizar, la capa de la pantalla vecina pasa a ser #view (sin volver a pintarla)
-let cleanup = null;
+let cleanup = null, enterTimer = 0;
+// Punto de la barra que se desliza hasta la sección activa (en vez de saltar)
+const navInd = Object.assign(document.createElement("i"), { className: "nav-ind" });
+$("#nav").append(navInd);
+function moveNavInd() {
+  const a = $("#nav a[aria-current]"); if (!a) return navInd.classList.remove("on");
+  const side = innerWidth >= 900; // barra lateral en el ordenador
+  const x = side ? 4 : a.offsetLeft + a.offsetWidth / 2 - 2.5, y = side ? a.offsetTop + a.offsetHeight / 2 - 2.5 : $("#nav").clientHeight - 9;
+  navInd.style.transform = `translate(${x}px, ${y}px)`; navInd.classList.add("on");
+}
+addEventListener("resize", moveNavInd);
+// Profundidad: el halo del fondo se mueve un poco más despacio que el contenido al desplazar
+let syRaf = 0;
+const onScroll = (e) => { if (syRaf) return; const el = e.target === document ? document.scrollingElement : e.target; if (!el?.classList?.contains("view") && e.target !== document) return; syRaf = requestAnimationFrame(() => { syRaf = 0; document.documentElement.style.setProperty("--sy", Math.min(600, el.scrollTop || 0)); }); };
+document.addEventListener("scroll", onScroll, { capture: true, passive: true });
 const ROUTES = { hoy: (v) => renderToday(v), outfits: (v) => renderToday(v, "outfits"), armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
 const DEFAULT = "hoy";
 
@@ -82,11 +96,13 @@ function route() {
   if (!ROUTES[name]) history.replaceState(null, "", `#/${DEFAULT}`);
   const navR = r;
   $$("#nav a").forEach((a) => (a.dataset.route === navR ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+  moveNavInd(); setTimeout(moveNavInd, 350);
   if (adopted === r) { adopted = null; prebuildPeeks(); return; } // ya pintada al deslizar
   destroyPeeks();
   if (cleanup) cleanup();
   setHalo(null);
   view.classList.remove("settled");
+  view.classList.add("entering"); clearTimeout(enterTimer); enterTimer = setTimeout(() => view.classList.remove("entering"), 700); // entrada escalonada (styles.css)
   cleanup = ROUTES[r](view) || null;
   window.scrollTo({ top: 0 }); view.scrollTop = 0;
   prebuildPeeks();
