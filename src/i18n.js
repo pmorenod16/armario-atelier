@@ -451,6 +451,8 @@ const DICT = {
     "shop.prio.media": "Media",
     "shop.prio.baja": "Baja",
     "shop.search": "Buscar modelos",
+    "profile.translatingStart": "Cambiando el idioma…",
+    "profile.translatingBg": "Terminando de traducir la app en segundo plano…",
     "style.urlPh": "https://pin.it/… o pinterest.com/usuario/tablero",
     "shop.liveSearching": "Buscando en las tiendas y revisando cada foto…",
     "shop.liveFound": "{n} encontrados hasta ahora · sigo buscando…",
@@ -753,31 +755,57 @@ export function tx(s) {
 export const getLanguage = () => lang;
 /** Formato regional de fechas, horas y números del idioma elegido (y del dictado por voz). */
 export const locale = () => ({ es: "es-ES", ca: "ca-ES", en: "en-GB" }[lang] || "es-ES");
-/** Traduce lo que falte del idioma l. onProgress(hechas, total). Devuelve cuántas ha traducido. */
-export async function ensureLanguage(l, onProgress = () => {}) {
-  if (l === "es") return 0;
-  const cat = await import("./catalog.js"), { api } = await import("./api.js");
-  const src = { ...DICT.es };
-  for (const list of [cat.GROUPS, cat.TYPES, cat.COLORS, cat.PATTERNS, cat.MATERIALS, cat.FITS]) for (const e of list || []) if (e.es) src["~" + e.es] = e.es;
-  for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
-  const cache = readCache(l);
-  const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);
-  // por tandas; si una falla se sigue con las demás (lo que falte se vuelve a pedir la próxima vez) y se guarda lo hecho
-  let failed = 0, lastErr = null;
-  for (let i = 0; i < missing.length; i += 80) {
-    const part = Object.fromEntries(missing.slice(i, i + 80));
-    try {
-      const r = await api("/api/translate", { lang: l, entries: part }, { timeout: 60000 });
-      for (const [k, v] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) cache[k] = [v, r.entries[k]];
-      try { localStorage.setItem(LS(l), JSON.stringify(cache)); } catch {}
-    } catch (e) { failed++; lastErr = e; }
-    onProgress(Math.min(i + 80, missing.length), missing.length);
-  }
-  if (lang === l) load(l);
-  // si no ha salido casi nada, se avisa; si falta poco, se usa así (lo que falte sale en castellano y se completa luego)
-  const done = Object.keys(src).filter((k) => cache[k]?.[0] === src[k]).length;
-  if (failed && done < Object.keys(src).length * 0.8) throw lastErr || { message: "No se ha podido traducir." };
-  return missing.length;
+/**
+ * Traduce lo que falte del idioma l. onProgress(hechas, total). Devuelve cuántas ha traducido.
+ * Tandas de 50, tres a la vez (antes 80 de una en una: con la IA lenta tardaba minutos y parecía que no respondía).
+ * Si ya se está traduciendo ese idioma, se engancha a la misma tarea en vez de empezar otra.
+ */
+const running = {};
+export function ensureLanguage(l, onProgress = () => {}) {
+  if (l === "es") return Promise.resolve(0);
+  if (!running[l]) { const job = runTranslate(l); running[l] = job; job.catch(() => {}).finally(() => { delete running[l]; }); }
+  running[l].listeners.add(onProgress);
+  return running[l];
+}
+function runTranslate(l) {
+  const listeners = new Set();
+  const p = (async () => {
+    const cat = await import("./catalog.js"), { api } = await import("./api.js");
+    const src = { ...DICT.es };
+    for (const list of [cat.GROUPS, cat.TYPES, cat.COLORS, cat.PATTERNS, cat.MATERIALS, cat.FITS]) for (const e of list || []) if (e.es) src["~" + e.es] = e.es;
+    for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
+    const cache = readCache(l);
+    const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);
+    const parts = []; for (let i = 0; i < missing.length; i += 50) parts.push(Object.fromEntries(missing.slice(i, i + 50)));
+    let done = 0, failed = 0, lastErr = null, next = 0;
+    listeners.forEach((f) => f(0, missing.length));
+    // por tandas; si una falla se sigue con las demás (lo que falte se vuelve a pedir la próxima vez) y se guarda lo hecho
+    await Promise.all([0, 1, 2].map(async () => {
+      while (next < parts.length) {
+        const part = parts[next++];
+        try {
+          const r = await api("/api/translate", { lang: l, entries: part }, { timeout: 45000 });
+          for (const [k, v] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) cache[k] = [v, r.entries[k]];
+          try { localStorage.setItem(LS(l), JSON.stringify(cache)); } catch {}
+        } catch (e) { failed++; lastErr = e; }
+        done += Object.keys(part).length;
+        listeners.forEach((f) => f(Math.min(done, missing.length), missing.length));
+      }
+    }));
+    if (lang === l) load(l);
+    // si no ha salido casi nada, se avisa; si falta poco, se usa así (lo que falte sale en castellano y se completa luego)
+    const ok = Object.keys(src).filter((k) => cache[k]?.[0] === src[k]).length;
+    if (failed && ok < Object.keys(src).length * 0.8) throw lastErr || { message: "No se ha podido traducir." };
+    return missing.length;
+  })();
+  p.listeners = listeners;
+  return p;
+}
+/** ¿Cuánto del idioma l está ya traducido? (0-1) */
+export function languageReady(l) {
+  if (l === "es") return 1;
+  const c = readCache(l), keys = Object.keys(DICT.es);
+  return keys.filter((k) => c[k]?.[0] === DICT.es[k]).length / keys.length;
 }
 /** Texto libre en castellano del catálogo → idioma actual. */
 export const tr = (es) => (lang === "es" ? es : DICT[lang]?.["~" + es] ?? es);

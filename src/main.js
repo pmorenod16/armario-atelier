@@ -3,7 +3,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/bricolage-grotesque";
 import "./styles.css";
 import { App } from "@capacitor/app";
-import { t, translateDom, setLanguage, getLanguage, ensureLanguage } from "./i18n.js";
+import { t, translateDom, setLanguage, getLanguage, ensureLanguage, languageReady } from "./i18n.js";
 import { configured, watchAuth, logIn, register, resetPassword, logInWithGoogle, auth, logOut } from "./firebase.js";
 import { watchAccess } from "./access.js";
 import { store, subscribe, startData, stopData } from "./data.js";
@@ -263,7 +263,13 @@ function openApp() {
     if (!store.ready.profile) return;
     // idioma: solo cuando cambia (antes se releía en cada cambio de datos y costaba en catalán/inglés)
     if ((store.profile.language || "es") !== langNow) { langNow = store.profile.language || "es"; setLanguage(langNow); translateDom(); }
-    if (getLanguage() !== "es" && !window.__i18nChecked) { window.__i18nChecked = true; ensureLanguage(getLanguage()).then((n) => { if (n) { setLanguage(getLanguage()); translateDom(); route(); } }).catch(() => {}); }
+    // traducción pendiente (o textos nuevos de una versión nueva): se completa en segundo plano y la pantalla se actualiza al acabar
+    if (getLanguage() !== "es" && !window.__i18nChecked) {
+      window.__i18nChecked = true;
+      const pending = languageReady(getLanguage()) < 0.95;
+      if (pending) import("./ui.js").then((m) => m.toast(t("profile.translatingBg")));
+      ensureLanguage(getLanguage()).then((n) => { if (n) { setLanguage(getLanguage()); translateDom(); if (pending) route(); } }).catch(() => {});
+    }
     if (!store.profile.onboarded && !onboarding && !started) {
       onboarding = true; $("#app").hidden = true;
       runOnboarding($("#onboarding"), () => { onboarding = false; started = true; $("#app").hidden = false; route(); });

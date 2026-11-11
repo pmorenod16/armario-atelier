@@ -1,6 +1,6 @@
 // Perfil y bienvenida: cuerpo (maniquí con tus proporciones), tallas, ubicaciones, idioma y cuenta.
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
-import { t, LANGUAGES, getLanguage, ensureLanguage } from "../i18n.js";
+import { t, LANGUAGES, getLanguage, ensureLanguage, languageReady } from "../i18n.js";
 import { SIZE_KEYS, TYPE, label } from "../catalog.js";
 import { $, $$, esc, icon, toast, say, isNative } from "../ui.js";
 import { store, saveProfile, WASH_AFTER, washLimit } from "../data.js";
@@ -193,11 +193,19 @@ export function renderProfile(view) {
     const b = e.target.closest("[data-lang]"); if (!b || b.dataset.lang === getLanguage()) return;
     const l = b.dataset.lang, st = $("#langSt", view);
     $("#langs", view).querySelectorAll("button").forEach((x) => (x.disabled = true));
+    $("#langs", view).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    say(st, t("profile.translatingStart")); st.scrollIntoView({ block: "nearest", behavior: "smooth" });
     try {
-      if (l !== "es") await ensureLanguage(l, (d, n) => say(st, t("profile.translating", { d, n })));
+      // Se cambia enseguida: se espera a la traducción como mucho unos segundos (si ya estaba casi hecha, nada) y
+      // lo que falte se termina en segundo plano después de recargar (main.js), sin dejar la pantalla bloqueada.
+      if (l !== "es" && languageReady(l) < 0.95) {
+        const job = ensureLanguage(l, (d, n) => n && say(st, t("profile.translating", { d, n })));
+        const first = await Promise.race([job.then(() => "ok", (e) => e), new Promise((r) => setTimeout(() => r("tarde"), 8000))]);
+        if (first !== "ok" && first !== "tarde" && languageReady(l) < 0.3) throw first; // no ha podido traducir casi nada
+      }
       await saveProfile({ language: l });
       location.reload();
-    } catch (err) { say(st, err?.message || t("profile.translateFail"), "error"); $("#langs", view).querySelectorAll("button").forEach((x) => (x.disabled = false)); }
+    } catch (err) { say(st, err?.message || t("profile.translateFail"), "error"); $("#langs", view).querySelectorAll("button").forEach((x) => { x.disabled = false; x.setAttribute("aria-pressed", String(x.dataset.lang === getLanguage())); }); }
   };
   $("#section", view).onclick = (e) => {
     const b = e.target.closest("[data-sec]"); if (!b) return;
