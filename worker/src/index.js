@@ -292,11 +292,34 @@ function b64(buf) {
   return btoa(s);
 }
 function parseJson(text) {
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const src = fence ? fence[1] : text;
+  const fence = String(text).match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/);
+  const src = fence ? fence[1] : String(text);
   const a = src.indexOf("{"), b = src.lastIndexOf("}");
-  if (a < 0 || b < a) throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo.");
-  try { return JSON.parse(src.slice(a, b + 1)); } catch { throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo."); }
+  if (a < 0) throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo.");
+  if (b > a) { try { return JSON.parse(src.slice(a, b + 1)); } catch {} }
+  // Respuesta cortada (límite de palabras) o con basura al final: se arregla cerrando lo que quedó abierto
+  const fixed = repairJson(src.slice(a));
+  if (fixed) return fixed;
+  throw new HttpError(502, "La respuesta de la IA ha salido incompleta. Vuelve a intentarlo.");
+}
+/** Cierra un JSON cortado: quita el último elemento a medias y cierra comillas, listas y objetos abiertos. */
+function repairJson(s) {
+  for (let cut = s.length, tries = 0; cut > 1 && tries < 40; tries++) {
+    const part = s.slice(0, cut);
+    const stack = []; let str = false, esc = false;
+    for (const ch of part) {
+      if (str) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') str = false; continue; }
+      if (ch === '"') str = true; else if (ch === "{" || ch === "[") stack.push(ch); else if (ch === "}" || ch === "]") stack.pop();
+    }
+    let tail = part.replace(/[\s,:]+$/, "");
+    if (str) tail += '"';
+    tail += stack.reverse().map((c) => (c === "{" ? "}" : "]")).join("");
+    try { return JSON.parse(tail); } catch {}
+    const prev = Math.max(part.lastIndexOf(",", cut - 2), part.lastIndexOf("{", cut - 2), part.lastIndexOf("[", cut - 2));
+    if (prev <= 0) break;
+    cut = s[prev] === "," ? prev : prev + 1;
+  }
+  return null;
 }
 const cleanImg = (s) => {
   if (typeof s !== "string" || s.length < 100) throw new HttpError(400, "Imagen no válida.");
@@ -307,18 +330,38 @@ const cleanImg = (s) => {
 const SEARCH_UNAVAILABLE = "La búsqueda de modelos en el servidor necesita facturación en Gemini. Mientras, usa los botones de las tiendas.";
 
 /** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
-async function askGemini(env, { model, content, maxTokens = 2000, search = false }) {
+// Pensamiento corto: para devolver JSON no hace falta que «piense» mucho y responde bastante antes.
+// Si el modelo no acepta el ajuste (400), se repite sin él y se recuerda para las siguientes.
+let thinkingUnsupported = new Set();
+async function askGemini(env, { model, content, maxTokens = 2000, search = false, timeout }) {
   const parts = typeof content === "string" ? [{ text: content }] : content;
+  const think = !search && env.THINKING_BUDGET !== "off" && !thinkingUnsupported.has(model);
   const body = {
     contents: [{ role: "user", parts }],
-    generationConfig: { maxOutputTokens: Math.min(65536, maxTokens + 12000), temperature: 0.6, ...(search ? {} : { responseMimeType: "application/json" }) },
+    generationConfig: {
+      maxOutputTokens: Math.min(65536, maxTokens + 12000), temperature: 0.6,
+      ...(search ? {} : { responseMimeType: "application/json" }),
+      ...(think ? { thinkingConfig: { thinkingBudget: Number(env.THINKING_BUDGET || 1024) } } : {}),
+    },
     ...(search ? { tools: [{ google_search: {} }] } : {}),
   };
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-    body: JSON.stringify(body),
-  });
+  // Tiempo máximo por llamada: si Gemini se cuelga, se pasa a la reserva en vez de esperar sin fin
+  const ctrl = new AbortController(), ms = timeout || Number(env.GEMINI_TIMEOUT || 40000);
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST", signal: ctrl.signal,
+      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new HttpError(504, ctrl.signal.aborted ? "La IA está tardando demasiado." : "No se ha podido contactar con Gemini.");
+  } finally { clearTimeout(timer); }
+  if (res.status === 400 && think) {
+    const msg = (await res.clone().json().catch(() => ({})))?.error?.message || "";
+    if (/thinking/i.test(msg)) { thinkingUnsupported.add(model); return askGemini(env, { model, content, maxTokens, search, timeout }); }
+  }
   if (res.status === 429) {
     console.warn("Gemini 429", model, search ? "(búsqueda)" : "", (await res.text()).slice(0, 500));
     throw new HttpError(429, search ? SEARCH_UNAVAILABLE : "Has llegado al límite de peticiones de Gemini por ahora. Espera un rato e inténtalo de nuevo.");
@@ -353,10 +396,11 @@ async function askGemini(env, { model, content, maxTokens = 2000, search = false
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function askGeminiSteady(env, opts) {
   if (opts.search) return askGemini(env, opts);
-  const busy = (e) => e instanceof HttpError && [429, 500, 502, 503].includes(e.status);
+  const busy = (e) => e instanceof HttpError && [429, 500, 502, 503, 504].includes(e.status);
   try { return await askGemini(env, opts); }
   catch (e) {
     if (!busy(e)) throw e;
+    if (e.status === 504) throw e; // se ha colgado: mejor la reserva rápida (Cloudflare) que otro modelo lento
     if (e.status !== 429) { // saturado: un segundo intento con el mismo modelo
       await sleep(1500);
       try { return await askGemini(env, opts); } catch (e2) { if (!busy(e2)) throw e2; }
@@ -395,8 +439,11 @@ async function askAI(env, opts) {
   if (env.NVIDIA_API_KEY && !opts.search) backups.push(["NVIDIA", askNvidia]);
   let first;
   if (env.GEMINI_API_KEY) {
-    try { return await askGeminiSteady(env, opts); }
-    catch (e) {
+    try {
+      const out = await askGeminiSteady(env, opts);
+      if (opts.search || /\{/.test(typeof out === "string" ? out : out?.text || "")) return out;
+      throw new HttpError(502, "La IA ha devuelto una respuesta sin datos.");
+    } catch (e) {
       // La búsqueda con Google tiene cupos gratuitos distintos según el modelo: probar el de reserva
       if (opts.search && e instanceof HttpError && e.status === 429 && env.MODEL_SEARCH_FALLBACK && env.MODEL_SEARCH_FALLBACK !== opts.model) {
         return askGemini(env, { ...opts, model: env.MODEL_SEARCH_FALLBACK });

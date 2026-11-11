@@ -1,6 +1,7 @@
 // El tiempo con Open-Meteo (gratis y sin clave). Previsión de 16 días; para fechas más lejanas
 // se usa lo que hizo esos mismos días el año pasado (archivo histórico) como referencia.
-const CODES = [
+import { tr } from "./i18n.js";
+export const CODES = [
   [[0], "Despejado", "sun"], [[1], "Casi despejado", "sun"], [[2], "Intervalos de nubes", "cloudsun"], [[3], "Nublado", "cloud"],
   [[45, 48], "Niebla", "fog"], [[51, 53, 55, 56, 57], "Llovizna", "rain"], [[61, 63, 80, 81], "Lluvia", "rain"],
   [[65, 82], "Lluvia fuerte", "rain"], [[66, 67], "Lluvia helada", "rain"], [[71, 73, 75, 77, 85, 86], "Nieve", "snow"],
@@ -8,7 +9,7 @@ const CODES = [
 ];
 export function describe(code) {
   const c = CODES.find(([list]) => list.includes(code));
-  return { text: c?.[1] || "—", icon: c?.[2] || "cloud" };
+  return { text: c ? tr(c[1]) : "—", icon: c?.[2] || "cloud" };
 }
 
 const cache = new Map();

@@ -1,6 +1,6 @@
 // Mi estilo: lee tus tableros de Pinterest (o capturas) y saca el estilo que buscas. Se usa en outfits, maleta y compras.
 // Un tablero principal (los campos de arriba de meta/style) y otros para usos concretos (salir, eventos…) en `extra`.
-import { t } from "../i18n.js";
+import { t, locale, localize } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
 import { $, esc, icon, toast, say, viewHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
 import { api, blobToBase64 } from "../api.js";
@@ -13,7 +13,7 @@ import { boardHTML, hydrateBoard } from "./board.js";
 import { matchStyle } from "../engine.js";
 
 const byId = itemById;
-const fmt = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
+const fmt = (ts) => ts ? new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "long" }) : "";
 const USES = ["Salir de noche", "Cita", "Eventos y bodas", "Trabajo", "Clase", "Deporte", "Verano", "Invierno"];
 const wardrobeFor = (list) => list.map((i) => ({
   id: i.id, name: i.name, type: label(TYPE[i.type]) || i.type, colors: (i.colors || []).map((c) => label(COLOR[c.k]) || c.k),
@@ -42,7 +42,7 @@ export function renderStyle(view) {
       <section class="card style-src">
         ${isMain ? "" : `<div class="row between"><span class="kicker">${t("style.boardFor", { use: esc(b.use) })}</span><button class="btn sm ghost danger" type="button" id="rmB">${icon("close")}${t("style.removeBoard")}</button></div>`}
         <label class="field"><span>${t(isMain ? "style.board" : "style.boardExtra")}</span>
-          <div class="off-link"><input class="input" id="url" type="url" inputmode="url" placeholder="https://pin.it/… o pinterest.com/usuario/tablero" value="${esc(b.boardUrl || "")}"><button class="btn sm primary" type="button" id="go">${icon("spark")}${t(s ? "style.reread" : "style.go")}</button></div></label>
+          <div class="off-link"><input class="input" id="url" type="url" inputmode="url" placeholder="${t("style.urlPh")}" value="${esc(b.boardUrl || "")}"><button class="btn sm primary" type="button" id="go">${icon("spark")}${t(s ? "style.reread" : "style.go")}</button></div></label>
         <p class="hint">${t("style.howLink")}</p>
         <div class="row wrap"><button class="btn sm ghost" type="button" id="shots">${icon("image")}${t("style.shots")}</button></div>
         ${s?.source === "pinterest" ? `<label class="auto-row"><input type="checkbox" id="auto" ${b.autoOff ? "" : "checked"}><span>${t("style.auto")}<small class="muted">${t("style.autoLast", { date: fmt(b.checkedAt || b.analyzedAt) })}</small></span></label>` : ""}
@@ -128,7 +128,7 @@ export function renderStyle(view) {
     try {
       let r;
       try { r = await api("/api/style/match", { style: styleText(s, { onlyMain: true }), wardrobe: wardrobeFor(avail) }, { timeout: 30000 }); }
-      catch (e) { console.warn("IA no disponible, encaje calculado por la app", e); r = matchStyle({ items: avail, style: s }); }
+      catch (e) { console.warn("IA no disponible, encaje calculado por la app", e); r = await localize(matchStyle({ items: avail, style: s })); }
       await saveStyle({ match: { ...r, at: Date.now(), items: avail.length } });
     } catch (e) { if (box) box.innerHTML = `<p class="status" data-kind="error">${esc(e?.message || t("style.fail"))}</p>`; }
   }

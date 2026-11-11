@@ -1,6 +1,6 @@
 // Estadísticas del armario (sin coste por uso, por decisión de Polete): qué usas de verdad,
 // qué lleva meses sin salir del armario (¿donar o vender?), lo más puesto y lo que aún no has estrenado.
-import { t } from "../i18n.js";
+import { t, locale } from "../i18n.js";
 import { esc, icon, openSheet } from "../ui.js";
 import { store, wornIds, todayKey } from "../data.js";
 import { GROUPS, COLOR, label, groupOf } from "../catalog.js";
@@ -71,4 +71,4 @@ export function openStats() {
   });
   return sh;
 }
-const fmt = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const fmt = (d) => new Date(d + "T12:00:00").toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });

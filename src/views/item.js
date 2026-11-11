@@ -1,7 +1,7 @@
 // Ficha de una prenda: foto grande con su halo, datos, estado (disponible/sucia/prestada), editar y eliminar.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf, BRA_TYPES } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, toast, setHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, toast, tempHalo } from "../ui.js";
 import { store, subscribe, fullImage, setItemStatus, deleteItem, itemWashLimit, isDryClean, updateItem } from "../data.js";
 import { openEdit, tintFor } from "./add.js";
 
@@ -9,13 +9,13 @@ export function openItem(id) {
   let item = store.items.find((i) => i.id === id);
   if (!item) { toast(t("item.notFound"), "error"); return; }
   const sheet = openSheet(`<div class="sheet-head"><span></span><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div><div id="body"></div>`,
-    { label: item.name, wide: true, onClose: () => { unsub(); setHalo(null); } });
+    { label: item.name, wide: true, onClose: () => { unsub(); tempHalo(null); } });
   const root = sheet.el;
   $("[data-close]", root).onclick = () => sheet.close();
 
   function render() {
     const c = item.colors || [];
-    setHalo(c[0]?.hex || item.tone, c[1]?.hex || item.tone);
+    tempHalo(c[0]?.hex || item.tone, c[1]?.hex || item.tone);
     const facts = [
       [t("item.type"), esc(label(TYPE[item.type]) || item.type || "—")],
       [t("item.colors"), c.length ? c.map((x) => `<span class="row" style="gap:6px"><i class="swatch" style="background:${x.hex || COLOR[x.k]?.hex}"></i>${esc(label(COLOR[x.k]) || x.name || "")}</span>`).join("") : "—"],

@@ -291,7 +291,12 @@ async function imageSearch(q, diag, tag, bingFirst = false) {
 const cleanTitle = (t) => decodeHtml(String(t || "").replace(/<[^>]+>/g, "")).replace(/\s*[|–-]\s*(Massimo Dutti|MANGO|Mango|H&M|Pull&Bear|Bershka|UNIQLO|Uniqlo|COS|ARKET|Arket|Springfield|Scalpers|El Ganso|JACK & JONES|Jack & Jones|SELECTED|Selected)\b.*$/i, "").replace(/\s*\|\s*[^|]{1,40}$/, "").replace(/^(Comprar|Buy)\s+/i, "").trim();
 
 /* ---------- precisión: que sea ESA prenda, de la sección del perfil ---------- */
-const N = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// Algunas webs (Mango, Decathlon, El Corte Inglés…) salen en catalán en Girona: se pasan sus palabras al castellano para los filtros
+const CA = [[/\bsamarret(a|es)\b/g, "camiseta"], [/\bpantalons?\b/g, "pantalon"], [/\bjerse(i|is)\b/g, "jersey"], [/\bsabatill(a|es)\b/g, "zapatillas"], [/\bxinos?\b/g, "chino"], [/\bsabates?\b/g, "zapatos"],
+  [/\bjaquet(a|es)\b/g, "chaqueta"], [/\babrics?\b/g, "abrigo"], [/\bdessuador(a|es)\b/g, "sudadera"], [/\barmill(a|es)\b/g, "chaleco"], [/\bfaldill(a|es)\b/g, "falda"], [/\bvestits?\b/g, "vestido"],
+  [/\bmitjons?\b/g, "calcetines"], [/\bmocassins?\b/g, "mocasines"], [/\btexans?\b/g, "vaqueros"], [/\bbotes\b/g, "botas"], [/\bmaniga curta\b/g, "manga corta"], [/\bmaniga llarga\b/g, "manga larga"],
+  [/\bhome\b/g, "hombre"], [/\bdona\b/g, "mujer"], [/\bnegres?\b/g, "negro"], [/\bblau mari\b/g, "azul marino"], [/\bblaus?\b/g, "azul"], [/\bvermells?\b/g, "rojo"], [/\bverds?\b/g, "verde"], [/\bmarro\b/g, "marron"], [/\bbeix\b/g, "beige"], [/\bestampad[ae]s?\b/g, "estampada"], [/\bllis[ae]?s?\b/g, "lisa"], [/\bratlles\b/g, "rayas"]];
+const N = (t) => CA.reduce((s, [re, es]) => s.replace(re, es), String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
 // por tipo del catálogo: lo que el nombre tiene que decir (need) y lo que no puede decir (avoid)
 const TYPE_RULES = {
   camiseta: { need: /\bcamisetas?\b|t-?shirt|\btee\b/, avoid: /tirantes|sin mangas|\bcamisas?\b|sobrecamisa|\bpolo|sudadera|mangas? largas?|manga comprida|mangas compridas|manches longues|manica lunga|maniche lunghe|langarm|m\/l\b|\bml\b|long ?sleeves?|longsleeve|\bl\/s\b|\btop\b|\bbody\b|tank|termica|interior/ },
@@ -387,7 +392,7 @@ export function wantedColor(text, hex) {
   return hex ? { k: null, hex } : null;
 }
 /** Colores que nombra un título de producto. */
-const colorsInTitle = (t) => { const low = String(t || "").toLowerCase(); return COLOR_WORDS.filter(([re]) => new RegExp(re).test(low)).map(([, k]) => k); };
+const colorsInTitle = (t) => { const low = N(t); return COLOR_WORDS.filter(([re]) => new RegExp(re).test(low)).map(([, k]) => k); };
 const rgbOf = (hex) => { const n = parseInt(String(hex).replace("#", ""), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 function lab([r, g, b]) {
   const f = (c) => { c /= 255; return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92; };
@@ -572,8 +577,8 @@ export const canSearchStores = isNative;
  * Busca la prenda en muchas tiendas (sin Zara, que ya da el servidor).
  * Devuelve [{store, name, price, priceNum, url, image, color}] ordenados por parecido con lo buscado.
  */
-export async function searchStores({ term, piece, color, colorHex, type, plain = true, only = null, skip = ["zara.com"], max = 14 }) {
-  const diag = [];
+export async function searchStores({ term, piece, color, colorHex, type, plain = true, only = null, skip = ["zara.com"], max = 14, onFound = null }) {
+  const diag = [], t0 = Date.now();
   if (!isNative) return { products: [], diag: ["solo en la app del móvil"] };
   const until = Date.now() + TIME_LIMIT; // la búsqueda nunca pasa de ~30 s: lo que haya a esa hora es lo que sale
   let stores = ALL_SOURCES.filter(([n, d]) => !skip.includes(d) && (!only || only.includes(n)));
@@ -596,6 +601,27 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
+  // La foto de cada candidato se revisa EN CUANTO llega (color de verdad y, si buscas liso, sin logo ni dibujo), mientras
+  // se sigue buscando en las demás tiendas: así tarda la mitad y lo bueno se puede enseñar al momento (onFound).
+  const photoCheck = !!(wanted?.hex || plain);
+  const why = {}, found = [], checks = [], queue = [];
+  let checked = 0, active = 0;
+  const report = () => onFound?.(found.slice().sort((a, b) => b._hits - a._hits).slice(0, max));
+  const pump = () => {
+    while (active < 6 && queue.length) {
+      const [p, done] = queue.shift(); active++;
+      within(checkPhoto(p.thumb || p.image, { wanted, plain, type }), 10000).then((r) => {
+        p._ok = r?.ok ?? null; if (r?.ok != null) checked++;
+        if (r && r.ok === false) why[r.why] = (why[r.why] || 0) + 1;
+        if (p._ok) { found.push(p); report(); }
+      }).catch(() => { p._ok = null; }).finally(() => { active--; done(); pump(); });
+    }
+  };
+  const verify = (p) => {
+    if (!photoCheck) { p._ok = true; found.push(p); report(); return; }
+    if (checks.length >= 40) return; // tope de fotos por búsqueda
+    checks.push(new Promise((done) => { queue.push([p, done]); pump(); }));
+  };
   // 1) imágenes por tienda: foto, nombre y enlace sin abrir la ficha
   const viaImg = [], perStore = new Map();
   const names = new Set(stores.map(([n]) => n));
@@ -603,7 +629,7 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
     for (const r of res) {
       const st = storeOf(r.page); if (!st || !names.has(st[0]) || (only1 && st[0] !== only1)) continue;
       const name = st[0], pat = st[2];
-      if ((perStore.get(name) || 0) >= 3) continue; // como mucho 3 por tienda
+      if ((perStore.get(name) || 0) >= 5) continue; // hasta 5 candidatos por tienda (luego se enseñan 3): si uno no pasa la foto, queda otro
       const clean = r.page.split("?")[0], title = cleanTitle(r.title);
       if (!title || /buscar|search|resultados|categor/i.test(title)) continue;
       const tw = new Set(words(title).map(stem));
@@ -612,7 +638,8 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
       const named = colorsInTitle(title);
       if (wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])) continue;
       if (viaImg.some((p) => p.url.split("?")[0] === clean)) continue;
-      viaImg.push({ store: name, name: title.slice(0, 120), url: r.page, image: r.image || r.thumb, thumb: r.thumb || r.image, price: "", priceNum: null, color: "", _hits: [...tw].filter((w) => want.has(w)).length + (pat.test(clean) ? 0.5 : 0) });
+      const p = { store: name, name: title.slice(0, 120), url: r.page, image: r.image || r.thumb, thumb: r.thumb || r.image, price: "", priceNum: null, color: "", _hits: [...tw].filter((w) => want.has(w)).length + (pat.test(clean) ? 0.5 : 0) };
+      viaImg.push(p); verify(p);
       perStore.set(name, (perStore.get(name) || 0) + 1);
     }
   };
@@ -624,12 +651,11 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
     take(res, name);
   }, until - 12000);
   await within(general, 2000);
-  let dropped = 0;
-  // búsqueda web clásica: solo si queda tiempo y con pocos resultados de imágenes
+  // 2) búsqueda web clásica: solo si queda tiempo y con pocos resultados de imágenes
   const left = until - Date.now();
   const groups = viaImg.length >= 8 || left < 9000 ? [] : [stores.slice(0, 6), stores.slice(6, 12)].filter((g) => g.length);
   const lists = groups.length ? await within(Promise.all(groups.map((g) => webSearch(`${q} ${g.map(([, d]) => `site:${d}`).join(" OR ")}`, diag))), left - 3000) || [] : [];
-  const seen = new Set(), cand = [];
+  const seen = new Set(viaImg.map((p) => p.url.split("?")[0])), cand = [];
   let shopLinks = 0;
   for (const u of lists.flat()) {
     const st = storeOf(u); if (!st || skip.includes(st[1])) continue;
@@ -638,35 +664,38 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
     if (!st[2].test(clean) || seen.has(clean)) continue;
     seen.add(clean); cand.push({ url: u, st });
   }
-  // como mucho 3 por tienda, para que salgan varias marcas
   const per = new Map(), picked = cand.filter((c) => { const n = per.get(c.st[0]) || 0; if (n >= 3) return false; per.set(c.st[0], n + 1); return true; }).slice(0, 18);
   const fails = [];
   const read = await pool(picked, 6, async (c) => { try { const f = await within(readProduct(c.url), 7000); if (!f) throw new Error("lenta"); return { ...f, url: c.url, store: c.st[0] }; } catch (e) { fails.push(`${c.st[0]} ${e.message}`); throw e; } }, until);
   const ok = read.filter(Boolean);
-  const fromPages = ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain, type)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).map((p) => {
+  ok.filter((p) => typeOk(p.name, type, piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, plain, type)).filter((p) => { const named = colorsInTitle(p.name); return !(wanted?.k && named.length && !named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k])); }).forEach((p) => {
     const hits = new Set(words(p.name).map(stem).filter((w) => want.has(w))).size;
-    return { store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits };
+    verify({ store: p.store, name: p.name.slice(0, 120), price: p.price ? `${p.price.toFixed(2).replace(".", ",")} ${p.currency}` : "", priceNum: p.price, url: p.url, image: p.image, color: "", _hits: hits });
   });
-  const seenU = new Set();
-  let all = [...viaImg, ...fromPages].filter((p) => { const k = p.url.split("?")[0]; if (seenU.has(k)) return false; seenU.add(k); return true; });
-  // la foto de cada uno: color de verdad y, si buscas liso, sin logo ni dibujo. Tiene su propio tiempo (al menos 14 s)
-  const why = {}; let checked = 0;
-  if (wanted?.hex || plain) {
-    const photoUntil = Math.max(until, Date.now() + 14000);
-    all.sort((a, b) => b._hits - a._hits); all = all.slice(0, 30);
-    await pool(all, 6, async (p) => { const r = await within(checkPhoto(p.thumb || p.image, { wanted, plain, type }), 10000); p._ok = r?.ok ?? null; if (r?.ok != null) checked++; if (r && r.ok === false) why[r.why] = (why[r.why] || 0) + 1; }, photoUntil);
-    const unchecked = all.filter((p) => p._ok == null).length;
-    // lo que no cumple, fuera; lo que no se ha podido mirar, también (si no se pudo mirar NINGUNA foto, se deja y se avisa)
-    all = all.filter((p) => p._ok === true || (p._ok == null && checked === 0));
-    dropped = Object.values(why).reduce((a, b) => a + b, 0);
-    diag.push(`fotos revisadas ${checked}${unchecked ? `, sin revisar ${unchecked}${checked ? " (fuera)" : " (se dejan: no se pudo mirar ninguna)"}` : ""}${dropped ? ` · fuera por ${Object.entries(why).map(([k, n]) => `${k} ${n}`).join(", ")}` : ""}`);
+  // 3) se esperan las fotos que falten (al menos 12 s más; lo que no se haya podido mirar no pasa)
+  if (checks.length) await within(Promise.all(checks), Math.max(4000, Math.max(until, Date.now() + 12000) - Date.now()));
+  let all = found.slice();
+  if (photoCheck) {
+    const pending = checks.length - checked;
+    // si no se pudo mirar NINGUNA foto (sin red para las fotos), se enseña lo que pasó los filtros de texto y se avisa
+    // (y solo lo que por el nombre es seguro: dice el color pedido o, si buscas liso, que es básica/lisa)
+    if (!checked && viaImg.length) {
+      const sure = (p) => { const n = N(p.name), named = colorsInTitle(p.name);
+        const colorOk = !wanted?.k || named.some((k) => k === wanted.k || FAMILY[k] === FAMILY[wanted.k]);
+        return colorOk && (!plain || named.length || /b[aá]sic|\blis[ao]s?\b|plain|essential|esencial/.test(n)); };
+      all = viaImg.filter(sure);
+    }
+    const dropped = Object.values(why).reduce((a, b) => a + b, 0);
+    diag.push(`fotos revisadas ${checked} de ${checks.length}${pending > 0 ? `, sin revisar ${pending}${checked ? " (fuera)" : " (se dejan: no se pudo mirar ninguna)"}` : ""}${dropped ? ` · fuera por ${Object.entries(why).map(([k, n]) => `${k} ${n}`).join(", ")}` : ""}`);
   }
-  const products = all.sort((a, b) => b._hits - a._hits).slice(0, max);
+  // como mucho 3 por tienda, las que mejor encajan
+  const shown = new Map();
+  const products = all.sort((a, b) => b._hits - a._hits).filter((p) => { const n = shown.get(p.store) || 0; if (n >= 3) return false; shown.set(p.store, n + 1); return true; }).slice(0, max);
   // precio: se intenta leer la ficha (si la tienda la cierra, se queda sin precio)
   await pool(products.filter((p) => !p.priceNum), 6, async (p) => {
     try { const f = await within(readProduct(p.url), 6000); if (f?.price) { p.priceNum = f.price; p.price = `${f.price.toFixed(2).replace(".", ",")} ${f.currency}`; } } catch {}
   }, Date.now() + 4000);
 
-  diag.push(`por imágenes ${viaImg.length} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""}`);
+  diag.push(`por imágenes ${viaImg.length} (${[...new Set(viaImg.map((p) => p.store))].join(", ") || "ninguna tienda"}) · enlaces de tiendas ${shopLinks}, fichas ${picked.length}, leídas ${ok.length}${fails.length ? ` (fallos: ${[...new Set(fails)].slice(0, 4).join(", ")})` : ""} · ${Math.round((Date.now() - t0) / 1000)} s`);
   return { products, diag };
 }

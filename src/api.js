@@ -3,15 +3,31 @@ import { API_URL } from "./config.js";
 
 const apiConfigured = !API_URL.includes("TU-SUBDOMINIO");
 
-/** Llama al Worker con el token de Firebase. Lanza {message, status} con texto listo para mostrar. */
-/** Datos que van en todas las peticiones (sección de ropa de la cuenta). */
+/** Datos que van en todas las peticiones (sección de ropa de la cuenta, idioma). */
 export const apiDefaults = {};
-export async function api(path, body, { timeout = 0 } = {}) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Llama al Worker con el token de Firebase. Lanza {message, status} con texto listo para mostrar.
+ * timeout = tiempo total (por defecto 90 s, para que nada se quede colgado). Si falla por algo pasajero
+ * (sin red un momento, servidor o IA saturados: 500/502/503) y queda tiempo, lo vuelve a intentar una vez.
+ */
+export async function api(path, body, { timeout = 90000, retries = 1 } = {}) {
   body = { ...apiDefaults, ...body };
   if (!apiConfigured) throw { message: "Falta poner la URL del servidor en src/config.js." };
+  const deadline = Date.now() + timeout;
+  for (let attempt = 0; ; attempt++) {
+    try { return await once(path, body, deadline - Date.now()); }
+    catch (e) {
+      const passing = (e.status == null && !e.aborted && navigator.onLine !== false) || [500, 502, 503].includes(e.status);
+      if (!passing || attempt >= retries || deadline - Date.now() < 10000) throw e;
+      await sleep(1200 + attempt * 1500);
+    }
+  }
+}
+async function once(path, body, ms) {
   const token = await auth.currentUser.getIdToken();
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), Math.max(3000, ms));
   let res;
-  const ctrl = new AbortController(), timer = timeout ? setTimeout(() => ctrl.abort(), timeout) : null;
   try {
     res = await fetch(API_URL + path, {
       method: "POST", signal: ctrl.signal,
@@ -19,7 +35,7 @@ export async function api(path, body, { timeout = 0 } = {}) {
       body: JSON.stringify(body),
     });
   } catch (e) {
-    if (ctrl.signal.aborted) throw { status: 504, message: "La IA está tardando demasiado." };
+    if (ctrl.signal.aborted) throw { status: 504, aborted: true, message: "La IA está tardando demasiado." };
     throw { message: "No hay conexión con el servidor. Comprueba tu internet." };
   } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));

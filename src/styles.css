@@ -46,7 +46,7 @@ body {
   -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
 }
-body.has-sheet { overflow: hidden; }
+@media (min-width: 900px) { body.has-sheet { overflow: hidden; } } /* en el móvil cada pantalla tiene su propio scroll: no hace falta (y cambiar el body costaba un tirón) */
 img { display: block; max-width: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -724,12 +724,13 @@ html, body { max-width: 100%; overflow-x: clip; }
 .only-looks .looks-head { background: none; border: 0; box-shadow: none; padding: 0; }
 
 /* ---------- fluidez: en el móvil nada de 3D por tarjeta, ni desenfoques que se recalculen al desplazar ---------- */
-.halo { will-change: transform; transform: translate3d(0, calc(var(--sy, 0) * -.22px), 0); }
+.halo { will-change: transform; }
 .glow-ring { will-change: transform; }
 .grid.no-rise .tile { animation: none; }
 .tile { content-visibility: auto; contain-intrinsic-size: auto 260px; }
 @media (hover: none), (pointer: coarse) {
-  .halo { filter: none; }
+  .halo { filter: none; transition-duration: .5s; } /* menos fotogramas repintando el fondo al cambiar de color */
+  .sheet-backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(8, 9, 12, .46); } /* el desenfoque detrás de las hojas costaba tirones al abrirlas */
   .grid { perspective: none; }
   .tile { transform: none; transform-style: flat; transition: box-shadow .2s; }
   .tile:active { transform: scale(.97); }
@@ -813,3 +814,10 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
   .product:hover, .where-card:hover, .stats-item:hover, .look-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 }
 @media (prefers-reduced-motion: reduce) { .view.entering > *, .view.entering .tile { animation: none !important; } .nav-ind { transition: opacity .2s; } .halo { transform: none; } }
+
+/* Compras: resultados que van apareciendo mientras se busca */
+.live { display: grid; gap: 10px; }
+.live-note { display: flex; align-items: center; gap: 8px; margin: 0; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--glow); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.live .product { animation: pop .35s var(--ease) both; }

@@ -1,6 +1,6 @@
 // Hoy: plan del día + tiempo → outfits con tu ropa, cómo llevarlos y el maniquí vestido.
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
-import { t } from "../i18n.js";
+import { t, locale, localize, tx } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label, isWomen, BRA_TYPES } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, say, viewHalo } from "../ui.js";
 import { api } from "../api.js";
@@ -24,7 +24,7 @@ const state = { tab: "hoy", sel: 0, month: null, trip: null };
 const HALO = { sun: ["#f3c26b", "#f2a476"], cloudsun: ["#e9cf98", "#b9c6d6"], cloud: ["#b9c2cd", "#d3d6db"], rain: ["#7fa2c8", "#9cb2c9"], snow: ["#dde6f2", "#c5d3e6"], storm: ["#6f7b9a", "#8d88a8"], fog: ["#c7ccd2", "#d9dadc"] };
 const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
 const since = (ts) => { const n = Math.max(0, Math.round((Date.now() - (ts || Date.now())) / 864e5)); return n === 0 ? t("cal.today") : n === 1 ? t("cal.yesterday") : t("cal.since", { n }); };
-const fmtDate = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-ES", o);
+const fmtDate = (d, o) => new Date(d + "T12:00:00").toLocaleDateString(locale(), o);
 const byId = itemById;
 
 export function renderToday(view, only = null) {
@@ -293,10 +293,10 @@ function tabToday(box) {
     });
     try {
       let r, note = "";
-      if (engineMode() === "app" || !navigator.onLine) r = local(); // sin conexión: el motor propio
+      if (engineMode() === "app" || !navigator.onLine) r = await localize(local()); // sin conexión: el motor propio
       else {
         try { r = await api("/api/outfits", payload, { timeout: 30000 }); }
-        catch (e) { console.warn("IA no disponible, uso el motor de la app", e); r = local(); note = t("engine.fallback"); }
+        catch (e) { console.warn("IA no disponible, uso el motor de la app", e); r = await localize(local()); note = t("engine.fallback"); }
       }
       if (!r.outfits?.length) throw { message: r.missing || t("today.fail") };
       r.outfits = ensureGlasses(r.outfits, store.items); // gafas de ver siempre, también con la IA
@@ -429,7 +429,7 @@ function tabCalendar(box) {
     box.innerHTML = `
       <section class="card cal">
         <div class="cal-head"><button class="btn icon ghost" type="button" id="prev" aria-label="${t("cal.prev")}">${icon("back")}</button>
-          <b class="display">${cap(first.toLocaleDateString("es-ES", { month: "long" }))} ${y}</b>
+          <b class="display">${cap(first.toLocaleDateString(locale(), { month: "long" }))} ${y}</b>
           <button class="btn icon ghost" type="button" id="next" aria-label="${t("cal.next")}" style="transform:scaleX(-1)">${icon("back")}</button></div>
         <div class="cal-grid">${["L", "M", "X", "J", "V", "S", "D"].map((d) => `<span class="wd">${d}</span>`).join("")}${cells.join("")}</div>
         <p class="muted small">${t("cal.monthCount", { n: monthWear.length })}</p>
@@ -530,11 +530,11 @@ function tabTrip(box) {
         const items = avail;
         const localPack = () => packTrip({ items, weather: w, plan: form.plan, style: store.style, days: form.days });
         let r;
-        if (engineMode() === "app" || !navigator.onLine) r = localPack();
+        if (engineMode() === "app" || !navigator.onLine) r = await localize(localPack());
         else try { r = await api("/api/packing", {
           wardrobe: avail.map((i) => ({ id: i.id, name: i.name, type: label(TYPE[i.type]) || i.type, colors: (i.colors || []).map((c) => label(COLOR[c.k]) || c.k), pattern: label(PATTERN[i.pattern]), material: i.material || label(MATERIAL[i.materialKey]), formality: i.formality, seasons: i.seasons, styleTags: i.styleTags })),
           destination: `${form.dest.name} (${form.dest.region || ""})`, days: form.days, plan: form.plan, weather: wText, style: styleText(store.style),
-        }, { timeout: 40000 }); } catch (e) { console.warn("IA no disponible, maleta de la app", e); r = localPack(); toast(t("engine.fallback")); }
+        }, { timeout: 40000 }); } catch (e) { console.warn("IA no disponible, maleta de la app", e); r = await localize(localPack()); toast(t("engine.fallback")); }
         const trip = { dest: form.dest, start: form.start, days: form.days, plan: form.plan, weather: w, pack: r.pack, outfits: r.days, tips: r.tips, missing: r.missing, packed: [] };
         trip.id = await saveTrip(trip);
         state.trip = trip; drawTrip();
@@ -579,8 +579,8 @@ function underHTML(ids, temp = null) {
     if (!u) return "";
     const b = u.id && store.items.find((i) => i.id === u.id);
     if (!b && u.suggest) // no tienes ninguno que encaje: cómo debería ser
-      return `<div class="under-item suggest"><span class="ph">${icon("spark")}</span><span><small>${title} · ${t("under.suggest")}</small><b>${esc(u.suggest)}</b><em>${esc(u.why)}</em></span></div>`;
-    return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}`;
+      return `<div class="under-item suggest"><span class="ph">${icon("spark")}</span><span><small>${title} · ${t("under.suggest")}</small><b>${esc(tx(u.suggest))}</b><em>${esc(tx(u.why))}</em></span></div>`;
+    return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(tx(u.why))}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(tx(u.warn))}</p>` : ""}`;
   };
   // sujetador (sección mujer) y calcetines (todos), elegidos al vuelo para este conjunto
   const html = (isWomen() ? row(pickUnder(its, store.items), t("under.title")) : "") + row(pickSocks(its, store.items, { temp }), t("socks.title"));

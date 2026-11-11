@@ -1,3 +1,4 @@
+import { locale } from "./i18n.js";
 // Funciones del móvil: plan del día desde el calendario, dictar el plan por voz y aviso cada mañana.
 // En el ordenador: voz con el reconocimiento del navegador (si lo tiene); calendario y avisos solo en el APK.
 import { Capacitor } from "@capacitor/core";
@@ -16,7 +17,7 @@ export async function planFromCalendar(date = new Date()) {
   const from = new Date(date); from.setHours(0, 0, 0, 0);
   const to = new Date(from); to.setDate(to.getDate() + 1);
   const { result } = await CapacitorCalendar.listEventsInRange({ from: from.getTime(), to: to.getTime() });
-  const hhmm = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
   const evs = (result || []).filter((e) => e.title).sort((a, b) => a.startDate - b.startDate);
   return evs.map((e) => `${e.isAllDay ? "" : hhmm(e.startDate) + " "}${e.title}${e.location ? ` (${e.location})` : ""}`).join(" · ");
 }
@@ -29,13 +30,13 @@ export async function planByVoice() {
     if (!available) throw new Error("El reconocimiento de voz no está disponible en este móvil.");
     const perm = await SpeechRecognition.requestPermissions();
     if (perm.speechRecognition !== "granted") throw new Error("Sin permiso para el micrófono. Actívalo en los ajustes de la app.");
-    const r = await SpeechRecognition.start({ language: "es-ES", maxResults: 1, popup: true, partialResults: false, prompt: "¿Qué vas a hacer hoy?" });
+    const r = await SpeechRecognition.start({ language: locale(), maxResults: 1, popup: true, partialResults: false, prompt: "¿Qué vas a hacer hoy?" });
     return r.matches?.[0] || "";
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) throw new Error("Tu navegador no permite dictar.");
   return new Promise((resolve, reject) => {
-    const rec = new SR(); rec.lang = "es-ES"; rec.interimResults = false; rec.maxAlternatives = 1;
+    const rec = new SR(); rec.lang = locale(); rec.interimResults = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => resolve(e.results[0][0].transcript);
     rec.onerror = (e) => reject(new Error(e.error === "not-allowed" ? "Sin permiso para el micrófono." : "No te he entendido. Prueba otra vez."));
     rec.onend = () => resolve("");

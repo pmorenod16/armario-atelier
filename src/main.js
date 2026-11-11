@@ -83,8 +83,8 @@ function moveNavInd() {
 }
 addEventListener("resize", moveNavInd);
 // Profundidad: el halo del fondo se mueve un poco más despacio que el contenido al desplazar
-let syRaf = 0;
-const onScroll = (e) => { if (syRaf) return; const el = e.target === document ? document.scrollingElement : e.target; if (!el?.classList?.contains("view") && e.target !== document) return; syRaf = requestAnimationFrame(() => { syRaf = 0; document.documentElement.style.setProperty("--sy", Math.min(600, el.scrollTop || 0)); }); };
+let syRaf = 0; const halo = $(".halo"); // se mueve solo el halo (una variable en :root obligaba a recalcular toda la página)
+const onScroll = (e) => { if (syRaf) return; const el = e.target === document ? document.scrollingElement : e.target; if (!el?.classList?.contains("view") && e.target !== document) return; syRaf = requestAnimationFrame(() => { syRaf = 0; halo.style.transform = `translate3d(0, ${-Math.min(600, el.scrollTop || 0) * 0.22}px, 0)`; }); };
 document.addEventListener("scroll", onScroll, { capture: true, passive: true });
 const ROUTES = { hoy: (v) => renderToday(v), outfits: (v) => renderToday(v, "outfits"), armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
 const DEFAULT = "hoy";
@@ -255,13 +255,14 @@ watchAuth((user) => {
 function openApp() {
   startData();
   let started = false;
-  let baseKey = "";
+  let baseKey = "", langNow = null;
   unsubStore = subscribe(() => {
     // color secundario de fondo: la paleta de tu estilo (si no hay, el gris de serie)
     const pal = store.style?.palette || [], k = pal.slice(0, 3).map((p) => p.hex).join();
     if (k !== baseKey) { baseKey = k; setHaloBase(pal[0]?.hex, pal[1]?.hex || pal[2]?.hex); }
     if (!store.ready.profile) return;
-    setLanguage(store.profile.language || "es"); translateDom();
+    // idioma: solo cuando cambia (antes se releía en cada cambio de datos y costaba en catalán/inglés)
+    if ((store.profile.language || "es") !== langNow) { langNow = store.profile.language || "es"; setLanguage(langNow); translateDom(); }
     if (getLanguage() !== "es" && !window.__i18nChecked) { window.__i18nChecked = true; ensureLanguage(getLanguage()).then((n) => { if (n) { setLanguage(getLanguage()); translateDom(); route(); } }).catch(() => {}); }
     if (!store.profile.onboarded && !onboarding && !started) {
       onboarding = true; $("#app").hidden = true;

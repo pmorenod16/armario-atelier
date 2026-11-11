@@ -1,7 +1,7 @@
 // Añadir una prenda: foto → recorte en el móvil + lectura con IA a la vez → foto de etiqueta (opcional) → revisar y guardar.
 // Editar usa el mismo formulario.
 import { t } from "../i18n.js";
-import { $, esc, icon, openSheet, pickPhoto, isCancel, dropZone, toast, say, soften, setHalo, isNative } from "../ui.js";
+import { $, esc, icon, openSheet, pickPhoto, isCancel, dropZone, toast, say, soften, isNative, tempHalo } from "../ui.js";
 import { shrinkPhoto, makeCutout, clearLenses } from "../cutout.js";
 import { api, blobToBase64 } from "../api.js";
 import { saveItem, fullImage } from "../data.js";
@@ -37,7 +37,7 @@ export function openAdd(file) {
       <div class="or"><span>${t("add.orLink")}</span></div>
       <form class="off-link" id="startLink"><input class="input" name="url" type="url" inputmode="url" placeholder="${t("official.linkPh")}" aria-label="${t("add.fromLink")}"><button class="btn sm primary" type="submit">${t("official.go")}</button></form>
       <div id="startOfficial"></div>
-    </div>`, { label: t("add.title"), onClose: () => { document.removeEventListener("paste", onPaste); setHalo(null); } });
+    </div>`, { label: t("add.title"), onClose: () => { document.removeEventListener("paste", onPaste); tempHalo(null); } });
   const root = sheet.el;
   $("[data-close]", root).onclick = () => sheet.close();
   const onPaste = (e) => { const f = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/")); if (f) start(f); };
@@ -103,7 +103,7 @@ export function openAdd(file) {
       const pv = $("#pv", root);
       pv.innerHTML = `<img src="${URL.createObjectURL(c.blob)}" alt="">`;
       pv.style.setProperty("--tint", tintFor(c.tone) || "var(--surface-solid)");
-      setHalo(c.tone);
+      tempHalo(c.tone);
       URL.revokeObjectURL(rawUrl);
       if (c.method !== "ia") toast(t(c.method === "fondo-liso" ? "add.cutFlat" : "add.cutNone"));
       $("#save", root).disabled = false;
@@ -172,7 +172,7 @@ function showCut(root, c) {
   const pv = $("#pv", root);
   pv.innerHTML = `<img src="${URL.createObjectURL(c.blob)}" alt="">`;
   pv.style.setProperty("--tint", tintFor(c.tone) || "var(--surface-solid)");
-  setHalo(c.tone);
+  tempHalo(c.tone);
 }
 
 // "www.zara.com" → "Zara"

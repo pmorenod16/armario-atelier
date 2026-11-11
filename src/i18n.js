@@ -451,8 +451,11 @@ const DICT = {
     "shop.prio.media": "Media",
     "shop.prio.baja": "Baja",
     "shop.search": "Buscar modelos",
+    "style.urlPh": "https://pin.it/… o pinterest.com/usuario/tablero",
+    "shop.liveSearching": "Buscando en las tiendas y revisando cada foto…",
+    "shop.liveFound": "{n} encontrados hasta ahora · sigo buscando…",
     "shop.rechecked": "{piece}: quitados {n} resultados antiguos que no cumplían los filtros nuevos",
-    "shop.searching": "Buscando y revisando fotos (hasta 1 min)…",
+    "shop.searching": "Buscando…",
     "shop.seeModels": "Ver modelos",
     "shop.searchAgain": "Buscar otra vez",
     "shop.searchedAt": "Buscado el {date}",
@@ -684,26 +687,96 @@ function load(l) {
 }
 export const setLanguage = (l) => {
   if (!LANGUAGES.some((x) => x.k === l)) l = "es";
-  if (l !== "es") load(l);
+  if (l !== "es") { load(l); loadDyn(l); }
   lang = l; document.documentElement.lang = l;
 };
+
+/* ---------- textos libres del motor de la app (sin IA): outfits, maleta, huecos, calcetines… ----------
+   Los escribe en castellano; en catalán o inglés se traducen con la IA la primera vez y se guardan en el dispositivo. */
+const DL = (l) => `i18n-dyn:${l}`;
+let dyn = {};
+function loadDyn(l) { try { dyn = JSON.parse(localStorage.getItem(DL(l)) || "{}"); } catch { dyn = {}; } }
+function saveDyn() { try { const k = Object.keys(dyn); if (k.length > 3000) k.slice(0, k.length - 3000).forEach((x) => delete dyn[x]); localStorage.setItem(DL(lang), JSON.stringify(dyn)); } catch {} }
+const isText = (s) => typeof s === "string" && s.length > 2 && /[a-záéíóúñ]{3}/i.test(s);
+/** Traduce frases sueltas (espera a la IA como mucho ms; si no llega, se quedan en castellano). */
+export async function translateTexts(list, ms = 12000) {
+  if (lang === "es") return list;
+  const miss = [...new Set(list.filter((x) => isText(x) && !dyn[x]))];
+  if (miss.length) {
+    try {
+      const { api } = await import("./api.js"), until = Date.now() + ms;
+      for (let i = 0; i < miss.length && Date.now() < until; i += 60) {
+        const part = Object.fromEntries(miss.slice(i, i + 60).map((x, j) => [`d${j}`, x]));
+        const r = await api("/api/translate", { lang, entries: part }, { timeout: Math.max(3000, until - Date.now()), retries: 0 });
+        for (const [k, x] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) dyn[x] = r.entries[k];
+      }
+      saveDyn();
+    } catch {}
+  }
+  return list.map((x) => dyn[x] || x);
+}
+const FREE = new Set(["title", "why", "how", "missing", "advice", "tips", "note", "suggest", "warn", "piece", "fits", "off", "headline", "extras"]);
+/** Traduce los textos libres de un resultado del motor (in situ) antes de guardarlo o enseñarlo. */
+export async function localize(obj) {
+  if (lang === "es" || !obj) return obj;
+  const slots = [];
+  const walk = (o) => {
+    if (Array.isArray(o)) return o.forEach(walk);
+    if (!o || typeof o !== "object") return;
+    for (const [k, v] of Object.entries(o)) {
+      if (FREE.has(k) && typeof v === "string") slots.push([o, k, null]);
+      else if (FREE.has(k) && Array.isArray(v) && v.every((x) => typeof x === "string")) v.forEach((_, i) => slots.push([v, i, null]));
+      else walk(v);
+    }
+  };
+  walk(obj);
+  const out = await translateTexts(slots.map(([o, k]) => o[k]));
+  slots.forEach(([o, k], i) => { o[k] = out[i]; });
+  return obj;
+}
+/** Para textos del motor que se calculan al pintar: si ya está traducido sale traducido; si no, se pide y se cambia en pantalla al llegar. */
+const pend = new Set(); let pendTimer = 0;
+export function tx(s) {
+  if (lang === "es" || !isText(s)) return s;
+  if (dyn[s]) return dyn[s];
+  pend.add(s); clearTimeout(pendTimer);
+  pendTimer = setTimeout(async () => {
+    const list = [...pend]; pend.clear();
+    await translateTexts(list);
+    // cambio en el sitio: sin repintar la pantalla (no salta ni vuelve arriba)
+    const done = list.filter((x) => dyn[x]); if (!done.length) return;
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) { let v = n.nodeValue; for (const x of done) if (v.includes(x)) v = v.split(x).join(dyn[x]); if (v !== n.nodeValue) n.nodeValue = v; }
+  }, 300);
+  return s;
+}
 export const getLanguage = () => lang;
+/** Formato regional de fechas, horas y números del idioma elegido (y del dictado por voz). */
+export const locale = () => ({ es: "es-ES", ca: "ca-ES", en: "en-GB" }[lang] || "es-ES");
 /** Traduce lo que falte del idioma l. onProgress(hechas, total). Devuelve cuántas ha traducido. */
 export async function ensureLanguage(l, onProgress = () => {}) {
   if (l === "es") return 0;
   const cat = await import("./catalog.js"), { api } = await import("./api.js");
   const src = { ...DICT.es };
   for (const list of [cat.GROUPS, cat.TYPES, cat.COLORS, cat.PATTERNS, cat.MATERIALS, cat.FITS]) for (const e of list || []) if (e.es) src["~" + e.es] = e.es;
+  for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
   const cache = readCache(l);
   const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);
+  // por tandas; si una falla se sigue con las demás (lo que falte se vuelve a pedir la próxima vez) y se guarda lo hecho
+  let failed = 0, lastErr = null;
   for (let i = 0; i < missing.length; i += 80) {
     const part = Object.fromEntries(missing.slice(i, i + 80));
-    const r = await api("/api/translate", { lang: l, entries: part }, { timeout: 60000 });
-    for (const [k, v] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) cache[k] = [v, r.entries[k]];
-    try { localStorage.setItem(LS(l), JSON.stringify(cache)); } catch {}
+    try {
+      const r = await api("/api/translate", { lang: l, entries: part }, { timeout: 60000 });
+      for (const [k, v] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) cache[k] = [v, r.entries[k]];
+      try { localStorage.setItem(LS(l), JSON.stringify(cache)); } catch {}
+    } catch (e) { failed++; lastErr = e; }
     onProgress(Math.min(i + 80, missing.length), missing.length);
   }
   if (lang === l) load(l);
+  // si no ha salido casi nada, se avisa; si falta poco, se usa así (lo que falte sale en castellano y se completa luego)
+  const done = Object.keys(src).filter((k) => cache[k]?.[0] === src[k]).length;
+  if (failed && done < Object.keys(src).length * 0.8) throw lastErr || { message: "No se ha podido traducir." };
   return missing.length;
 }
 /** Texto libre en castellano del catálogo → idioma actual. */

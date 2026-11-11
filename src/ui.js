@@ -163,15 +163,31 @@ function glowOf(colors) {
   const s = s0 < 0.12 ? s0 * 0.6 : Math.max(0.42, Math.min(0.85, s0)); // neutros (negro, blanco, gris) se quedan neutros
   return { light: hsl(h, s, 0.5), dark: hsl(h, s, 0.66) };
 }
+// Los colores del halo van en el propio .halo (cambiarlos en :root obligaba a recalcular toda la página en cada ficha
+// abierta o cerrada: tirón en el móvil). El color secundario (--glow) sí va en :root, y solo si cambia de verdad.
+let lastGlow = "";
 function paint(a, b) {
-  const st = document.documentElement.style;
-  if (!a) { ["--halo-a", "--halo-b", "--glow-l", "--glow-d"].forEach((k) => st.removeProperty(k)); return; }
-  st.setProperty("--halo-a", a); st.setProperty("--halo-b", b || a);
-  const g = glowOf([a, b]);
-  if (g) { st.setProperty("--glow-l", g.light); st.setProperty("--glow-d", g.dark); }
+  const st = document.documentElement.style, hs = document.querySelector(".halo")?.style;
+  if (!a) {
+    hs?.removeProperty("--halo-a"); hs?.removeProperty("--halo-b");
+    if (lastGlow) { st.removeProperty("--glow-l"); st.removeProperty("--glow-d"); lastGlow = ""; }
+    return;
+  }
+  hs?.setProperty("--halo-a", a); hs?.setProperty("--halo-b", b || a);
+  const g = glowOf([a, b]), key = g ? g.light + g.dark : "";
+  if (g && key !== lastGlow) { lastGlow = key; st.setProperty("--glow-l", g.light); st.setProperty("--glow-d", g.dark); }
 }
-let specific = false;
-export function setHalo(a, b) { if (window.__peek) { window.__peekHalo = [a, b]; return; } specific = !!a; if (a) paint(a, b); else paint(base?.[0], base?.[1]); }
+let specific = false, shown = [null, null];
+export function setHalo(a, b) { if (window.__peek) { window.__peekHalo = [a, b]; return; } specific = !!a; shown = a ? [a, b] : [base?.[0], base?.[1]]; if (!tempOn) paint(...shown); }
+/** Halo de una hoja (ficha, añadir): cambia solo el fondo, sin tocar el color secundario de toda la app (más barato
+ *  y sin tirón al abrir), y al cerrarla vuelve el de la pantalla de debajo. */
+let tempOn = false;
+export function tempHalo(a, b) {
+  tempOn = !!a;
+  const hs = document.querySelector(".halo")?.style; if (!hs) return;
+  const [x, y] = a ? [a, b || a] : shown;
+  if (x) { hs.setProperty("--halo-a", x); hs.setProperty("--halo-b", y || x); } else { hs.removeProperty("--halo-a"); hs.removeProperty("--halo-b"); }
+}
 /** Colores de fondo cuando la pantalla no enseña nada concreto (la paleta de tu estilo). */
 /** Halo pedido desde una pantalla: si esa pantalla es la vecina pintada de antemano para deslizar (.view.peek) o ya no está,
  *  no toca el halo de la que se ve; se guarda en la capa y se aplica si llega a entrar. */
@@ -183,7 +199,7 @@ export function viewHalo(el, a = null, b = null) {
 }
 export function setHaloBase(a, b) {
   base = a ? [a, b || a] : null;
-  if (!specific) paint(base?.[0], base?.[1]);
+  if (!specific) { shown = [base?.[0], base?.[1]]; if (!tempOn) paint(...shown); }
 }
 
 /** Mezcla un color con blanco/negro (para fondos suaves de tarjeta). */

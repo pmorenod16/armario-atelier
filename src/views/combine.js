@@ -1,5 +1,5 @@
 // «¿Con qué lo combino?»: outfits que llevan una prenda concreta (motor de la app, al instante, con el tiempo de hoy).
-import { t } from "../i18n.js";
+import { t, localize } from "../i18n.js";
 import { $, esc, icon, openSheet, toast } from "../ui.js";
 import { store, logWear, saveLook, lookSaved, deleteLook } from "../data.js";
 import { suggestOutfits } from "../engine.js";
@@ -15,7 +15,7 @@ export async function openCombine(item) {
   let wx = null;
   try { const p = store.profile; wx = await todayWeather(p.places.find((x) => x.id === p.activePlace) || p.places[0]); } catch {}
   const avail = store.items.filter((i) => i.status === "disponible" || i.id === item.id);
-  const r = suggestOutfits({ items: avail, weather: wx, plan: "", style: store.style, wear: store.wear, feedback: store.feedback, count: 3, must: item.id });
+  const r = await localize(suggestOutfits({ items: avail, weather: wx, plan: "", style: store.style, wear: store.wear, feedback: store.feedback, count: 3, must: item.id }));
   const out = $("#out", sh.el);
   if (!r.outfits.length) { out.innerHTML = `<p class="notice">${esc(r.missing || t("combine.none"))}</p>`; return; }
   out.innerHTML = `${wx ? `<p class="muted small">${t("combine.weather", { max: wx.max, min: wx.min })}</p>` : ""}<div class="combine-list">${r.outfits.map((o, i) => `

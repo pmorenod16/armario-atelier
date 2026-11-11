@@ -1,6 +1,6 @@
 // Compras: qué te falta (para combinar mejor y para tu estilo) con modelos reales a precio razonable,
 // lista de deseos y modo tienda (foto a una prenda → ¿me la compro?).
-import { t } from "../i18n.js";
+import { t, locale, localize } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
 import { $, esc, icon, toast, say, viewHalo, pickPhoto, isCancel } from "../ui.js";
 import { api, blobToBase64, base64ToBlob } from "../api.js";
@@ -14,8 +14,8 @@ import { LOCAL_DEFAULT } from "../storesearch.js";
 import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, sectionOk, checkPhoto, wantsPlain, photoPlain, wantedColor, allowedStores, allowedBrands } from "../storesearch.js";
 
 const byId = itemById;
-const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
-const eur = (n) => n == null ? "" : `${Number(n).toLocaleString("es-ES", { maximumFractionDigits: n % 1 ? 2 : 0 })} €`;
+const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "long" }) : "";
+const eur = (n) => n == null ? "" : `${Number(n).toLocaleString(locale(), { maximumFractionDigits: n % 1 ? 2 : 0 })} €`;
 const wardrobe = () => store.items.map((i) => ({
   id: i.id, name: i.name, type: label(TYPE[i.type]) || i.type, colors: (i.colors || []).map((c) => label(COLOR[c.k]) || c.k),
   pattern: label(PATTERN[i.pattern]), material: i.material || label(MATERIAL[i.materialKey]), fit: label(FIT[i.fit]),
@@ -85,14 +85,9 @@ export function renderShop(view) {
           <button class="btn sm ghost where-btn" type="button" data-where title="${t("where.title")}">${icon("bag")}${esc(whereSummary())}</button>
           ${r && isOpen ? `<span class="muted small">${t("shop.searchedAt", { date: fmtDate(r.searched) })}</span>` : ""}
         </div>
-        ${r && isOpen ? `
-          ${r.products?.some((p) => textOk(g, p)) ? `<div class="products">${r.products.map((p, k) => !textOk(g, p) ? "" : `
-            <div class="product">
-              <a class="p-img" href="${esc(p.url)}" target="_blank" rel="noopener">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"${p.thumb && p.thumb !== p.image ? ` onerror="this.onerror=null;this.src='${esc(p.thumb)}'"` : ""}>` : icon("bag")}</a>
-              <div class="p-info"><span class="muted small">${esc(p.store)}</span><a href="${esc(p.url)}" target="_blank" rel="noopener" class="p-name">${esc(p.name)}</a>
-                <div class="p-price"><b>${esc(p.price || t("shop.noPrice"))}</b>${p.verdict ? `<span class="pill v-${p.verdict}">${t(VERDICT[p.verdict])}</span>` : ""}</div></div>
-              <button class="btn sm icon ghost heart" type="button" data-wish="${esc(g.id)}|${k}" aria-pressed="${wished.has(p.url)}" aria-label="${t("shop.toWish")}">${icon("heart")}</button>
-            </div>`).join("")}</div>` : `<p class="muted small">${t("shop.noProducts")}</p>`}
+        ${searching.has(g.id) ? `<div class="live" data-live="${esc(g.id)}">${liveHTML(g.id)}</div>` : ""}
+        ${r && isOpen && !searching.has(g.id) ? `
+          ${r.products?.some((p) => textOk(g, p)) ? `<div class="products">${r.products.map((p, k) => !textOk(g, p) ? "" : productHTML(p, `${g.id}|${k}`, wished)).join("")}</div>` : `<p class="muted small">${t("shop.noProducts")}</p>`}
           ${r.size || size ? `<p class="muted small">${t("shop.sizeNote", { s: esc(r.size || size) })}</p>` : ""}
           ${!r.allStores ? `<p class="muted small">${t("shop.moreInApp")}</p>` : ""}
           ${r.diag && r.allStores ? `<details class="diag"><summary class="muted small">${t("shop.diag")}</summary><p class="muted small">${esc(r.diag)}</p></details>` : ""}
@@ -138,24 +133,44 @@ export function renderShop(view) {
     try {
       let r;
       const local = () => findGaps({ items: store.items, style: store.style });
-      if (store.profile?.engine === "app") r = local();
+      if (store.profile?.engine === "app") r = await localize(local());
       else try { r = await api("/api/gaps", { wardrobe: wardrobe(), style: styleText(store.style), sizes: store.profile?.sizes || {} }, { timeout: 45000 }); }
-      catch (e) { console.warn("IA no disponible, huecos de la app", e); r = local(); toast(t("engine.fallback")); }
+      catch (e) { console.warn("IA no disponible, huecos de la app", e); r = await localize(local()); toast(t("engine.fallback")); }
       open.clear();
       await saveShopping({ ...r, engine: !!r.engine, at: Date.now(), items: store.items.length, results: {} });
       busy = false; draw();
     } catch (e) { busy = false; if (b) b.disabled = false; say(st, e?.message || t("shop.fail"), "error"); }
   }
 
+  // Lo que va apareciendo mientras se busca (ya revisado: esa prenda, color y sin logo), sin esperar al final
+  const live = new Map(), liveTimer = new Map();
+  function liveHTML(gid) {
+    const list = live.get(gid) || [];
+    return `<p class="muted small live-note"><span class="spin"></span>${list.length ? t("shop.liveFound", { n: list.length }) : t("shop.liveSearching")}</p>${list.length ? `<div class="products">${list.map((p) => productHTML(p, null, null)).join("")}</div>` : ""}`;
+  }
+  // solo se añaden los nuevos (los que ya se ven no se repintan: nada salta ni parpadea)
+  function paintLive(gid) {
+    if (liveTimer.get(gid)) return;
+    liveTimer.set(gid, setTimeout(() => {
+      liveTimer.delete(gid);
+      const el = view.querySelector(`[data-live="${CSS.escape(gid)}"]`); if (!el) return;
+      const list = live.get(gid) || [];
+      if (!el.querySelector(".products")) { el.innerHTML = liveHTML(gid); return; }
+      const shown = new Set([...el.querySelectorAll(".product .p-name")].map((a) => a.getAttribute("href")));
+      const add = list.filter((p) => !shown.has(p.url));
+      if (add.length) el.querySelector(".products").insertAdjacentHTML("beforeend", add.map((p) => productHTML(p, null, null)).join(""));
+      el.querySelector(".live-note").innerHTML = `<span class="spin"></span>${t("shop.liveFound", { n: shown.size + add.length })}`;
+    }, 350));
+  }
   async function search(g) {
     if (!g || searching.has(g.id)) return;
-    searching.add(g.id); open.add(g.id); draw();
+    searching.add(g.id); open.add(g.id); live.set(g.id, []); draw();
     try {
       // Zara (servidor) y el resto de tiendas (desde el móvil, sin IA ni claves) a la vez
       const only = [...allowedStores(store.profile), ...allowedBrands(store.profile)], wantZara = only.includes("Zara");
       const [srv, dev] = await Promise.all([
         !wantZara ? Promise.resolve({ products: [], links: [] }) : api("/api/shop", { piece: g.piece, searchTerm: g.searchTerm, color: g.color, priceMin: g.priceMin, priceMax: g.priceMax, stores: g.stores, size: sizeFor(g.type) }, { timeout: 40000 }).catch((e) => ({ error: e })),
-        Promise.race([new Promise((ok) => setTimeout(() => ok({ products: [], diag: ["se ha cortado a los 75 s"] }), 75000)), searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, plain: wantsPlain(g), only }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; })]),
+        Promise.race([new Promise((ok) => setTimeout(() => ok({ products: [], diag: ["se ha cortado a los 75 s"] }), 75000)), searchStores({ term: g.searchTerm || g.piece, piece: g.piece, color: g.color, colorHex: g.colorHex, type: g.type, plain: wantsPlain(g), only, onFound: (l) => { if (searching.has(g.id)) { live.set(g.id, l); paintLive(g.id); } } }).catch((e) => { console.warn("tiendas", e); return { products: [], diag: ["error: " + (e?.message || e)] }; })]),
       ]);
       const devRes = dev; const dev2 = devRes.products || [];
       // aunque todo falle, siempre quedan los enlaces «Buscar en…» de cada tienda
@@ -170,10 +185,10 @@ export function renderShop(view) {
       const mixed = []; for (let k = 0; mixed.length < all.length; k++) { let any = false; for (const l of byStore.values()) if (l[k]) { mixed.push(l[k]); any = true; } if (!any) break; }
       const seenUrl = new Set();
       const r = { products: mixed.filter((p) => !seenUrl.has(p.url) && seenUrl.add(p.url)).slice(0, 18), links: storeLinks(g, only), size: srv.size || sizeFor(g.type) || null, searched: Date.now(), fv: FILTER_V, allStores: canSearchStores, diag: (devRes.diag || []).join(" · ").slice(0, 600) };
-      searching.delete(g.id);
+      searching.delete(g.id); live.delete(g.id);
       await saveShopResult(g.id, r);
       if (!r.products?.length) toast(t("shop.noProductsToast"));
-    } catch (e) { searching.delete(g.id); toast(e?.message || t("shop.fail"), "error"); }
+    } catch (e) { searching.delete(g.id); live.delete(g.id); toast(e?.message || t("shop.fail"), "error"); }
     draw();
   }
 
@@ -328,8 +343,17 @@ function priceNum(p) {
   const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** Tarjeta de un modelo encontrado. wishKey = «hueco|índice» para el corazón (sin él, sin corazón: resultados en directo). */
+function productHTML(p, wishKey, wished) {
+  return `<div class="product">
+    <a class="p-img" href="${esc(p.url)}" target="_blank" rel="noopener">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"${p.thumb && p.thumb !== p.image ? ` onerror="this.onerror=null;this.src='${esc(p.thumb)}'"` : ""}>` : icon("bag")}</a>
+    <div class="p-info"><span class="muted small">${esc(p.store)}</span><a href="${esc(p.url)}" target="_blank" rel="noopener" class="p-name">${esc(p.name)}</a>
+      <div class="p-price"><b>${esc(p.price || t("shop.noPrice"))}</b>${p.verdict ? `<span class="pill v-${p.verdict}">${t(VERDICT[p.verdict])}</span>` : ""}</div></div>
+    ${wishKey ? `<button class="btn sm icon ghost heart" type="button" data-wish="${esc(wishKey)}" aria-pressed="${wished.has(p.url)}" aria-label="${t("shop.toWish")}">${icon("heart")}</button>` : ""}
+  </div>`;
+}
 // versión de los filtros de búsqueda: al subirla, las búsquedas guardadas se revisan solas al abrir Compras
-const FILTER_V = 4;
+const FILTER_V = 5;
 /** Filtros de texto (prenda, sección hombre/mujer en varios idiomas, liso/logo) para lo ya guardado. */
 function textOk(g, p) { return typeOk(p.name, g.type, g.piece, p.url) && sectionOk(p.name, p.url) && patternOk(p.name, p.url, wantsPlain(g), g.type); }
 const rechecking = new Set();
