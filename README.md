@@ -1,12 +1,12 @@
 # Armario Atelier
 
-App para Android y ordenador para clasificar tu armario, montar outfits en un maniquí 3D con las fotos reales de tus prendas, analizar tu estilo de Pinterest y saber qué te falta comprar y dónde.
+App para Android y ordenador para clasificar tu armario, montar outfits con las fotos reales de tus prendas, analizar tu estilo de Pinterest y saber qué te falta comprar y dónde.
 
 ## Cómo está montada
 
 | Pieza | Qué hace | Coste |
 |---|---|---|
-| App (`src/`, Vite + Capacitor) | Interfaz, cámara, recorte de fondo en el móvil, maniquí 3D (three.js) | Gratis |
+| App (`src/`, Vite + Capacitor) | Interfaz, cámara, recorte de fondo en el móvil, outfits con tus fotos, búsqueda de modelos en tiendas desde el móvil | Gratis |
 | Firebase (Auth + Firestore) | Tu cuenta, tus prendas, fotos recortadas, outfits y perfil de estilo | Gratis (plan Spark) |
 | Cloudflare Worker (`worker/`) | Guarda la clave de Gemini y hace las llamadas a la IA | Gratis |
 | API de Gemini (Google) | Clasificar fotos, outfits, Pinterest, lista de compra, búsqueda en tiendas con Google | Gratis (plan gratuito, o con los 10 $/mes de crédito de Google AI Pro) |
@@ -80,14 +80,12 @@ Usa la misma cuenta que en el móvil: el armario se sincroniza entre los dos. En
 ## Uso
 
 - **Fotos de prendas:** extiéndela sobre un fondo liso (sábana, suelo claro), de frente y con buena luz. La primera vez el móvil descarga el modelo de recorte (unos 40 MB, con wifi mejor); después recorta sin conexión.
-- **Probador 3D:** la foto recortada se coloca sobre el maniquí y los lados y la espalda toman el color de la prenda. Arrastra para girar, pellizca para acercar.
-- **Pinterest:** pega el enlace de un tablero **público** (`pinterest.com/usuario/tablero`). Se analizan los 12 pines más recientes. Si es secreto o Pinterest no responde, sube capturas.
-- **Qué comprar:** primero *Analizar qué me falta*; luego, en cada prenda, *Buscar modelos ahora* busca con Google en las webs de Zara, Massimo Dutti, H&M, Mango, Pull&Bear, Bershka, Uniqlo y COS y te enseña modelos con precio y enlace.
+- **Outfits:** las fotos recortadas se colocan en un lienzo de la cabeza a los pies; con «Colocar a mi gusto» puedes moverlas y cambiar su tamaño.
+- **Pinterest:** pega el enlace de un tablero **público** (`pinterest.com/usuario/tablero`). El móvil lee el tablero y se analizan hasta 40 pines repartidos. Si es secreto o Pinterest no responde, sube capturas.
+- **Qué comprar:** primero *Analizar qué me falta*; luego, en cada prenda, *Buscar modelos* busca desde el móvil en las tiendas y marcas que marques en «Dónde buscar» (por defecto, las que tienen tienda en Girona) y solo enseña los que son esa prenda, del color pedido y lisos si no pides estampado.
 
 ## Coste de la IA
-Cero. *Buscar modelos ahora* usa **Tavily** (1.000 búsquedas gratis al mes, sin tarjeta): crea la cuenta en <https://app.tavily.com>, copia la clave y guárdala en Cloudflare como secreto `TAVILY_API_KEY`. Tavily busca solo en las webs de las tiendas y Gemini (gratis) saca nombre, precio y enlace. Sin esa clave, se intenta la búsqueda de Google de Gemini, que necesita facturación.
-
-Resto: La app usa Gemini (por defecto `gemini-3.5-flash`, configurable en `worker/wrangler.toml`). En el plan gratuito hay un número limitado de peticiones al día (lo ves en AI Studio) y la búsqueda con Google tiene un cupo gratuito mensual de sobra para uso personal. Con el crédito de Google AI Pro el uso normal de la app queda muy por debajo de los 10 $/mes.
+Cero. La app usa Gemini (por defecto `gemini-3.5-flash`, configurable en `worker/wrangler.toml`); si se agota el cupo gratuito, el Worker pasa a la IA de Cloudflare y después a NVIDIA. La búsqueda de modelos en tiendas la hace el propio móvil (buscadores de imágenes y fichas de las tiendas), sin claves ni servicios de pago; la búsqueda con Google de Gemini en el servidor solo se usa si hay facturación. Con el crédito de Google AI Pro el uso normal queda muy por debajo de los 10 $/mes.
 
 ## Desarrollo
 ```bash

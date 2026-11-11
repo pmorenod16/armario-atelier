@@ -1,7 +1,7 @@
 import { auth } from "./firebase.js";
 import { API_URL } from "./config.js";
 
-export const apiConfigured = !API_URL.includes("TU-SUBDOMINIO");
+const apiConfigured = !API_URL.includes("TU-SUBDOMINIO");
 
 /** Llama al Worker con el token de Firebase. Lanza {message, status} con texto listo para mostrar. */
 /** Datos que van en todas las peticiones (sección de ropa de la cuenta). */

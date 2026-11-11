@@ -2,17 +2,17 @@
 // Un tablero principal (los campos de arriba de meta/style) y otros para usos concretos (salir, eventos…) en `extra`.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, esc, icon, toast, say, setHalo, viewHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
+import { $, esc, icon, toast, say, viewHalo, pickPhotos, isCancel, openSheet } from "../ui.js";
 import { api, blobToBase64 } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
-import { store, subscribe, saveStyle, saveBoard, addBoard, removeBoard, boardsOf, styleText, logWear, saveLook } from "../data.js";
+import { store, subscribe, saveStyle, saveBoard, addBoard, removeBoard, boardsOf, styleText, logWear, saveLook, itemById } from "../data.js";
 import { tintFor } from "./add.js";
 import { pinToBase64 } from "../pinterest.js";
 import { readBoardPins, analyzePins } from "../stylesync.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { matchStyle } from "../engine.js";
 
-const byId = (id) => store.items.find((i) => i.id === id);
+const byId = itemById;
 const fmt = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
 const USES = ["Salir de noche", "Cita", "Eventos y bodas", "Trabajo", "Clase", "Deporte", "Verano", "Invierno"];
 const wardrobeFor = (list) => list.map((i) => ({

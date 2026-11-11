@@ -2,10 +2,10 @@
 // lista de deseos y modo tienda (foto a una prenda → ¿me la compro?).
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label } from "../catalog.js";
-import { $, esc, icon, toast, say, setHalo, viewHalo, pickPhoto, isCancel, openSheet } from "../ui.js";
+import { $, esc, icon, toast, say, viewHalo, pickPhoto, isCancel } from "../ui.js";
 import { api, blobToBase64, base64ToBlob } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
-import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, deleteWish } from "../data.js";
+import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, deleteWish, itemById } from "../data.js";
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
@@ -13,7 +13,7 @@ import { openWhere, whereSummary } from "./storepicker.js";
 import { LOCAL_DEFAULT } from "../storesearch.js";
 import { searchStores, canSearchStores, ALL_SOURCES, typeOk, patternOk, sectionOk, checkPhoto, wantsPlain, photoPlain, wantedColor, allowedStores, allowedBrands } from "../storesearch.js";
 
-const byId = (id) => store.items.find((i) => i.id === id);
+const byId = itemById;
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "";
 const eur = (n) => n == null ? "" : `${Number(n).toLocaleString("es-ES", { maximumFractionDigits: n % 1 ? 2 : 0 })} €`;
 const wardrobe = () => store.items.map((i) => ({
@@ -22,7 +22,7 @@ const wardrobe = () => store.items.map((i) => ({
   formality: i.formality, seasons: i.seasons, styleTags: i.styleTags, wears: i.wearCount || 0,
 }));
 /** Talla que toca según el tipo de prenda (de las tallas del perfil). */
-export function sizeFor(type) {
+function sizeFor(type) {
   const s = store.profile?.sizes || {}, g = TYPE[type]?.g;
   const key = type === "vaquero" ? "vaquero" : type === "americana" || type === "traje-pantalon" ? "americana"
     : { camisetas: "camiseta", camisas: "camisa", punto: "jersey", abrigo: "jersey", pantalones: "pantalon", calzado: "calzado" }[g];

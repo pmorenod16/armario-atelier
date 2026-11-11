@@ -420,7 +420,7 @@ const isSkin = (q) => q[0] > 28 && q[0] < 90 && q[1] > 5 && q[1] < 32 && q[2] > 
 const SHIRTY = /^(camisa|camisa-mc|polo|sobrecamisa|cardigan|chaqueta|americana|cazadora)/; // tienen botones o cremallera en el centro
 
 /** Analiza una foto ya cargada: { color (rgb), c0 (Lab), logo (parte de la prenda con dibujo/logo), print (dibujo grande) }. */
-export function analyzePhoto(img, type = "") {
+function analyzePhoto(img, type = "") {
   const W = 96, H = 120, c = document.createElement("canvas"); c.width = W; c.height = H;
   const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
   const d = g.getImageData(0, 0, W, H).data, N = W * H;
@@ -498,7 +498,7 @@ export function analyzePhoto(img, type = "") {
 const LOGO_MIN = 0.0008; // parte de la prenda: el logo diminuto de Cortefiel (foto de su búsqueda) da 0,001; las lisas de tienda, 0
 
 /** ¿El color de la foto es el pedido? Blanco/negro/gris se miran también por saturación (el beige o el menta no son blanco). */
-export function colorFits(st, wanted) {
+function colorFits(st, wanted) {
   if (!wanted?.hex || !/^#/.test(wanted.hex)) return true;
   const [l, a, b] = st.c0, chroma = Math.hypot(a, b), k = wanted.k;
   // medido con fotos reales de tiendas (9/11/2026): blancas a −0,5…1,4 b −1,8…−0,3; menta a −4; beige b +4
@@ -596,7 +596,6 @@ export async function searchStores({ term, piece, color, colorHex, type, plain =
   const words = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const stem = (w) => w.slice(0, 5);
   const want = new Set([...words(term), ...words(piece), ...words(color)].map(stem));
-  const pieceWords = new Set(words(piece || term).map(stem));
   // 1) imágenes por tienda: foto, nombre y enlace sin abrir la ficha
   const viaImg = [], perStore = new Map();
   const names = new Set(stores.map(([n]) => n));

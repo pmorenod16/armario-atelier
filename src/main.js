@@ -72,9 +72,6 @@ $("#authForgot").onclick = async () => {
 const peekCache = new Map(); // pantallas vecinas ya pintadas (deslizar): nombre → { el, name, cleanup, halo }
 let view = $("#view"); // let: al deslizar, la capa de la pantalla vecina pasa a ser #view (sin volver a pintarla)
 let cleanup = null;
-const soon = (k) => (v) => {
-  v.innerHTML = `<div class="soon"><div class="soon-card"><div class="soon-orb"></div><span class="pill">${t(`soon.${k}.phase`)}</span><h1 class="display">${t(`soon.${k}.title`)}</h1><p>${t(`soon.${k}.body`)}</p></div></div>`;
-};
 const ROUTES = { hoy: (v) => renderToday(v), outfits: (v) => renderToday(v, "outfits"), armario: renderCloset, compras: renderShop, perfil: renderProfile, estilo: renderStyle };
 const DEFAULT = "hoy";
 

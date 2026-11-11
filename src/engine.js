@@ -74,7 +74,7 @@ function colorPair(a, b) {
 }
 
 /* ---------- contexto: tiempo, plan, estilo ---------- */
-export function contextFrom({ weather, plan, style, date = new Date() }) {
+function contextFrom({ weather, plan, style, date = new Date() }) {
   const temp = weather ? Math.round(((weather.feelsMax ?? weather.max) * 0.6 + (weather.feelsMin ?? weather.min) * 0.4)) : null;
   const rule = PLAN_RULES.find(([re]) => re.test(plan || ""));
   const board = styleFor(style, plan);
@@ -508,7 +508,7 @@ export function matchStyle({ items, style }) {
 const LIGHT = new Set(["blanco", "crudo", "beige", "gris-claro", "celeste", "rosa", "amarillo", "nude"]);
 const SKIN = new Set(["nude", "beige", "camel"]);
 /** ¿Transparenta? Lo que diga la prenda; si no, por material y color (seda, gasa, lino, viscosa claros). */
-export function sheerOf(it) {
+function sheerOf(it) {
   if (it.sheer) return it.sheer;
   const words = `${it.name || ""} ${it.material || ""}`.toLowerCase();
   if (/gasa|tul|organza|encaje|transparen|chiffon|crochet|ganchillo|malla/.test(words)) return "si";
@@ -560,10 +560,6 @@ export function pickUnder(items, all) {
 }
 const BRA_TYPES_E = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
 /** Añade el sujetador a cada outfit (campo under, no va en itemIds ni en el lienzo). */
-export function addUnder(outfits, all) {
-  return outfits.map((o) => { const its = (o.itemIds || []).map((id) => all.find((i) => i.id === id)).filter(Boolean); const u = pickUnder(its, all); return u ? { ...o, under: u } : o; });
-}
-
 /* ---------- calcetines: que vayan con el zapato, el pantalón, lo arreglado del look y el tiempo ---------- */
 const DARKS = new Set(["negro", "antracita", "azul-marino", "gris", "marron", "burdeos", "oliva"]);
 const FAM = (k) => ({ "azul-marino": "azul", denim: "azul", azul: "azul", celeste: "azul", antracita: "gris", gris: "gris", "gris-claro": "gris", negro: "negro", marron: "marron", camel: "marron", beige: "beige", crudo: "beige", nude: "beige", blanco: "blanco", burdeos: "rojo", rojo: "rojo", oliva: "verde", verde: "verde", caqui: "verde" }[k] || k);

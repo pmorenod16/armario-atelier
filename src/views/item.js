@@ -2,7 +2,7 @@
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, STATUSES, label, groupOf, BRA_TYPES } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, setHalo } from "../ui.js";
-import { store, subscribe, fullImage, setItemStatus, deleteItem, itemWashLimit, isDryClean, updateItem, washLimit } from "../data.js";
+import { store, subscribe, fullImage, setItemStatus, deleteItem, itemWashLimit, isDryClean, updateItem } from "../data.js";
 import { openEdit, tintFor } from "./add.js";
 
 export function openItem(id) {
@@ -45,7 +45,6 @@ export function openItem(id) {
             </div>
             <p class="muted small" style="margin:0">${t("wash.itemHint", { n: item.wearsSinceWash || 0 })} ${item.washAfter != null ? `<button class="link" type="button" id="wDefault">${t("wash.itemDefault")}</button>` : ""}</p>
           </details>
-          ${false && item.status === "disponible" && washLimit(item.type) ? `<p class="muted small" style="margin:0">${t("wash.count", { n: item.wearsSinceWash || 0, max: washLimit(item.type) })}</p>` : ""}
           <div class="row wrap">
             <button class="btn" type="button" id="edit">${icon("edit")}${t("item.edit")}</button>
             ${item.type === "gafas-ver" && item.hasImage ? (item.lensesCleared

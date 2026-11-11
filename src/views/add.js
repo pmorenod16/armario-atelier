@@ -301,4 +301,4 @@ export function openEdit(item) {
     } catch (e) { toast(t(e?.code === "too-big" ? "item.tooBig" : "item.saveFail"), "error"); $("#save", root).disabled = false; }
   };
 }
-export { tintFor, esc };
+export { tintFor };

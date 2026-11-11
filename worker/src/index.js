@@ -142,7 +142,7 @@ function priceNumber(p) {
 async function googleProducts(env, { piece, term, color, priceMin, priceMax, keys }) {
   const domains = keys.map((k) => STORE_DOMAINS[k]);
   const okHost = (h) => domains.some((d) => h === d || h.endsWith("." + d));
-  const { text, sources } = await askAI(env, {
+  const { text } = await askAI(env, {
     model: MAIN(env), maxTokens: 2500, search: true,
     content: `Busca en Google productos de HOMBRE a la venta ahora en las webs españolas de: ${keys.map((k) => `${STORE_NAMES[k]} (${STORE_DOMAINS[k]})`).join(", ")}.
 Prenda: "${clip(piece, 120)}"${color ? `, color ${color}` : ""}. Búsqueda: "${term}". Precio razonable ${priceMin || "?"}-${priceMax || "?"} €.
@@ -304,7 +304,7 @@ const cleanImg = (s) => {
   return s;
 };
 
-const SEARCH_UNAVAILABLE = "La búsqueda de modelos necesita la clave gratuita de Tavily (TAVILY_API_KEY) o facturación en Gemini. Mientras, usa los botones de las tiendas de arriba.";
+const SEARCH_UNAVAILABLE = "La búsqueda de modelos en el servidor necesita facturación en Gemini. Mientras, usa los botones de las tiendas.";
 
 /** Llamada a la API de Gemini. `content` es texto o lista de partes; `search` activa la búsqueda de Google. */
 async function askGemini(env, { model, content, maxTokens = 2000, search = false }) {
@@ -459,8 +459,6 @@ async function askNvidia(env, { content, maxTokens = 2000 }) {
 const MAIN = (env) => env.MODEL_MAIN || "gemini-3.5-flash";
 const FAST = (env) => env.MODEL_FAST || "gemini-3.5-flash";
 
-const wardrobeText = (w = []) => w.slice(0, 300).map((i) => `${i.id} | ${i.name} | ${i.category}/${i.shape} | ${i.color} | ${i.season} | formalidad ${i.formality} | ${(i.tags || []).join(", ")}`).join("\n");
-const styleText = (s) => s ? `Resumen: ${s.summary}\nPalabras clave: ${(s.keywords || []).join(", ")}\nPaleta: ${(s.palette || []).map((p) => p.name).join(", ")}\nPrendas clave: ${(s.keyPieces || []).join(", ")}\nSiluetas: ${s.silhouettes || "-"}\nEvitar: ${s.avoid || "-"}` : "(Todavía no hay perfil de estilo: usa un estilo versátil y actual.)";
 
 /* ---------- rutas ---------- */
 const ROUTES = {

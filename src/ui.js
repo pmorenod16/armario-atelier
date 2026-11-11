@@ -7,7 +7,7 @@ export const $ = (s, root = document) => root.querySelector(s);
 export const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 export const isNative = Capacitor.isNativePlatform();
-export const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function say(el, text, kind = "") {
   const n = typeof el === "string" ? $(el) : el; if (!n) return;
@@ -127,7 +127,7 @@ function rgb2hsl([r, g, b]) {
 }
 const hsl = (h, s, l) => `hsl(${h.toFixed(0)} ${(s * 100).toFixed(0)}% ${(l * 100).toFixed(0)}%)`;
 /** El color más vivo de la lista, ajustado para que se vea en claro y en oscuro. */
-export function glowOf(colors) {
+function glowOf(colors) {
   const hs = colors.map(hex2rgb).filter(Boolean).map(rgb2hsl);
   if (!hs.length) return null;
   const [h, s0] = hs.sort((x, y) => y[1] * (1 - Math.abs(2 * y[2] - 1)) - x[1] * (1 - Math.abs(2 * x[2] - 1)))[0];

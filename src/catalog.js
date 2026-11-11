@@ -6,7 +6,6 @@ import { getLanguage, tr } from "./i18n.js";
 export const label = (entry) => entry ? (entry[getLanguage()] ?? tr(entry.es ?? entry.k)) : "";
 
 // capa = cómo se coloca en el maniquí (fase 2)
-export const LAYERS = ["top", "outer", "bottom", "dress", "shoes", "accessory", "under", "socks"];
 
 // Sección del armario (hombre|mujer): los tipos con w:true solo se ofrecen en la de mujer (main.js la fija con el perfil)
 let SECTION = "hombre";
@@ -157,12 +156,11 @@ export const FITS = [
 
 export const SEASONS = ["primavera", "verano", "otono", "invierno"];
 export const STATUSES = ["disponible", "sucia", "tintoreria", "arreglo", "prestada"]; // arreglo = en la modista o el zapatero
-export const BUILDS = ["delgada", "media", "atletica", "robusta"];
 export const SIZE_KEYS = ["camiseta", "camisa", "jersey", "americana", "pantalon", "vaquero", "calzado"];
 
 const by = (list) => Object.fromEntries(list.map((x) => [x.k, x]));
 export const TYPE = by(TYPES);
-export const GROUP = by(GROUPS);
+const GROUP = by(GROUPS);
 export const COLOR = by(COLORS);
 export const PATTERN = by(PATTERNS);
 export const MATERIAL = by(MATERIALS);
@@ -170,7 +168,6 @@ export const FIT = by(FITS);
 
 export const groupOf = (typeKey) => GROUP[TYPE[typeKey]?.g] || GROUP.complementos;
 export const layerOf = (typeKey) => groupOf(typeKey).layer;
-export const colorSwatch = (k) => COLOR[k]?.hex || "#999";
 
 /** Qué talla del perfil corresponde a cada tipo de prenda (para sugerirla al añadir). */
 export function sizeKeyOf(typeKey) {

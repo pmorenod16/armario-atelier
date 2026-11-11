@@ -6,7 +6,7 @@ import { boardFromUrl, boardPins, pinToBase64 } from "./pinterest.js";
 import { toast } from "./ui.js";
 
 /** Huella de los pines: si cambia, el tablero tiene pines nuevos (o quitados). */
-export const pinSig = (pins) => `${pins.length}:${pins.slice(0, 6).map((p) => p.img.split("/").pop()).join(",")}`;
+const pinSig = (pins) => `${pins.length}:${pins.slice(0, 6).map((p) => p.img.split("/").pop()).join(",")}`;
 
 /** Enlace → {board, pins}. Si el móvil no puede leerlo, pins = null (lo intentará el servidor). */
 export async function readBoardPins(raw) {

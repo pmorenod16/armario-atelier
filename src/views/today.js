@@ -2,13 +2,12 @@
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
 import { t } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label, isWomen, BRA_TYPES } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, toast, say, setHalo, viewHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, toast, say, viewHalo } from "../ui.js";
 import { api } from "../api.js";
 import {
   store, subscribe, saveProfile, logWear, styleText, deleteWear, saveFeedback, saveToday, saveTrip, deleteTrip, todayKey,
   saveLook, deleteLook, lookSaved, reviewWear, itemWashLimit, isDryClean, dayPlan,
-  wornIds, saveWearPhoto, readWearPhoto, deleteWearPhoto,
-} from "../data.js";
+  wornIds, saveWearPhoto, readWearPhoto, deleteWearPhoto, itemById } from "../data.js";
 import { todayWeather, weatherText, describe, tripWeather } from "../weather.js";
 import { searchCity } from "../places.js";
 import { openItem } from "./item.js";
@@ -19,14 +18,14 @@ import { suggestOutfits, packTrip, ensureGlasses, pickUnder, pickSocks } from ".
 import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
-export const engineMode = () => store.profile?.engine === "app" ? "app" : "ia";
+const engineMode = () => store.profile?.engine === "app" ? "app" : "ia";
 
 const state = { tab: "hoy", sel: 0, month: null, trip: null };
 const HALO = { sun: ["#f3c26b", "#f2a476"], cloudsun: ["#e9cf98", "#b9c6d6"], cloud: ["#b9c2cd", "#d3d6db"], rain: ["#7fa2c8", "#9cb2c9"], snow: ["#dde6f2", "#c5d3e6"], storm: ["#6f7b9a", "#8d88a8"], fog: ["#c7ccd2", "#d9dadc"] };
 const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
 const since = (ts) => { const n = Math.max(0, Math.round((Date.now() - (ts || Date.now())) / 864e5)); return n === 0 ? t("cal.today") : n === 1 ? t("cal.yesterday") : t("cal.since", { n }); };
 const fmtDate = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-ES", o);
-const byId = (id) => store.items.find((i) => i.id === id);
+const byId = itemById;
 
 export function renderToday(view, only = null) {
   // «Outfits» tiene su propio botón en la barra de abajo (#/outfits); Hoy se queda con hoy, calendario y maleta

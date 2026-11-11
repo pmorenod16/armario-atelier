@@ -5,7 +5,7 @@ import {
 import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
 import { layerOf, setCatalogSection } from "./catalog.js";
 
-export const DEFAULT_PROFILE = {
+const DEFAULT_PROFILE = {
   onboarded: false,
   mannequin: "hombre",
   heightCm: 178,
@@ -22,6 +22,8 @@ export const store = {
   wear: [], feedback: [], trips: [], today: null, style: null, layouts: {}, // fase 2
   shopping: null, wishlist: [], looks: [], // fase 4 y extras
 };
+/** Prenda del armario por id (o undefined). */
+export const itemById = (id) => store.items.find((i) => i.id === id);
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
@@ -142,7 +144,7 @@ export async function logWear({ date = todayKey(), itemIds, extraIds = [], title
   const auto = store.profile?.autoDirty !== false && store.profile?.washCheck === false;
   const madeDirty = (prev?.madeDirty || []).filter((id) => all.includes(id));
   for (const id of added) {
-    const it = store.items.find((i) => i.id === id); if (!it) continue;
+    const it = itemById(id); if (!it) continue;
     const upd = { wearCount: increment(1), lastWorn: date, wearsSinceWash: increment(1) };
     // ropa sucia automática: después de X usos según el tipo (la camiseta 1, el vaquero 6…); abrigos, calzado y complementos nunca
     const lim = itemWashLimit(it);
@@ -199,7 +201,7 @@ export const deleteLook = (id) => deleteDoc(doc(userCol("looks"), id));
 export const lookSaved = (ids) => { const k = ids.slice().sort().join(); return store.looks.find((l) => l.itemIds.slice().sort().join() === k); };
 /** Deshace en una prenda el uso de ese día: usos, último día puesto y, si se marcó sucia sola por ese uso, la vuelve a disponible. */
 function undoWearOn(b, id, date, w) {
-  const it = store.items.find((i) => i.id === id); if (!it) return;
+  const it = itemById(id); if (!it) return;
   const upd = { wearCount: increment(-1), updatedAt: Date.now() };
   if ((it.wearsSinceWash || 0) > 0) upd.wearsSinceWash = increment(-1);
   if (it.lastWorn === date) upd.lastWorn = store.wear.filter((x) => x.date !== date && x.date < date && x.itemIds?.includes(id)).map((x) => x.date).sort().pop() || null;
@@ -298,7 +300,6 @@ export async function backupImage(id, img, item) {
   const s = await getDoc(backupDoc(id));
   if (!s.exists()) await setDoc(backupDoc(id), { ...img, item: { aspect: item.aspect || null, thumb: item.thumb || null, tone: item.tone || null, cutMethod: item.cutMethod || null, imageVersion: item.imageVersion || null } });
 }
-export const hasBackup = async (id) => (await getDoc(backupDoc(id))).exists();
 /** Vuelve a la foto de antes del recorte nuevo. */
 export async function restoreImage(id) {
   const s = await getDoc(backupDoc(id)); if (!s.exists()) return false;

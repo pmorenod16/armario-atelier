@@ -55,7 +55,6 @@ export async function logInWithGoogle() {
 // Rutas de datos: todo bajo users/{uid}
 const base = () => `users/${auth.currentUser.uid}`;
 export const itemsRef = () => collection(fs, `${base()}/items`);
-export const outfitsRef = () => collection(fs, `${base()}/outfits`);
 export const metaDoc = (name) => doc(fs, `${base()}/meta/${name}`);
 export const imageDoc = (id) => doc(fs, `${base()}/images/${id}`);
 export const newItemId = () => doc(itemsRef()).id;
@@ -63,4 +62,4 @@ export const userCol = (name) => collection(fs, `${base()}/${name}`);
 
 export const accessDoc = (uid) => doc(fs, `access/${uid}`);
 export const accessCol = () => collection(fs, "access");
-export { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment };
+export { doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment };
