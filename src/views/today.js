@@ -1,6 +1,6 @@
 // Hoy: plan del día + tiempo → outfits con tu ropa, cómo llevarlos y el maniquí vestido.
 // También el calendario de estilo (lo que te pones cada día, prendas sin estrenar) y la maleta.
-import { t, locale, localize, tx } from "../i18n.js";
+import { t, locale, localize } from "../i18n.js";
 import { TYPE, COLOR, PATTERN, MATERIAL, FIT, label, isWomen, BRA_TYPES } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, toast, say, viewHalo } from "../ui.js";
 import { api } from "../api.js";
@@ -579,8 +579,8 @@ function underHTML(ids, temp = null) {
     if (!u) return "";
     const b = u.id && store.items.find((i) => i.id === u.id);
     if (!b && u.suggest) // no tienes ninguno que encaje: cómo debería ser
-      return `<div class="under-item suggest"><span class="ph">${icon("spark")}</span><span><small>${title} · ${t("under.suggest")}</small><b>${esc(tx(u.suggest))}</b><em>${esc(tx(u.why))}</em></span></div>`;
-    return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(tx(u.why))}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(tx(u.warn))}</p>` : ""}`;
+      return `<div class="under-item suggest"><span class="ph">${icon("spark")}</span><span><small>${title} · ${t("under.suggest")}</small><b>${esc(u.suggest)}</b><em>${esc(u.why)}</em></span></div>`;
+    return `${b ? `<button type="button" class="under-item" data-item="${b.id}">${b.thumb ? `<img src="${b.thumb}" alt="">` : ""}<span><small>${title}</small><b>${esc(b.name)}</b><em>${esc(u.why)}</em></span></button>` : ""}${u.warn ? `<p class="under-warn">${icon("spark")} ${esc(u.warn)}</p>` : ""}`;
   };
   // sujetador (sección mujer) y calcetines (todos), elegidos al vuelo para este conjunto
   const html = (isWomen() ? row(pickUnder(its, store.items), t("under.title")) : "") + row(pickSocks(its, store.items, { temp }), t("socks.title"));

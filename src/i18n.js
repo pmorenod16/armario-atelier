@@ -1,6 +1,9 @@
 // Textos de la interfaz. Para añadir un idioma: copia el bloque `es` con otra clave (ca, en, de…)
 // y traduce los valores. Las etiquetas del catálogo de prendas están en catalog.js (campo por idioma).
 
+import CA from "./locales/ca.json";
+import EN from "./locales/en.json";
+
 const DICT = {
   es: {
     "app.name": "Armario Atelier",
@@ -624,7 +627,7 @@ const DICT = {
     "profile.sizes": "Tus tallas",
     "profile.places": "Ubicaciones",
     "profile.language": "Idioma",
-    "profile.language.note": "La primera vez que eliges catalán o inglés, la IA traduce la app (unos segundos). Las respuestas de la IA también saldrán en ese idioma.",
+    "profile.language.note": "Toda la app cambia al momento. Lo que escribe la IA también saldrá en ese idioma.",
     "profile.translating": "Traduciendo la app… {d} de {n}",
     "profile.translateFail": "No se ha podido traducir ahora. Inténtalo en un rato.",
     "profile.account": "Cuenta",
@@ -678,14 +681,24 @@ const DICT = {
 
 let lang = "es";
 export const LANGUAGES = [{ k: "es", label: "Castellano" }, { k: "ca", label: "Català" }, { k: "en", label: "English" }];
-// Catalán e inglés: los textos se traducen con la IA la primera vez y se guardan en el dispositivo.
-// Si se añade o cambia un texto en castellano, solo se traduce lo nuevo.
+/* Catalán e inglés van YA TRADUCIDOS dentro de la app (src/locales/ca.json y en.json, 13/11/2026: «que el idioma no dependa
+   de la IA»): interfaz, catálogo («~» + texto), tiempo, «Dónde buscar» y frases del motor («§» + plantilla). Cambiar de idioma
+   es instantáneo y funciona sin conexión. Solo si se añade un texto en castellano que aún no está en esos archivos, la IA lo
+   traduce como reserva (ensureLanguage, caché en localStorage i18n:{l}) hasta que se añada al diccionario fijo.
+   AL AÑADIR O CAMBIAR UN TEXTO en castellano: añadir su traducción en los dos archivos (scratchpad tr/merge.py lo comprueba). */
+const STATIC = { ca: CA, en: EN };
 const LS = (l) => `i18n:${l}`;
 const readCache = (l) => { try { return JSON.parse(localStorage.getItem(LS(l)) || "{}"); } catch { return {}; } };
+const fixed = (l, k) => STATIC[l]?.[k] != null && (k[0] === "~" || k[0] === "§" || k in DICT.es); // texto del diccionario fijo
 function load(l) {
-  const c = readCache(l), d = {};
-  for (const [k, [src, tr]] of Object.entries(c)) if (src === (DICT.es[k] ?? k.slice(1))) d[k] = tr;
+  const c = readCache(l), d = { ...(STATIC[l] || {}) };
+  for (const [k, [src, tr]] of Object.entries(c)) if (!(k in d) && src === (DICT.es[k] ?? k.slice(1))) d[k] = tr;
   DICT[l] = d;
+}
+/** Frase del motor (sin IA): plantilla en castellano con {variables} → idioma de la app, con el diccionario fijo. */
+export function phrase(es, vars = {}) {
+  const tpl = (lang !== "es" && STATIC[lang]?.["§" + es]) || es;
+  return tpl.replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
 }
 export const setLanguage = (l) => {
   if (!LANGUAGES.some((x) => x.k === l)) l = "es";
@@ -743,15 +756,58 @@ const failedSet = new Set();
 /** Pide traducir frases (sin esperar). */
 export function requestTexts(list) {
   if (lang === "es") return;
-  for (const x of list) if (isText(x) && !dyn[x]) queued.add(x);
+  for (const x of list) if (isText(x) && !got(x)) queued.add(x);
   pump();
 }
 /** Traduce frases sueltas: espera como mucho ms; lo que no llegue a tiempo sigue traduciéndose en segundo plano. */
 export async function translateTexts(list, ms = 15000) {
   if (lang === "es") return list;
   requestTexts(list);
-  if (list.some((x) => isText(x) && !dyn[x])) await Promise.race([new Promise((r) => setTimeout(r, ms)), (async () => { while (dynJob) await dynJob; })()]);
-  return list.map((x) => dyn[x] || x);
+  if (list.some((x) => isText(x) && !got(x))) await Promise.race([new Promise((r) => setTimeout(r, ms)), (async () => { while (dynJob) await dynJob; })()]);
+  return list.map((x) => got(x) || x);
+}
+/* Lo que hizo el motor en castellano y quedó guardado (outfits, huecos de Compras, maleta…) se traduce SIN IA:
+   las frases del motor están en el diccionario fijo como plantillas («§» + texto con {variables}), así que se reconocen
+   (también compuestas: «A, B.», «estética · título», «X y Y») y se rellenan con los nombres de colores y prendas del
+   catálogo. Solo lo que no se reconoce (texto de la IA, nombres de prendas) se pide al traductor. */
+const got = (x) => dyn[x] || fromStatic(x);
+let memo = new Map(), memoLang = null, templates = [], lowCat = new Map();
+function prepStatic() {
+  memo = new Map(); memoLang = lang; templates = []; lowCat = new Map();
+  const st = STATIC[lang] || {};
+  for (const [k, v] of Object.entries(st)) {
+    if (k[0] === "~") lowCat.set(k.slice(1).toLowerCase(), v.toLowerCase());
+    else if (k[0] === "§" && k.includes("{")) {
+      const es = k.slice(1), keys = [...es.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+      const re = new RegExp("^" + es.split(/\{\w+\}/).map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$");
+      templates.push([re, keys, v, es.replace(/\{\w+\}/g, "").length]);
+    }
+  }
+  templates.sort((a, b) => b[3] - a[3]); // primero las plantillas con más texto fijo
+}
+function fromStatic(s, depth = 0) {
+  if (lang === "es" || typeof s !== "string" || !STATIC[lang]) return null;
+  if (memoLang !== lang) prepStatic();
+  if (memo.has(s)) return memo.get(s);
+  const st = STATIC[lang];
+  let r = st["§" + s] ?? st["~" + s] ?? lowCat.get(s.toLowerCase()) ?? null;
+  const part = (v) => fromStatic(v, depth + 1) ?? dyn[v] ?? (/^[\d.,\s°%-]*$/.test(v) ? v : null);
+  if (r == null && depth < 4) for (const [re, keys, tpl, fixedLen] of templates) {
+    const m = re.exec(s); if (!m) continue;
+    let ok = 0;
+    const out = tpl.replace(/\{(\w+)\}/g, (all, k) => { const v = m[1 + keys.indexOf(k)]; const t = v == null ? null : part(v); if (t != null) ok++; return t ?? v ?? all; });
+    // plantillas casi sin texto fijo («{a} y {b}», «{text}.»): solo si se reconoce todo; las demás valen igual
+    // (los nombres de prendas o del estilo que llevan dentro se quedan como están)
+    if (ok === keys.length || fixedLen > 4) { r = out; break; }
+  }
+  // compuestas: «A, B, C» (motivos del outfit) y «estética · título»
+  if (r == null && depth < 4) for (const sep of [" · ", ", "]) {
+    if (!s.includes(sep)) continue;
+    const bits = s.split(sep), tr = bits.map((b) => fromStatic(b, depth + 1));
+    if (tr.some((x) => x != null) && tr.every((x, i) => x != null || !/[a-záéíóúñ]{3}/i.test(bits[i]) || sep === " · ")) { r = tr.map((x, i) => x ?? dyn[bits[i]] ?? bits[i]).join(sep); break; }
+  }
+  memo.set(s, r);
+  return r;
 }
 // Campos de texto libre (del motor, de la IA o del análisis de estilo) que se traducen; los del usuario (notes) no.
 const FREE = new Set(["title", "why", "how", "missing", "advice", "tips", "note", "suggest", "warn", "piece", "fits", "off", "headline", "extras",
@@ -762,6 +818,7 @@ function collect(obj, skip = new Set(), named = false) {
   const walk = (o, named) => {
     if (Array.isArray(o)) return o.forEach((x) => walk(x, named));
     if (!o || typeof o !== "object") return;
+    if (o.engine && o.lang === lang) return; // hecho por el motor en este idioma (frases del diccionario fijo): ya está bien
     for (const [k, v] of Object.entries(o)) {
       if (skip.has(k) || k === "notes" || k === "_lang") continue;
       const free = FREE.has(k) || (named && k === "name");
@@ -786,28 +843,13 @@ export async function localize(obj) {
 export function localizeNow(obj, skip, named) {
   if (lang === "es" || !obj) return { obj, missing: [] };
   const c = structuredClone(obj), missing = [];
-  for (const [o, k] of collect(c, skip, named)) { const v = o[k]; if (!isText(v)) continue; if (dyn[v]) o[k] = dyn[v]; else missing.push(v); }
+  for (const [o, k] of collect(c, skip, named)) { const v = o[k]; if (!isText(v)) continue; const tr = got(v); if (tr) o[k] = tr; else missing.push(v); }
   return { obj: c, missing };
 }
 /** Traduce frases sueltas con lo que hay en la caché (las que falten se quedan igual). */
-export const fromCache = (list) => list.map((x) => (lang !== "es" && dyn[x]) || x);
+export const fromCache = (list) => list.map((x) => (lang !== "es" && got(x)) || x);
 /** ¿Ya hay traducción de esta frase? */
-export const hasTranslation = (x) => !isText(x) || !!dyn[x];
-/** Para textos del motor que se calculan al pintar: si ya está traducido sale traducido; si no, se pide y se cambia en pantalla al llegar. */
-export function tx(s) {
-  if (lang === "es" || !isText(s)) return s;
-  if (dyn[s]) return dyn[s];
-  txWanted.add(s); requestTexts([s]);
-  return s;
-}
-// cambio en el sitio cuando llega la traducción: sin repintar la pantalla (no salta ni vuelve arriba)
-const txWanted = new Set();
-onTranslated(() => {
-  const done = [...txWanted].filter((x) => dyn[x]); if (!done.length) return;
-  done.forEach((x) => txWanted.delete(x));
-  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
-  while ((n = w.nextNode())) { let v = n.nodeValue; for (const x of done) if (v.includes(x)) v = v.split(x).join(dyn[x]); if (v !== n.nodeValue) n.nodeValue = v; }
-});
+export const hasTranslation = (x) => !isText(x) || !!got(x);
 export const getLanguage = () => lang;
 /** Formato regional de fechas, horas y números del idioma elegido (y del dictado por voz). */
 export const locale = () => ({ es: "es-ES", ca: "ca-ES", en: "en-GB" }[lang] || "es-ES");
@@ -823,19 +865,24 @@ export function ensureLanguage(l, onProgress = () => {}) {
   running[l].listeners.add(onProgress);
   return running[l];
 }
+/** Todos los textos fijos en castellano: los de la interfaz y, con «~», catálogo, tiempo y «Dónde buscar». */
+export async function sourceTexts() {
+  const src = { ...DICT.es };
+  // todas las listas del catálogo con texto (también sujetador, transparencia, escote y calcetines)
+  for (const list of Object.values(await import("./catalog.js"))) if (Array.isArray(list)) for (const e of list) if (e?.es) src["~" + e.es] = e.es;
+  // «Dónde buscar»: descripción de multimarca, grupos de marcas y «cómo es» de cada marca
+  const ss = await import("./storesearch.js");
+  for (const d of [...Object.values(ss.MULTI), ...ss.BRAND_GROUPS.map(([, g]) => g), ...ss.BRANDS.map((b) => b.desc)]) if (d) src["~" + d] = d;
+  for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
+  return src;
+}
 function runTranslate(l) {
   const listeners = new Set();
   const p = (async () => {
-    const cat = await import("./catalog.js"), { api } = await import("./api.js");
-    const src = { ...DICT.es };
-    // todas las listas del catálogo con texto (también sujetador, transparencia, escote y calcetines)
-    for (const list of Object.values(cat)) if (Array.isArray(list)) for (const e of list) if (e?.es) src["~" + e.es] = e.es;
-    // «Dónde buscar»: descripción de multimarca, grupos de marcas y «cómo es» de cada marca
-    const ss = await import("./storesearch.js");
-    for (const d of [...Object.values(ss.MULTI), ...ss.BRAND_GROUPS.map(([, g]) => g), ...ss.BRANDS.map((b) => b.desc)]) if (d) src["~" + d] = d;
-    for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
+    const { api } = await import("./api.js");
+    const src = await sourceTexts();
     const cache = readCache(l);
-    const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);
+    const missing = Object.entries(src).filter(([k, v]) => !fixed(l, k) && cache[k]?.[0] !== v);
     const parts = []; for (let i = 0; i < missing.length; i += 50) parts.push(Object.fromEntries(missing.slice(i, i + 50)));
     let done = 0, failed = 0, lastErr = null, next = 0;
     listeners.forEach((f) => f(0, missing.length));
@@ -854,7 +901,7 @@ function runTranslate(l) {
     }));
     if (lang === l) load(l);
     // si no ha salido casi nada, se avisa; si falta poco, se usa así (lo que falte sale en castellano y se completa luego)
-    const ok = Object.keys(src).filter((k) => cache[k]?.[0] === src[k]).length;
+    const ok = Object.keys(src).filter((k) => fixed(l, k) || cache[k]?.[0] === src[k]).length;
     if (failed && ok < Object.keys(src).length * 0.8) throw lastErr || { message: "No se ha podido traducir." };
     return missing.length;
   })();
@@ -865,7 +912,7 @@ function runTranslate(l) {
 export function languageReady(l) {
   if (l === "es") return 1;
   const c = readCache(l), keys = Object.keys(DICT.es);
-  return keys.filter((k) => c[k]?.[0] === DICT.es[k]).length / keys.length;
+  return keys.filter((k) => fixed(l, k) || c[k]?.[0] === DICT.es[k]).length / keys.length;
 }
 /** Texto libre en castellano del catálogo → idioma actual. */
 export const tr = (es) => (lang === "es" ? es : DICT[lang]?.["~" + es] ?? es);

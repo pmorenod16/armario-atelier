@@ -1,6 +1,9 @@
 // Motor propio (sin IA): outfits del día, maleta, qué te falta y encaje con tu estilo.
 // Se usa cuando Gemini falla o tarda, y también se puede elegir siempre. Reglas de estilismo + puntuación.
 import { TYPE, COLOR, label } from "./catalog.js";
+import { getLanguage, phrase as P } from "./i18n.js";
+// Textos del motor: plantillas en castellano con {variables}; i18n.phrase las da ya en catalán o inglés con el diccionario
+// fijo de la app (src/locales, clave «§» + plantilla), sin IA. Lo que sale lleva lang para no volver a traducirlo.
 
 /* ---------- datos de base ---------- */
 const NEUTRAL = new Set(["blanco", "crudo", "beige", "camel", "marron", "gris-claro", "gris", "antracita", "negro", "azul-marino", "denim", "caqui"]);
@@ -51,8 +54,11 @@ const dist = (a, b) => { const x = hexRgb(a), y = hexRgb(b); return x && y ? Mat
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const words = (s) => norm(s).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3);
 const mainColor = (it) => it.colors?.[0] || { k: "", hex: it.tone };
-const colorName = (k) => (label(COLOR[k]) || k || "").toLowerCase();
+const colorName = (k) => (label(COLOR[k]) || k || "").toLowerCase(); // para enseñar (idioma de la app)
 const typeName = (it) => (label(TYPE[it.type]) || it.type || "").toLowerCase();
+const colorEs = (k) => (COLOR[k]?.es || k || "").toLowerCase(); // para comparar palabras (las reglas van en castellano)
+const typeEs = (it) => (TYPE[it.type]?.es || it.type || "").toLowerCase();
+const andJoin = (list) => (list.length < 2 ? list[0] || "" : P("{a} y {b}", { a: list.slice(0, -1).join(", "), b: list[list.length - 1] }));
 const formalityOf = (it) => +it.formality || FORMALITY[it.type] || 2.5;
 const isKind = (set) => (it) => set.has(it.type);
 const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
@@ -77,7 +83,7 @@ function colorPair(a, b) {
    En catalán o inglés las prendas llegan con el nombre traducido para enseñarlo (data.js: name traducido, nameOrig el
    guardado) y el estilo traducido (con .raw = el guardado). Las reglas del motor buscan palabras en castellano, así que
    usa siempre lo original. */
-const orig = (list) => (list || []).map((i) => (i?.nameOrig ? { ...i, name: i.nameOrig } : i));
+const orig = (list) => (list || []).map((i) => (i?.nameOrig ? { ...i, name: i.nameOrig, nameShow: i.name } : i));
 const rawStyle = (st) => st?.raw || st;
 
 /* ---------- contexto: tiempo, plan, estilo ---------- */
@@ -141,7 +147,7 @@ function styleBonus(it, ctx) {
     b += d < 45 ? 1.4 : d < 80 ? 0.7 : d > 150 ? -0.4 : 0;
   }
   if (ctx.styleWords.size) {
-    const w = new Set([...words(it.name), ...words(typeName(it)), ...(it.styleTags || []).flatMap(words), ...(it.colors || []).flatMap((c) => words(colorName(c.k)))]);
+    const w = new Set([...words(it.name), ...words(typeEs(it)), ...(it.styleTags || []).flatMap(words), ...(it.colors || []).flatMap((c) => words(colorEs(c.k)))]);
     let hits = 0; w.forEach((x) => { if (ctx.styleWords.has(x)) hits++; });
     b += Math.min(1.6, hits * 0.45);
     let bad = 0; w.forEach((x) => { if (ctx.avoidWords.has(x)) bad++; });
@@ -180,8 +186,11 @@ function harmony(items) {
  * Devuelve {outfits:[{title,itemIds,why,how[],tucked[],repeats[]}], missing, engine:true}
  */
 export function suggestOutfits({ items, weather, plan, style, wear = [], feedback = [], exclude = [], count = 4, date = new Date(), must = null }) {
-  items = orig(items); style = rawStyle(style);
+  const shown = style; items = orig(items); style = rawStyle(style);
   const ctx = contextFrom({ weather, plan, style, date });
+  // nombres de las estéticas tal como se enseñan (el estilo traducido), en el mismo orden que los guardados
+  const showBoard = ctx.board === style ? shown : shown?.extra?.[(style?.extra || []).indexOf(ctx.board)];
+  ctx.mixShow = (showBoard?.mix || []).map((m) => m.name);
   const today = date.toISOString().slice(0, 10);
   const recentDays = new Map();
   for (const w of wear) {
@@ -202,7 +211,7 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
   const excluded = new Set(exclude.map((ids) => ids.slice().sort().join()));
 
   if (!tops.length || !bottoms.length) {
-    return { outfits: [], missing: !tops.length ? "Añade camisetas, camisas o jerséis para que pueda montar outfits." : "Añade algún pantalón para que pueda montar outfits.", engine: true };
+    return { outfits: [], missing: !tops.length ? P("Añade camisetas, camisas o jerséis para que pueda montar outfits.") : P("Añade algún pantalón para que pueda montar outfits."), engine: true, lang: getLanguage() };
   }
   const T = ctx.temp;
   const needWarmth = T == null ? 1 : T < 8 ? 3.5 : T < 12 ? 3 : T < 16 ? 2 : T < 20 ? 1 : 0; // abrigo que pide el día
@@ -266,9 +275,9 @@ export function suggestOutfits({ items, weather, plan, style, wear = [], feedbac
     if (mustIt && !x.ids.includes(mustIt.id)) x = { ...x, items: [...x.items, mustIt], ids: [...x.ids, mustIt.id] };
     return describeOutfit(x, ctx, i);
   });
-  const missing = !shoes.length ? "No tienes calzado en el armario: añádelo para que los outfits estén completos."
-    : needWarmth >= 2 && !outers.length ? `Para ${T} °C te vendría bien una chaqueta o un abrigo: no tienes ninguno disponible.` : null;
-  return { outfits, missing, engine: true };
+  const missing = !shoes.length ? P("No tienes calzado en el armario: añádelo para que los outfits estén completos.")
+    : needWarmth >= 2 && !outers.length ? P("Para {t} °C te vendría bien una chaqueta o un abrigo: no tienes ninguno disponible.", { t: T }) : null;
+  return { outfits, missing, engine: true, lang: getLanguage() };
 }
 function bestAdd(base, options, sc, ctx) {
   let best = null;
@@ -339,19 +348,19 @@ function addAccessories(c, ctx, accs, sc, seed, watchUse) {
   const top = c.items.find((it) => ["camisa", "polo"].includes(it.type)), bottom = c.items.find(isKind(BOTTOM)), shoe = c.items.find(isKind(SHOES));
   const tucked = top && bottom && bottom.type !== "jogger" && f >= 2.8;
   const want = []; // [tipo, motivo para sugerirlo si no lo tiene]
-  if (tucked) want.push(["cinturon", `Cinturón de piel ${shoe && COL_FAMILY(mainColor(shoe).k) === "negro" ? "negro" : "marrón"} a juego con los zapatos`]);
-  if (ctx.sunny && T != null && T >= 14) want.push(["gafas", "Gafas de sol de pasta o metal"]);
-  if (T != null && T < 10) want.push(["bufanda", "Bufanda de lana en gris o camel"]);
-  if (T != null && T < 6) want.push(["gorro", "Gorro de punto liso"]);
-  if (ctx.mood === "clase" || ctx.mood === "viaje") want.push(["mochila", "Mochila sencilla de lona o piel"]);
-  if (ctx.mood === "evento" && f >= 4) want.push(["corbata", "Corbata lisa de punto o seda"]);
-  if ((ctx.mood === "noche" || ctx.mood === "cita") && f >= 2.8) want.push(["joya", "Cadena o anillo plateado discreto"]);
-  if (f <= 2.2 && !ctx.rain && (ctx.mood === "relax" || ctx.mood === "deporte" || ctx.mood === "paseo")) want.push(["gorra", "Gorra lisa"]);
+  if (tucked) want.push(["cinturon", shoe && COL_FAMILY(mainColor(shoe).k) === "negro" ? P("Cinturón de piel negro a juego con los zapatos") : P("Cinturón de piel marrón a juego con los zapatos")]);
+  if (ctx.sunny && T != null && T >= 14) want.push(["gafas", P("Gafas de sol de pasta o metal")]);
+  if (T != null && T < 10) want.push(["bufanda", P("Bufanda de lana en gris o camel")]);
+  if (T != null && T < 6) want.push(["gorro", P("Gorro de punto liso")]);
+  if (ctx.mood === "clase" || ctx.mood === "viaje") want.push(["mochila", P("Mochila sencilla de lona o piel")]);
+  if (ctx.mood === "evento" && f >= 4) want.push(["corbata", P("Corbata lisa de punto o seda")]);
+  if ((ctx.mood === "noche" || ctx.mood === "cita") && f >= 2.8) want.push(["joya", P("Cadena o anillo plateado discreto")]);
+  if (f <= 2.2 && !ctx.rain && (ctx.mood === "relax" || ctx.mood === "deporte" || ctx.mood === "paseo")) want.push(["gorra", P("Gorra lisa")]);
   const added = [], extras = [];
   // reloj SIEMPRE (si tiene alguno): el que mejor encaja con este conjunto
   const watches = accs.filter((a) => a.type === "reloj");
   if (watches.length && !has("reloj")) added.push(bestWatch(watches, c, f, ctx, sc, watchUse));
-  else if (!watches.length) extras.push("Reloj de esfera sencilla con correa de piel o metal");
+  else if (!watches.length) extras.push(P("Reloj de esfera sencilla con correa de piel o metal"));
   // gafas de ver SIEMPRE (las lleva a diario): las que mejor van con el conjunto
   const glasses = accs.filter((a) => a.type === "gafas-ver");
   if (glasses.length && !has("gafas-ver")) added.push(bestGlasses(glasses, c, f, watchUse));
@@ -373,44 +382,44 @@ function addAccessories(c, ctx, accs, sc, seed, watchUse) {
 const TITLE_BY_F = [[1.6, ["Cómodo", "Deportivo", "Relajado"]], [2.4, ["Básico", "Diario", "Sin pensar"]], [3.1, ["Casual cuidado", "Smart casual", "Diario arreglado"]], [3.9, ["Arreglado", "Pulido", "Clásico"]], [9, ["Elegante", "De ocasión", "Impecable"]]];
 function describeOutfit(c, ctx, i) {
   const f = c.items.reduce((a, it) => a + formalityOf(it), 0) / c.items.length;
-  const base = pick(TITLE_BY_F.find(([lim]) => f <= lim)[1], i);
+  const base = P(pick(TITLE_BY_F.find(([lim]) => f <= lim)[1], i));
   const cols = [...new Set(c.items.filter((it) => TYPE[it.type]?.g !== "complementos").map((it) => colorName(mainColor(it).k)).filter(Boolean))];
   const mixName = nearestMix(c, ctx);
-  const title = `${mixName ? `${mixName} · ` : ""}${base}${cols.length ? ` en ${cols.slice(0, 2).join(" y ")}` : ""}`;
+  const title = `${mixName ? `${mixName} · ` : ""}${cols.length ? P("{base} en {colors}", { base, colors: andJoin(cols.slice(0, 2)) }) : base}`;
   const find = (set) => c.items.find(isKind(set));
   const top = c.items.find((it) => BASE_TOP.has(it.type)), mid = find(MID), outer = find(OUTER), bottom = find(BOTTOM), shoe = find(SHOES);
   const why = [];
   const neutrals = c.items.filter((it) => NEUTRAL.has(mainColor(it).k)).length;
   const accent = c.items.map((it) => mainColor(it).k).find((k) => k && !NEUTRAL.has(k));
-  why.push(neutrals === c.items.length ? "Todo neutros: combina seguro" : neutrals ? `El ${colorName(accent) || "color"} de protagonista sobre neutros` : "Colores de la misma gama");
-  if (ctx.temp != null) why.push(outer ? `${typeName(outer)} para los ${ctx.temp} °C` : ctx.temp >= 22 ? `ligero para los ${ctx.temp} °C` : mid ? `${typeName(mid)} para no pasar frío` : `pensado para ${ctx.temp} °C`);
-  if (ctx.palette.length && c.items.some((it) => styleBonus(it, ctx) > 0.6)) why.push("dentro de la paleta de tu estilo");
-  if (ctx.rain >= 50) why.push("preparado para la lluvia");
+  why.push(neutrals === c.items.length ? P("Todo neutros: combina seguro") : neutrals && accent ? P("El {color} de protagonista sobre neutros", { color: colorName(accent) }) : neutrals ? P("Un color de protagonista sobre neutros") : P("Colores de la misma gama"));
+  if (ctx.temp != null) why.push(outer ? P("{type} para los {t} °C", { type: typeName(outer), t: ctx.temp }) : ctx.temp >= 22 ? P("ligero para los {t} °C", { t: ctx.temp }) : mid ? P("{type} para no pasar frío", { type: typeName(mid) }) : P("pensado para {t} °C", { t: ctx.temp }));
+  if (ctx.palette.length && c.items.some((it) => styleBonus(it, ctx) > 0.6)) why.push(P("dentro de la paleta de tu estilo"));
+  if (ctx.rain >= 50) why.push(P("preparado para la lluvia"));
   const how = [], tucked = [];
-  if (top && ["camisa", "polo"].includes(top.type) && bottom && bottom.type !== "jogger" && f >= 2.8) { how.push(`${cap(typeName(top))} por dentro${c.items.some((x) => x.type === "cinturon") ? " con el cinturón a la vista" : ""}.`); tucked.push(top.id); }
-  else if (top && top.type === "camiseta" && bottom && ["chino", "pantalon", "traje-pantalon"].includes(bottom.type)) how.push("Camiseta por dentro, o solo por delante si quieres algo más relajado.");
-  if (mid && top && top.type === "camisa") how.push(`Deja asomar el cuello de la camisa por el ${typeName(mid)}.`);
-  if (top && ["camisa", "sobrecamisa", "camiseta-ml"].includes(top.type) && ctx.temp >= 19) how.push("Remanga las mangas dos vueltas.");
-  if (outer && ctx.temp != null && ctx.temp >= 15) how.push(`Lleva la ${typeName(outer)} abierta; si refresca por la tarde, ciérrala.`);
-  if (bottom && shoe && ["chino", "pantalon", "traje-pantalon"].includes(bottom.type) && ["mocasines", "zapatillas"].includes(shoe.type) && ctx.temp >= 18) how.push("Bajo del pantalón con una vuelta para que se vea el tobillo.");
-  if (outer && ctx.temp != null && ctx.temp < 10) how.push(`Hace frío: ${typeName(outer)} cerrada y, si tienes, bufanda.`);
-  if (ctx.rain >= 50) how.push("Llueve: mejor calzado que no sea de ante.");
+  if (top && ["camisa", "polo"].includes(top.type) && bottom && bottom.type !== "jogger" && f >= 2.8) { how.push(c.items.some((x) => x.type === "cinturon") ? P("{Type} por dentro con el cinturón a la vista.", { Type: cap(typeName(top)) }) : P("{Type} por dentro.", { Type: cap(typeName(top)) })); tucked.push(top.id); }
+  else if (top && top.type === "camiseta" && bottom && ["chino", "pantalon", "traje-pantalon"].includes(bottom.type)) how.push(P("Camiseta por dentro, o solo por delante si quieres algo más relajado."));
+  if (mid && top && top.type === "camisa") how.push(P("Con {type} encima, deja asomar el cuello de la camisa.", { type: typeName(mid) }));
+  if (top && ["camisa", "sobrecamisa", "camiseta-ml"].includes(top.type) && ctx.temp >= 19) how.push(P("Remanga las mangas dos vueltas."));
+  if (outer && ctx.temp != null && ctx.temp >= 15) how.push(P("Lleva abierta la capa de fuera ({type}); si refresca por la tarde, ciérrala.", { type: typeName(outer) }));
+  if (bottom && shoe && ["chino", "pantalon", "traje-pantalon"].includes(bottom.type) && ["mocasines", "zapatillas"].includes(shoe.type) && ctx.temp >= 18) how.push(P("Bajo del pantalón con una vuelta para que se vea el tobillo."));
+  if (outer && ctx.temp != null && ctx.temp < 10) how.push(P("Hace frío: cierra bien la capa de fuera ({type}) y, si tienes, bufanda.", { type: typeName(outer) }));
+  if (ctx.rain >= 50) how.push(P("Llueve: mejor calzado que no sea de ante."));
   const acc = c.items.filter((it) => TYPE[it.type]?.g === "complementos");
-  if (acc.length) how.push(`Remátalo con ${acc.map((a) => typeName(a)).join(", ").replace(/, ([^,]*)$/, " y $1")}.`);
-  return { title, itemIds: c.ids, why: why.join(", ") + ".", how: how.slice(0, 4), tucked, repeats: [], extras: c.extras || [], engine: true };
+  if (acc.length) how.push(P("Remátalo con {list}.", { list: andJoin(acc.map((a) => typeName(a))) }));
+  return { title, itemIds: c.ids, why: P("{text}.", { text: why.join(", ") }), how: how.slice(0, 4), tucked, repeats: [], extras: c.extras || [], engine: true, lang: getLanguage() };
 }
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Estética de su mezcla más cercana a este conjunto (por palabras clave de cada estética). */
 function nearestMix(c, ctx) {
   if (!ctx.mix?.length) return "";
-  const w = new Set(c.items.flatMap((it) => [...words(it.name), ...words(typeName(it)), ...(it.styleTags || []).flatMap(words), ...words(colorName(mainColor(it).k))]));
+  const w = new Set(c.items.flatMap((it) => [...words(it.name), ...words(typeEs(it)), ...(it.styleTags || []).flatMap(words), ...words(colorEs(mainColor(it).k))]));
   const dark = harmony(c.items).dark;
   let best = null;
   for (const m of ctx.mix) {
     let s = words(`${m.name} ${m.look}`).filter((x) => w.has(x)).length;
     if (/starboy|street|urban|noche|rock/i.test(m.name)) s += dark > 0.5 ? 1 : -0.5;
     if (/old money|clasic|clásic|prep|quiet/i.test(m.name)) s += dark <= 0.5 ? 0.6 : 0;
-    if (!best || s > best.s) best = { name: m.name, s };
+    if (!best || s > best.s) best = { name: ctx.mixShow?.[ctx.mix.indexOf(m)] || m.name, s };
   }
   return best && best.s >= 1 ? best.name : "";
 }
@@ -432,11 +441,11 @@ export function packTrip({ items, weather, plan, style, days }) {
     out.push({ day: d + 1, title: choice.title, itemIds: choice.itemIds, how: choice.how.slice(0, 2) });
   }
   const temps = wdays.filter(Boolean);
-  const tips = [`Con ${pack.size} prendas montas los ${days} días: se repiten las que combinan con todo.`];
-  if (temps.some((w) => (w.rain ?? 0) >= 50)) tips.push("Hay días de lluvia: mete un paraguas plegable y evita el ante.");
-  if (temps.length && Math.max(...temps.map((w) => w.max)) - Math.min(...temps.map((w) => w.min)) >= 10) tips.push("Mucha diferencia entre día y noche: viste por capas.");
-  tips.push("Enrolla las camisetas y mete los calcetines dentro de los zapatos para ganar sitio.");
-  return { pack: [...pack], days: out, tips, missing: null, engine: true };
+  const tips = [P("Con {n} prendas montas los {days} días: se repiten las que combinan con todo.", { n: pack.size, days })];
+  if (temps.some((w) => (w.rain ?? 0) >= 50)) tips.push(P("Hay días de lluvia: mete un paraguas plegable y evita el ante."));
+  if (temps.length && Math.max(...temps.map((w) => w.max)) - Math.min(...temps.map((w) => w.min)) >= 10) tips.push(P("Mucha diferencia entre día y noche: viste por capas."));
+  tips.push(P("Enrolla las camisetas y mete los calcetines dentro de los zapatos para ganar sitio."));
+  return { pack: [...pack], days: out, tips, missing: null, engine: true, lang: getLanguage() };
 }
 const dayStr = (off) => new Date(Date.now() + off * 864e5).toISOString().slice(0, 10);
 
@@ -464,7 +473,7 @@ export function findGaps({ items, style }) {
     return items.filter((it) => TYPE[it.type]?.g !== layer && Math.abs(formalityOf(it) - f) <= 1.2 && (NEUTRAL.has(mainColor(it).k) || SEMI.has(mainColor(it).k))).slice(0, 5).map((it) => it.id);
   };
   const gap = (kind, i, g) => ({
-    id: `${kind}-${i}-${norm(g.piece).replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`, kind, priority: g.priority || "media",
+    id: `${kind}-${i}-${norm(g.pieceEs || g.piece).replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`, kind, priority: g.priority || "media",
     stores: g.stores || ["zara", "massimo", "uniqlo"], newOutfits: g.pairs.length ? Math.min(12, g.pairs.length * 2) : null, pairsWith: g.pairs, ...g,
   });
   // (a) básicos que faltan para combinar mejor
@@ -472,7 +481,7 @@ export function findGaps({ items, style }) {
   for (const [type, colors, piece, why, lo, hi, term] of ESSENTIALS) {
     if (has(type, colors)) continue;
     const pairs = pairsFor(type);
-    combine.push({ piece, type, why, priceMin: lo, priceMax: hi, searchTerm: term, pairs, color: colors ? colorName(colors[0]) : "", colorHex: colors ? COLOR[colors[0]]?.hex || "#8a8f98" : "#8a8f98" });
+    combine.push({ piece: P(piece), pieceEs: piece, type, why: P(why), priceMin: lo, priceMax: hi, searchTerm: term, pairs, color: colors ? colorName(colors[0]) : "", colorHex: colors ? COLOR[colors[0]]?.hex || "#8a8f98" : "#8a8f98" });
   }
   combine.sort((a, b) => b.pairs.length - a.pairs.length);
   // (b) prendas clave de su estilo que no tiene
@@ -480,23 +489,23 @@ export function findGaps({ items, style }) {
   const board = style?.summary ? style : null;
   for (const kp of board?.keyPieces || []) {
     const w = words(kp);
-    const type = Object.keys(FORMALITY).find((k) => w.includes(norm(k)) || w.includes(norm(label(TYPE[k]) || k).split(" ")[0])) || "";
-    const owned = items.some((it) => { const iw = new Set([...words(it.name), ...words(typeName(it))]); return w.filter((x) => iw.has(x)).length >= Math.min(2, w.length); });
+    const type = Object.keys(FORMALITY).find((k) => w.includes(norm(k)) || w.includes(norm(TYPE[k]?.es || k).split(" ")[0])) || "";
+    const owned = items.some((it) => { const iw = new Set([...words(it.name), ...words(typeEs(it))]); return w.filter((x) => iw.has(x)).length >= Math.min(2, w.length); });
     if (owned || combine.some((g) => g.type === type && type)) continue;
-    const colorKey = Object.keys(COLOR).find((k) => w.includes(norm(colorName(k)).split(" ")[0]));
+    const colorKey = Object.keys(COLOR).find((k) => w.includes(norm(colorEs(k)).split(" ")[0]));
     const [lo, hi] = priceFor(type);
-    styleGaps.push({ piece: cap(kp), type, why: `Es una prenda clave de tu estilo «${board.name || ""}» y no la tienes.`, priceMin: lo, priceMax: hi, searchTerm: kp.split(/\s+/).slice(0, 4).join(" "), pairs: type ? pairsFor(type) : [], color: colorKey ? colorName(colorKey) : "", colorHex: colorKey ? COLOR[colorKey].hex : board.palette?.[0]?.hex || "#8a8f98" });
+    styleGaps.push({ piece: cap(kp), type, why: P("Es una prenda clave de tu estilo «{name}» y no la tienes.", { name: board.name || "" }), priceMin: lo, priceMax: hi, searchTerm: kp.split(/\s+/).slice(0, 4).join(" "), pairs: type ? pairsFor(type) : [], color: colorKey ? colorName(colorKey) : "", colorHex: colorKey ? COLOR[colorKey].hex : board.palette?.[0]?.hex || "#8a8f98" });
     if (styleGaps.length >= 5) break;
   }
   const n = items.length;
-  const advice = n < 10 ? "Tu armario aún es pequeño: empieza por los básicos neutros, que multiplican los outfits."
-    : combine.length >= 4 ? "Tienes prendas pero te faltan básicos puente: con pocos neutros sacarás muchos más outfits."
-    : "Tienes una buena base: céntrate en las prendas que te acercan a tu estilo.";
+  const advice = n < 10 ? P("Tu armario aún es pequeño: empieza por los básicos neutros, que multiplican los outfits.")
+    : combine.length >= 4 ? P("Tienes prendas pero te faltan básicos puente: con pocos neutros sacarás muchos más outfits.")
+    : P("Tienes una buena base: céntrate en las prendas que te acercan a tu estilo.");
   return {
     advice,
     combine: combine.slice(0, 5).map((g, i) => gap("combine", i, { ...g, priority: i < 2 ? "alta" : "media" })),
     style: styleGaps.map((g, i) => gap("style", i, { ...g, priority: i === 0 ? "alta" : "media" })),
-    engine: true,
+    engine: true, lang: getLanguage(),
   };
 }
 function priceFor(type) {
@@ -512,7 +521,7 @@ export function matchStyle({ items, style }) {
   const fits = scored.filter((x) => x.s >= 0.9).sort((a, b) => b.s - a.s).map((x) => x.id);
   const off = scored.filter((x) => x.s < 0).sort((a, b) => a.s - b.s).map((x) => x.id);
   const score = Math.round(Math.max(5, Math.min(92, 30 + (fits.length / Math.max(1, items.length)) * 55 - (off.length / Math.max(1, items.length)) * 30)));
-  return { score, fits: fits.slice(0, 10), off: off.slice(0, 8), note: `Calculado por la app: ${fits.length} de tus ${items.length} prendas encajan con la paleta y las prendas clave de tu estilo.`, engine: true };
+  return { score, fits: fits.slice(0, 10), off: off.slice(0, 8), note: P("Calculado por la app: {a} de tus {n} prendas encajan con la paleta y las prendas clave de tu estilo.", { a: fits.length, n: items.length }), engine: true, lang: getLanguage() };
 }
 
 /* ---------- sujetador (sección mujer): que no se marque ni se transparente ---------- */
@@ -544,8 +553,8 @@ export function pickUnder(items, all) {
   const neck = base.neckline || "normal", sporty = formalityOf(base) <= 1.2 || /deport|gym|running/.test(`${base.name} ${(base.styleTags || []).join(" ")}`.toLowerCase());
   const needStrapless = neck === "sin-tirantes" || neck === "espalda";
   const reasons = [];
-  if (sheer !== "no" || light) reasons.push(sheer === "si" ? "transparenta" : light ? "es de color claro" : "es fina");
-  if (fitted) reasons.push("es ajustada");
+  if (sheer !== "no" || light) reasons.push(sheer === "si" ? P("transparenta") : light ? P("es de color claro") : P("es fina"));
+  if (fitted) reasons.push(P("es ajustada"));
   const score = (b) => {
     const bc = mainColor(b).k, finish = b.braFinish || (/encaje|bordad|puntilla/.test(`${b.name} ${b.material || ""}`.toLowerCase()) ? "relieve" : "liso");
     let s = 0;
@@ -557,17 +566,18 @@ export function pickUnder(items, all) {
     if (b.type === "bralette" && (neck === "escote" || neck === "tirantes-finos") && sheer === "no" && !light) s += 1.5; // se puede dejar ver a propósito
     return s;
   };
-  const what = sheer === "si" || light ? "color carne (nude) y sin costuras" : fitted ? "liso, sin costuras ni encaje" : needStrapless ? "sin tirantes" : "cualquiera cómodo";
-  if (!bras.length) return { id: null, suggest: `Sujetador ${what}`, why: reasons.length ? `Porque «${base.name}» ${reasons.join(" y ")}` : sporty ? "Uno deportivo para moverte" : "Con esta prenda no se nota: el que te resulte más cómodo", warn: "" };
+  const what = sheer === "si" || light ? P("color carne (nude) y sin costuras") : fitted ? P("liso, sin costuras ni encaje") : needStrapless ? P("sin tirantes") : P("cualquiera cómodo");
+  const name = base.nameShow || base.name;
+  if (!bras.length) return { id: null, suggest: P("Sujetador {what}", { what }), why: reasons.length ? P("Porque «{name}» {reasons}", { name, reasons: andJoin(reasons) }) : sporty ? P("Uno deportivo para moverte") : P("Con esta prenda no se nota: el que te resulte más cómodo"), warn: "" };
   const ranked = bras.map((b) => [b, score(b)]).sort((a, b) => b[1] - a[1]), [b, s] = ranked[0];
   const bc = mainColor(b).k;
   const why = [
-    needStrapless ? "sin tirantes por el escote" : "",
-    (light || sheer !== "no") && SKIN.has(bc) ? "el color carne no se ve a través" : "",
-    (fitted || light || sheer !== "no") && (b.braFinish || "liso") === "liso" ? "liso para que no se marque" : "",
-    sporty && b.type === "sujetador-deportivo" ? "deportivo para moverte" : "",
-  ].filter(Boolean).join(", ") || "va bien con este conjunto";
-  const warn = s < 0 ? `Con «${base.name}» lo ideal sería un sujetador ${what}${reasons.length ? ` porque ${reasons.join(" y ")}` : ""}; este es el que mejor queda de los que tienes.` : "";
+    needStrapless ? P("sin tirantes por el escote") : "",
+    (light || sheer !== "no") && SKIN.has(bc) ? P("el color carne no se ve a través") : "",
+    (fitted || light || sheer !== "no") && (b.braFinish || "liso") === "liso" ? P("liso para que no se marque") : "",
+    sporty && b.type === "sujetador-deportivo" ? P("deportivo para moverte") : "",
+  ].filter(Boolean).join(", ") || P("va bien con este conjunto");
+  const warn = s < 0 ? (reasons.length ? P("Con «{name}» lo ideal sería un sujetador {what} porque {reasons}; este es el que mejor queda de los que tienes.", { name, what, reasons: andJoin(reasons) }) : P("Con «{name}» lo ideal sería un sujetador {what}; este es el que mejor queda de los que tienes.", { name, what })) : "";
   return { id: b.id, why: why.charAt(0).toUpperCase() + why.slice(1), warn };
 }
 const BRA_TYPES_E = new Set(["sujetador", "sujetador-sin-tirantes", "bralette", "sujetador-deportivo"]);
@@ -588,24 +598,24 @@ const sockLen = (s) => s.sockLength || (/invisible|pinkie|no.?show/i.test(s.name
 export function pickSocks(items, all, { temp = null } = {}) {
   items = orig(items); all = orig(all);
   const shoe = items.find(isKind(SHOES)); if (!shoe) return null;
-  if (shoe.type === "sandalias") return { id: null, suggest: "Sin calcetines", why: "Con sandalias, mejor el pie al aire", warn: "" };
+  if (shoe.type === "sandalias") return { id: null, suggest: P("Sin calcetines"), why: P("Con sandalias, mejor el pie al aire"), warn: "" };
   const bottom = items.find(isKind(BOTTOM)) || items.find((i) => i.type === "vestido" || i.type === "mono");
   const f = items.reduce((a, it) => a + formalityOf(it), 0) / items.length;
   const short = bottom && (bottom.type === "bermuda" || bottom.type === "falda" || bottom.type === "vestido");
   const dressy = ["zapatos", "mocasines"].includes(shoe.type) && f >= 3, hot = temp != null && temp >= 22, cold = temp != null && temp < 10;
   let want, ideal;
-  if (short || (shoe.type === "mocasines" && (hot || !cold && f < 3.5))) { want = ["invisible"]; ideal = "invisibles"; }
-  else if (dressy) { want = ["alto", "media"]; ideal = `finos y altos${bottom ? ` en ${(label(COLOR[mainColor(bottom).k]) || "el color del pantalón").toLowerCase()}` : " oscuros"}`; }
-  else if (shoe.type === "botas" || shoe.type === "botines") { want = ["media", "alto"]; ideal = cold ? "de lana, media caña o altos" : "de media caña"; }
-  else { want = hot ? ["invisible", "tobillero", "media"] : ["media", "tobillero", "invisible"]; ideal = "blancos, grises o del color del pantalón"; }
+  if (short || (shoe.type === "mocasines" && (hot || !cold && f < 3.5))) { want = ["invisible"]; ideal = P("invisibles"); }
+  else if (dressy) { want = ["alto", "media"]; const bcol = bottom && colorName(mainColor(bottom).k); ideal = bcol ? P("finos y altos en {color}", { color: bcol }) : P("finos y altos oscuros"); }
+  else if (shoe.type === "botas" || shoe.type === "botines") { want = ["media", "alto"]; ideal = cold ? P("de lana, media caña o altos") : P("de media caña"); }
+  else { want = hot ? ["invisible", "tobillero", "media"] : ["media", "tobillero", "invisible"]; ideal = P("blancos, grises o del color del pantalón"); }
   const socks = all.filter((i) => i.type === "calcetines" && (i.status || "disponible") === "disponible");
   if (!socks.length) {
     // sin calcetines en el armario: igualmente, cómo deberían ser
-    const reason = want[0] === "invisible" ? (short ? "Con la pierna al aire, que no se vean" : "Con mocasines queda más limpio sin calcetín a la vista")
-      : dressy ? "En un look arreglado, finos y del color del pantalón para no cortar la pierna"
-      : shoe.type === "botas" || shoe.type === "botines" ? (cold ? "Con botas y frío, más altos y abrigados" : "Que suban por encima de la bota para que no roce")
-      : hot ? "Con calor y zapatillas, cortos y finos" : "Con zapatillas, blancos o neutros quedan bien siempre";
-    return { id: null, suggest: `Calcetines ${ideal}`, why: reason, warn: "" };
+    const reason = want[0] === "invisible" ? (short ? P("Con la pierna al aire, que no se vean") : P("Con mocasines queda más limpio sin calcetín a la vista"))
+      : dressy ? P("En un look arreglado, finos y del color del pantalón para no cortar la pierna")
+      : shoe.type === "botas" || shoe.type === "botines" ? (cold ? P("Con botas y frío, más altos y abrigados") : P("Que suban por encima de la bota para que no roce"))
+      : hot ? P("Con calor y zapatillas, cortos y finos") : P("Con zapatillas, blancos o neutros quedan bien siempre");
+    return { id: null, suggest: P("Calcetines {ideal}", { ideal }), why: reason, warn: "" };
   }
   const bfam = bottom ? FAM(mainColor(bottom).k) : null, sfam = FAM(mainColor(shoe).k);
   const plainLook = items.every((i) => !i.pattern || i.pattern === "liso");
@@ -623,9 +633,9 @@ export function pickSocks(items, all, { temp = null } = {}) {
   };
   const [best, sc] = socks.map((s) => [s, score(s)]).sort((a, b) => b[1] - a[1])[0];
   const len = sockLen(best), bc = mainColor(best).k;
-  const why = len === "invisible" ? (short ? "Invisibles: con pierna al aire no se ven" : "Invisibles: con mocasines queda más limpio sin calcetín a la vista")
-    : dressy ? (FAM(bc) === bfam ? "Del color del pantalón: alargan la pierna" : "Finos y oscuros, como pide un look arreglado")
-    : shoe.type === "botas" || shoe.type === "botines" ? (cold ? "Más altos y abrigados para las botas" : "De media caña para que no rocen las botas")
-    : bc === "blanco" ? "Blancos con zapatillas: el toque casual" : "Van con las zapatillas y el pantalón";
-  return { id: best.id, why, warn: sc < 0 ? `Lo ideal serían unos calcetines ${ideal}; estos son los que mejor quedan de los que tienes.` : "" };
+  const why = len === "invisible" ? (short ? P("Invisibles: con pierna al aire no se ven") : P("Invisibles: con mocasines queda más limpio sin calcetín a la vista"))
+    : dressy ? (FAM(bc) === bfam ? P("Del color del pantalón: alargan la pierna") : P("Finos y oscuros, como pide un look arreglado"))
+    : shoe.type === "botas" || shoe.type === "botines" ? (cold ? P("Más altos y abrigados para las botas") : P("De media caña para que no rocen las botas"))
+    : bc === "blanco" ? P("Blancos con zapatillas: el toque casual") : P("Van con las zapatillas y el pantalón");
+  return { id: best.id, why, warn: sc < 0 ? P("Lo ideal serían unos calcetines {ideal}; estos son los que mejor quedan de los que tienes.", { ideal }) : "" };
 }
