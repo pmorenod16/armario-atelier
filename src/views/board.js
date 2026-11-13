@@ -82,7 +82,9 @@ export const boardTools = () => `<div class="bd-tools row wrap">
   <span class="muted small bd-hint" hidden>${t("board.hint")}</span></div>`;
 
 export function wireBoardEdit(container, onSaved) {
-  const board = () => container.querySelector(".board");
+  // el lienzo grande, el de al lado de la barra (en Hoy, antes se cogía la primera miniatura de las opciones: el lienzo
+  // grande no pasaba a modo edición, se quedaba con touch-action: pan-y y al mover una prenda se desplazaba la pantalla)
+  const board = () => container.querySelector(".look-stage .board") || container.querySelector(".board");
   const set = (editing) => {
     const tools = container.querySelector(".bd-tools"); if (!tools) return;
     board()?.classList.toggle("editing", editing);
@@ -106,7 +108,7 @@ export function wireBoardEdit(container, onSaved) {
   const pts = new Map();
   container.addEventListener("pointerdown", (e) => {
     const bd = board(); if (!bd?.classList.contains("editing")) return;
-    const el = e.target.closest(".bd-item"); if (!el) return;
+    const el = e.target.closest(".bd-item"); if (!el || !bd.contains(el)) return;
     e.preventDefault(); el.setPointerCapture(e.pointerId); pts.set(e.pointerId, e);
     document.body.classList.add("no-select"); getSelection()?.removeAllRanges();
     const R = bd.getBoundingClientRect(), z = Math.max(...[...bd.children].map((c) => +c.style.zIndex || 0)) + 1;
@@ -130,7 +132,7 @@ export function wireBoardEdit(container, onSaved) {
   container.addEventListener("pointerup", up); container.addEventListener("pointercancel", up);
   container.addEventListener("wheel", (e) => {
     const bd = board(); if (!bd?.classList.contains("editing")) return;
-    const el = e.target.closest(".bd-item"); if (!el) return;
+    const el = e.target.closest(".bd-item"); if (!el || !bd.contains(el)) return;
     e.preventDefault(); const k = e.deltaY < 0 ? 1.06 : 0.94;
     scale(el, parseFloat(el.style.width) * k, parseFloat(el.style.height) * k);
   }, { passive: false });
