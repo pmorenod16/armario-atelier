@@ -155,7 +155,7 @@ export const FITS = [
 ];
 
 export const SEASONS = ["primavera", "verano", "otono", "invierno"];
-export const STATUSES = ["disponible", "sucia", "tintoreria", "arreglo", "prestada"]; // arreglo = en la modista o el zapatero
+export const STATUSES = ["disponible", "sucia", "tintoreria", "arreglo", "prestada", "guardada"]; // arreglo = en la modista o el zapatero; guardada = fuera de temporada (cambio de armario)
 export const SIZE_KEYS = ["camiseta", "camisa", "jersey", "americana", "pantalon", "vaquero", "calzado"];
 
 const by = (list) => Object.fromEntries(list.map((x) => [x.k, x]));

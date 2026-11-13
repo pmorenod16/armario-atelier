@@ -15,6 +15,7 @@ import { tintFor } from "./add.js";
 import { pickItems } from "./picker.js";
 import { boardHTML, hydrateBoard, boardTools, wireBoardEdit } from "./board.js";
 import { suggestOutfits, packTrip, ensureGlasses, pickUnder, pickSocks } from "../engine.js";
+import { photoButton, logByPhoto } from "./wearphoto.js";
 import { canCalendar, canVoice, planFromCalendar, planByVoice } from "../native.js";
 
 /** «ia» (Gemini; si falla, la app) o «app» (solo el motor propio, al instante). */
@@ -46,7 +47,10 @@ export function renderToday(view, only = null) {
   // foto del look (en la tarjeta del outfit que te has puesto)
   if (!view.__photoWired) { // una sola vez por vista (renderToday se llama en cada visita)
     view.__photoWired = true;
-    view.addEventListener("change", (e) => { if (e.target.dataset?.photo && !e.target.closest(".sheet")) uploadPhoto(e.target); });
+    view.addEventListener("change", (e) => {
+      if (e.target.dataset?.photo && !e.target.closest(".sheet")) uploadPhoto(e.target);
+      if (e.target.dataset?.wphoto && !e.target.closest(".sheet")) logByPhoto(e.target, e.target.dataset.wphoto);
+    });
     view.addEventListener("click", (e) => { const b = e.target.closest("[data-seephoto]"); if (b) openDay(b.dataset.seephoto); });
   }
   view.addEventListener("click", (e) => { const m = e.target.closest("[data-item]"); if (m) openItem(m.dataset.item); });
@@ -177,7 +181,7 @@ function tabToday(box) {
   box.innerHTML = `
     <div class="day-switch"><div class="seg" id="daySeg">${["hoy", "mañana"].map((k) => `<button type="button" data-day="${k}" aria-pressed="${(state.day || "hoy") === k}">${t("day." + (k === "hoy" ? "today" : "tomorrow"))}</button>`).join("")}</div>
       ${tomorrow ? `<span class="muted small">${fmtDate(today, { weekday: "long", day: "numeric", month: "long" })}</span>` : (new Date().getHours() >= 19 ? `<span class="muted small">${t("day.hint")}</span>` : "")}</div>
-    <div id="washCheck"></div>
+    <div id="washCheck"></div><div id="dayNotes"></div>
     <div class="today-grid">
       <section class="wx card" id="wx"><p class="muted">${t("today.wx.loading")}</p></section>
       <section class="card plan">
@@ -185,6 +189,7 @@ function tabToday(box) {
         <div class="chips" id="quick">${t("today.quick").split("|").map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
         <div class="engine-row"><span class="muted small">${t("engine.label")}</span><div class="seg engine-seg" id="engine">${["ia", "app"].map((k) => `<button type="button" data-e="${k}" aria-pressed="${engineMode() === k}">${t("engine." + k)}</button>`).join("")}</div></div>
         <button class="btn primary block" type="button" id="go">${icon("spark")}${t("today.go")}</button>
+        ${!tomorrow ? `<div class="wphoto-row">${photoButton(today, "btn ghost sm")}<span class="muted small">${t("wphoto.hint")}</span></div>` : ""}
         <p class="status" id="st" aria-live="polite"></p>
         ${store.style?.summary ? `<a class="style-chip" href="#/estilo">${icon("spark")}${t("today.styleOn", { name: esc(store.style.name || t("style.title")) })}</a>` : `<a class="style-chip off" href="#/estilo">${icon("pin")}${t("today.styleOff")}</a>`}
       </section>
@@ -192,6 +197,19 @@ function tabToday(box) {
     <div id="result"></div>`;
   $("#daySeg", box).onclick = (e) => { const b = e.target.closest("[data-day]"); if (b && b.dataset.day !== (state.day || "hoy")) { state.day = b.dataset.day; state.sel = 0; document.querySelector('.tabs [data-tab="hoy"]')?.click(); } };
   if (!tomorrow) drawWashCheck($("#washCheck", box), today);
+  // avisos: lavadora lista (laundry.js) y cambio de temporada (season.js)
+  const notes = $("#dayNotes", box);
+  const drawNotes = async () => {
+    if (tomorrow || !store.ready.items) return;
+    const [l, s] = await Promise.all([import("./laundry.js"), import("./season.js")]);
+    const h = l.laundryNoteHTML() + await s.seasonNoteHTML().catch(() => "");
+    if (notes.isConnected && notes.innerHTML !== h) notes.innerHTML = h;
+  };
+  notes.onclick = (e) => {
+    if (e.target.closest("[data-laundry]")) import("./laundry.js").then((m) => m.openLaundry());
+    if (e.target.closest("[data-season]")) import("./season.js").then((m) => m.openSeason());
+  };
+  drawNotes();
   const planEl = $("#plan", box);
   const addPlan = (txt) => { if (txt) planEl.value = planEl.value.trim() ? `${planEl.value.trim()}. ${txt}` : txt; };
   const calB = $("#cal", box), micB = $("#mic", box);
@@ -402,7 +420,7 @@ function tabToday(box) {
   }
 
   drawResult();
-  const unsub = subscribe(() => { drawResult(); if (!tomorrow) drawWashCheck($("#washCheck", box), today); });
+  const unsub = subscribe(() => { drawResult(); if (!tomorrow) { drawWashCheck($("#washCheck", box), today); drawNotes(); } });
   wireBoardEdit(result, () => toast(t("board.saved")));
   return () => unsub();
 }
@@ -460,10 +478,13 @@ function openDay(date) {
       ${w.how?.length ? `<ol class="how">${w.how.map((h) => `<li>${esc(h)}</li>`).join("")}</ol>` : ""}
       <div class="row wrap"><label class="btn sm">${icon("camera")}${t(w.photo ? "photo.change" : "photo.add")}<input type="file" accept="image/*" data-photo="${date}" hidden></label>${w.photo ? `<button class="btn sm ghost danger" type="button" id="dpDel">${icon("trash")}${t("photo.remove")}</button>` : ""}</div>
       <div class="sheet-foot"><button class="btn danger" type="button" id="del">${icon("trash")}${t("cal.delete")}</button><button class="btn" type="button" id="edit">${icon("edit")}${t("cal.change")}</button></div>`
-    : `<p class="muted">${t("cal.empty")}</p><div class="sheet-foot"><button class="btn primary" type="button" id="edit">${icon("plus")}${t("cal.log")}</button></div>`}`,
+    : `<p class="muted">${t("cal.empty")}</p><div class="sheet-foot">${photoButton(date, "btn")}<button class="btn primary" type="button" id="edit">${icon("plus")}${t("cal.log")}</button></div>`}`,
   { label: title });
   if (w?.photo) readWearPhoto(date).then((u) => { const im = $("#dp", sh.el); if (u && im) im.src = u; });
-  sh.el.addEventListener("change", async (e) => { if (e.target.dataset.photo) { await uploadPhoto(e.target); sh.close(); openDay(date); } });
+  sh.el.addEventListener("change", async (e) => {
+    if (e.target.dataset.photo) { await uploadPhoto(e.target); sh.close(); openDay(date); }
+    if (e.target.dataset.wphoto) { sh.close(); if (await logByPhoto(e.target, date)) openDay(date); }
+  });
   sh.el.onclick = async (e) => {
     if (e.target.closest("[data-close]")) return sh.close();
     const it = e.target.closest("[data-item]"); if (it) return openItem(it.dataset.item);

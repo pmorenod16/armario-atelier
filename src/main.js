@@ -310,4 +310,15 @@ function toastOffline() { import("./ui.js").then((m) => m.toast(t("offline.toast
 
 /* ---------- actualizaciones ---------- */
 startUpdater();
-import("./native.js").then((m) => m.listenReminder()).catch(() => {});
+// outfit listo al despertar (morning.js): se prepara al abrir la app (cuando ya están los datos) y al dejarla;
+// a la vez se miran los precios de la lista de deseos (pricewatch.js, como mucho cada 12 h por prenda)
+import("./morning.js").then((m) => {
+  m.listenMorning();
+  const go = () => { if (store.ready.items && store.ready.profile) {
+    setTimeout(() => m.prepareMorning(), 5000);
+    setTimeout(() => import("./pricewatch.js").then((p) => p.checkPrices()).catch(() => {}), 9000); // precios de la lista de deseos
+    return true;
+  } };
+  if (!go()) { const off = subscribe(() => { if (go()) off(); }); }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) m.prepareMorning(); });
+}).catch(() => {});

@@ -5,12 +5,14 @@ import { $, esc, icon, openSheet } from "../ui.js";
 import { store } from "../data.js";
 import { tintFor } from "./add.js";
 
-export function pickItems(selected = [], { title = t("picker.title") } = {}) {
+/** note: línea de ayuda arriba; photo: URL de una foto para tenerla a la vista mientras eliges (apuntar con foto). */
+export function pickItems(selected = [], { title = t("picker.title"), note = "", photo = "" } = {}) {
   return new Promise((resolve) => {
     const sel = new Set(selected);
     let done = false;
     const sheet = openSheet(`
       <div class="sheet-head"><h2 class="display">${esc(title)}</h2><button class="btn icon ghost" data-close aria-label="${t("common.close")}">${icon("close")}</button></div>
+      ${photo || note ? `<div class="pick-note">${photo ? `<img src="${photo}" alt="">` : ""}${note ? `<p class="muted small">${esc(note)}</p>` : ""}</div>` : ""}
       <div id="groups"></div>
       <div class="sheet-foot"><button class="btn" type="button" data-close>${t("common.cancel")}</button><button class="btn primary" type="button" id="ok"></button></div>`,
     { label: title, wide: true, onClose: () => { if (!done) resolve(null); } });

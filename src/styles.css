@@ -821,3 +821,32 @@ body.is-offline::before { content: "Sin conexión · armario guardado"; position
 .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--glow); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .live .product { animation: pop .35s var(--ease) both; }
+
+/* ---------- 13/11/2026: colada, temporada, foto del look, bajadas de precio ---------- */
+.badge.guardada { color: #6b7a5a; }
+@media (prefers-color-scheme: dark) { .badge.guardada { color: #b5c79a; } }
+button.notice { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+button.notice > span { flex: 1; }
+button.notice > .ic:first-child { color: var(--glow, var(--ink)); flex: none; }
+button.notice > .ic:last-child { width: 14px; height: 14px; opacity: .5; flex: none; }
+.load { display: grid; gap: 8px; }
+.load.ready { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.load .pill { background: var(--surface-2); color: var(--ink-2); }
+.load .pill.on { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.load-bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.load-bar i { display: block; height: 100%; border-radius: inherit; background: var(--ok); transition: width .4s var(--spring, ease); }
+.load:not(.ready) .load-bar i { background: var(--ink-3, #9aa0a8); }
+.load .btn { justify-self: start; }
+.l-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.l-item { width: 46px; height: 46px; border-radius: 12px; background: var(--tint, var(--surface-2)); display: grid; place-items: center; overflow: hidden; font-size: 11px; color: var(--ink-2); }
+.l-item img { width: 100%; height: 100%; object-fit: contain; }
+.pick-note { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.pick-note img { width: 84px; height: 112px; object-fit: cover; border-radius: 14px; flex: none; }
+.pick-note p { margin: 0; }
+.wphoto-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.wphoto-row .muted { flex: 1; min-width: 140px; }
+.pill.drop { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); gap: 4px; align-items: center; }
+.pill.drop .ic { width: 12px; height: 12px; }
+.shop-tabs .count.drop { background: var(--ok); color: #fff; }
+.wish-watch { margin: 0 0 10px; }
+.wish-watch .ic { width: 14px; height: 14px; vertical-align: -2px; }

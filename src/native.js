@@ -44,22 +44,10 @@ export async function planByVoice() {
   });
 }
 
-/** Aviso diario a la hora elegida ("08:00") o null para quitarlo. */
+/** Activa (pide permiso) o quita el aviso de la mañana. Lo programa morning.js con el outfit del día. */
 export async function setMorningReminder(time) {
   const { LocalNotifications } = await import("@capacitor/local-notifications");
-  await LocalNotifications.cancel({ notifications: [{ id: 801 }] }).catch(() => {});
-  if (!time) return;
+  if (!time) { await LocalNotifications.cancel({ notifications: [801, 802, 803, 804, 805, 806, 807].map((id) => ({ id })) }).catch(() => {}); return; }
   const perm = await LocalNotifications.requestPermissions();
   if (perm.display !== "granted") throw new Error("Sin permiso para avisos. Actívalos en Ajustes → Aplicaciones → Armario Atelier → Notificaciones.");
-  const [hour, minute] = time.split(":").map(Number);
-  await LocalNotifications.schedule({ notifications: [{
-    id: 801, title: "¿Qué te pones hoy?", body: "Tu outfit según el tiempo y tus planes te espera.",
-    schedule: { on: { hour, minute }, allowWhileIdle: true }
-  }] });
-}
-/** Al tocar el aviso, abre Hoy. */
-export async function listenReminder() {
-  if (!canNotify()) return;
-  const { LocalNotifications } = await import("@capacitor/local-notifications");
-  LocalNotifications.addListener("localNotificationActionPerformed", () => { location.hash = "#/hoy"; });
 }

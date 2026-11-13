@@ -4,9 +4,8 @@ import {
   GROUPS, TYPE, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, STATUSES, label, groupOf, TYPES,
 } from "../catalog.js";
 import { $, $$, esc, icon, openSheet, tilt, setHalo, viewHalo } from "../ui.js";
-import { store, subscribe, washAll } from "../data.js";
+import { store, subscribe } from "../data.js";
 import { openItem } from "./item.js";
-import { toast } from "../ui.js";
 import { openAdd, tintFor } from "./add.js";
 
 const state = { q: "", group: "", sort: "recent", f: { color: [], size: [], pattern: [], brand: [], materialKey: [], season: [], fit: [], status: [], formality: [] } };
@@ -44,7 +43,7 @@ const SORTS = {
 export function renderCloset(view) {
   view.innerHTML = `
     <header class="head"><div><h1 class="display">${t("closet.title")}</h1><div class="sub" id="count"></div></div><div class="row wrap head-actions"><button class="btn sm" type="button" id="wash" hidden>${icon("wash")}<span></span></button><button class="btn sm ghost" type="button" id="stats">${icon("chart")}${t("stats.btn")}</button></div></header>
-    <div id="notice"></div>
+    <div id="notice"></div><div id="seasonNote"></div>
     <div class="toolbar">
       <label class="searchbox">${icon("search")}<input class="input" type="search" id="q" placeholder="${t("closet.search")}" value="${esc(state.q)}" aria-label="${t("closet.search")}"></label>
       <button class="btn icon tool-btn" type="button" id="sortBtn" aria-label="${t("closet.sort")}">${icon("sort")}</button>
@@ -53,7 +52,11 @@ export function renderCloset(view) {
     <div class="scroller" id="groups" role="group"></div>
     <div id="grid"></div>`;
   $("#q", view).oninput = (e) => { state.q = e.target.value; draw(); };
-  $("#wash", view).onclick = async () => { try { const n = await washAll(); toast(t("wash.done", { n })); } catch { toast(t("item.saveFail"), "error"); } };
+  $("#wash", view).onclick = () => import("./laundry.js").then((m) => m.openLaundry());
+  // cambio de temporada: aviso si toca guardar/sacar ropa (mira la previsión una vez al día)
+  const sn = $("#seasonNote", view);
+  sn.onclick = (e) => { if (e.target.closest("[data-season]")) import("./season.js").then((m) => m.openSeason()); };
+  const seasonNote = () => import("./season.js").then(async (m) => { const h = await m.seasonNoteHTML(); if (sn.innerHTML !== h) sn.innerHTML = h; }).catch(() => {});
   $("#filterBtn", view).onclick = () => openFilters(draw);
   $("#sortBtn", view).onclick = () => openSort(draw);
   $("#groups", view).onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; state.group = b.dataset.g; draw(); };
@@ -74,7 +77,8 @@ export function renderCloset(view) {
     $("#count", view).textContent = all.length === 1 ? t("closet.countOne") : t("closet.count", { n: all.length });
     $("#stats", view).onclick = () => import("./stats.js").then((m) => m.openStats());
     const dirty = store.items.filter((i) => i.status === "sucia" || i.status === "tintoreria").length, wb = $("#wash", view);
-    wb.hidden = !dirty; wb.lastChild.textContent = t("wash.all", { n: dirty });
+    wb.hidden = !dirty; wb.lastChild.textContent = t("laundry.btn", { n: dirty });
+    if (store.ready.items) seasonNote();
     $("#notice", view).innerHTML = store.error ? `<div class="notice">${t("common.loadFail")}</div>` : store.offline && all.length ? `<div class="notice">${t("common.offline")}</div>` : "";
     const n = activeCount(); $("#fdot", view).hidden = !n; $("#fdot", view).textContent = n;
     const base = all.filter((it) => matches(it, { ignoreGroup: true }));

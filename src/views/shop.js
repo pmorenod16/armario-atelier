@@ -6,6 +6,7 @@ import { $, esc, icon, toast, say, viewHalo, pickPhoto, isCancel } from "../ui.j
 import { api, blobToBase64, base64ToBlob } from "../api.js";
 import { shrinkPhoto } from "../cutout.js";
 import { store, subscribe, styleText, saveShopping, saveShopResult, saveWish, deleteWish, itemById } from "../data.js";
+import { refreshPrice, recentDrop, fmtEur, priceNum } from "../pricewatch.js";
 import { tintFor } from "./add.js";
 import { boardHTML, hydrateBoard } from "./board.js";
 import { findGaps } from "../engine.js";
@@ -32,6 +33,8 @@ const strip = (ids, cls = "") => ids.map(byId).filter(Boolean).map((it) => `<but
 const VERDICT = { justo: "shop.vJusto", caro: "shop.vCaro", barato: "shop.vBarato" };
 
 let tab = "gaps"; // se recuerda al volver a la sección
+/** Abrir Compras en una pestaña (la notificación de bajada de precio abre Deseos). */
+export const showShopTab = (k) => { tab = k; };
 
 export function renderShop(view) {
   let busy = false;
@@ -45,7 +48,7 @@ export function renderShop(view) {
       <header class="head"><div><h1 class="display">${t("shop.title")}</h1><div class="sub">${t("shop.sub")}</div></div></header>
       <div class="seg shop-tabs" role="tablist">
         <button type="button" role="tab" data-tab="gaps" aria-pressed="${tab === "gaps"}">${icon("spark")}${t("shop.tabGaps")}</button>
-        <button type="button" role="tab" data-tab="wish" aria-pressed="${tab === "wish"}">${icon("heart")}${t("shop.tabWish")}${wl.length ? ` <span class="count">${wl.length}</span>` : ""}</button>
+        <button type="button" role="tab" data-tab="wish" aria-pressed="${tab === "wish"}">${icon("heart")}${t("shop.tabWish")}${wl.length ? ` <span class="count ${wl.some(recentDrop) ? "drop" : ""}">${wl.length}</span>` : ""}</button>
         <button type="button" role="tab" data-tab="store" aria-pressed="${tab === "store"}">${icon("camera")}${t("shop.tabStore")}</button>
       </div>
       <div id="pane"></div>`;
@@ -202,7 +205,8 @@ export function renderShop(view) {
         <span class="muted small">${esc([w.store, w.gap && t("shop.forGap", { g: w.gap })].filter(Boolean).join(" · "))}</span>
         <b class="w-name">${esc(w.name)}</b>
         <div class="p-price"><b>${esc(w.price || t("shop.noPrice"))}</b>${w.verdict ? `<span class="pill v-${w.verdict}">${t(VERDICT[w.verdict])}</span>` : ""}${w.size ? `<span class="muted small">${t("shop.yourSize", { s: esc(w.size) })}</span>` : ""}
-          ${w.oldPrice && w.oldPrice !== w.price ? `<span class="muted small"><s>${esc(w.oldPrice)}</s></span>` : ""}</div>
+          ${w.oldPrice && w.oldPrice !== w.price ? `<span class="muted small"><s>${esc(w.oldPrice)}</s></span>` : ""}
+          ${recentDrop(w) && !w.bought ? `<span class="pill drop">${icon("pricedown")}${t("price.dropped", { v: fmtEur(Math.round(recentDrop(w) * 100) / 100) })}</span>` : ""}</div>
         ${w.pairsWith?.length && !w.bought ? `<div class="look-items">${strip(w.pairsWith)}</div>` : ""}
         <div class="row wrap w-actions">
           ${w.bought ? `<span class="pill">${icon("check")}${t("shop.bought")}</span>` : `
@@ -217,6 +221,7 @@ export function renderShop(view) {
         <form class="off-link" id="addLink"><input class="input" name="url" type="url" inputmode="url" placeholder="${t("shop.wishLinkPh")}" aria-label="${t("shop.wishLink")}"><button class="btn sm primary" type="submit">${icon("plus")}${t("shop.add")}</button></form>
         <p class="status" id="wst" aria-live="polite"></p>
       </section>
+      ${pending.some((w) => /^https?:/.test(w.url || "")) ? `<p class="muted small wish-watch">${icon("bell")} ${t("price.watchHint")}</p>` : ""}
       ${pending.length ? `<div class="row between wish-total"><span class="muted">${t("shop.wishCount", { n: pending.length })}</span>${total ? `<b>${t("shop.total", { v: eur(Math.round(total * 100) / 100) })}</b>` : ""}</div>
         <div class="wishes">${pending.map(row).join("")}</div>`
       : `<div class="empty"><div class="empty-art">${icon("heart")}</div><h2 class="display">${t("shop.wishEmpty")}</h2><p>${t("shop.wishEmptyBody")}</p></div>`}
@@ -239,10 +244,8 @@ export function renderShop(view) {
       if (pr) {
         const w = store.wishlist.find((x) => x.id === pr.dataset.price); pr.disabled = true;
         try {
-          const p = (await api("/api/product", { url: w.url })).products[0];
-          const changed = p.price && p.price !== w.price;
-          await saveWish({ price: p.price || w.price, priceNum: priceNum(p.price) ?? w.priceNum, oldPrice: changed ? w.price : w.oldPrice || null, image: w.image || p.images?.[0] || null, checkedAt: Date.now() }, w.id);
-          toast(changed ? t("shop.priceChanged", { from: w.price, to: p.price }) : t("shop.priceSame"));
+          const r = await refreshPrice(w);
+          toast(r.changed ? t("shop.priceChanged", { from: fmtEur(r.from), to: fmtEur(r.to) }) : t("shop.priceSame"));
         } catch (err) { pr.disabled = false; toast(err?.message || t("official.fail"), "error"); }
         return;
       }
@@ -335,13 +338,6 @@ export function renderShop(view) {
 }
 
 const hostName = (u) => { try { return new URL(u).hostname.replace(/^www\d?\./, ""); } catch { return ""; } };
-function priceNum(p) {
-  const m = String(p || "").replace(/\s/g, "").match(/(\d{1,4}(?:[.,]\d{3})*(?:[.,]\d{1,2})?)/);
-  if (!m) return null;
-  let x = m[1];
-  x = /[.,]\d{1,2}$/.test(x) ? x.replace(/[.,](?=\d{3}\b)/g, "").replace(",", ".") : x.replace(/[.,]/g, "");
-  const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 /** Tarjeta de un modelo encontrado. wishKey = «hueco|índice» para el corazón (sin él, sin corazón: resultados en directo). */
 function productHTML(p, wishKey, wished) {

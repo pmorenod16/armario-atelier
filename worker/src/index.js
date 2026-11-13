@@ -748,6 +748,27 @@ Responde SOLO con JSON: {"title": nombre corto del look, "look": [prendas del pi
     };
   },
 
+  // Foto de lo que lleva puesto (espejo, selfie) → qué prendas de SU armario son (13/11/2026, apuntar el outfit con una foto)
+  async "/api/wear/photo"({ image, wardrobe }, env) {
+    const ids = new Set((wardrobe || []).map((w) => w.id));
+    if (!ids.size) throw new HttpError(400, "Añade prendas al armario para reconocerlas en la foto.");
+    if (!image) throw new HttpError(400, "Falta la foto.");
+    const text = await askAI(env, {
+      model: MAIN(env), maxTokens: 1500,
+      content: [imageBlock(cleanImg(image)), textBlock(`Esta foto es la persona con la ropa que lleva hoy (espejo o selfie). Di qué prendas de SU armario lleva puestas.
+Su armario:
+${itemsText(wardrobe)}
+
+Para cada prenda que se vea en la foto (de arriba, de abajo, abrigo, calzado, complementos visibles), busca en su armario la que coincide por tipo y color (y estampado o material si se distingue). Si dudas entre dos muy parecidas, elige la más probable. Si una prenda de la foto no está en su armario, no la fuerces: ponla en "notFound". No adivines lo que no se ve (calcetines, ropa interior, calzado fuera de la foto).
+Responde SOLO con JSON: {"itemIds": [ids de su armario que lleva puestos], "notFound": [prendas de la foto que no están en su armario, frases cortas tipo "gorra negra"] (0-4)}`)],
+    });
+    const r = parseJson(text);
+    return {
+      itemIds: [...new Set((r.itemIds || []).filter((id) => ids.has(id)))],
+      notFound: (r.notFound || []).map((x) => clip(x, 60)).filter(Boolean).slice(0, 4),
+    };
+  },
+
   // Estilo + armario → cuánto encaja y qué prendas lo representan mejor
   async "/api/style/match"({ style, wardrobe }, env) {
     const ids = new Set((wardrobe || []).map((w) => w.id));

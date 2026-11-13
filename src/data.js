@@ -231,6 +231,20 @@ export async function reviewWear(date, decisions) {
   await b.commit();
 }
 /** Todo lo sucio, lavado. */
+/** Estas prendas ya están limpias (lavadora o tintorería): disponibles y usos a 0. */
+export async function markClean(ids) {
+  if (!ids.length) return;
+  const b = writeBatch(fs);
+  ids.forEach((id) => b.update(doc(itemsRef(), id), { status: "disponible", wearsSinceWash: 0, updatedAt: Date.now() }));
+  await b.commit();
+}
+/** Cambia el estado de varias prendas a la vez (cambio de temporada: guardada ↔ disponible). */
+export async function setStatusMany(ids, status) {
+  if (!ids.length) return;
+  const b = writeBatch(fs);
+  ids.forEach((id) => b.update(doc(itemsRef(), id), { status, updatedAt: Date.now() }));
+  await b.commit();
+}
 export async function washAll() {
   const dirty = store.items.filter((i) => i.status === "sucia" || i.status === "tintoreria"); if (!dirty.length) return 0;
   const b = writeBatch(fs);
@@ -334,8 +348,9 @@ export function styleText(s, { onlyMain = false } = {}) {
 export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, updatedAt: Date.now() }, { merge: true });
 export const saveShopResult = (gapId, result) => setDoc(metaDoc("shopping"), { results: { [gapId]: result }, updatedAt: Date.now() }, { merge: true });
 export async function saveWish(w, id) {
+  const isNew = !id; // al actualizar no se toca la fecha en que se añadió
   id ||= "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  await setDoc(doc(userCol("wishlist"), id), { addedAt: Date.now(), ...w, updatedAt: Date.now() }, { merge: true });
+  await setDoc(doc(userCol("wishlist"), id), { ...(isNew ? { addedAt: Date.now() } : {}), ...w, updatedAt: Date.now() }, { merge: true });
   return id;
 }
 export const deleteWish = (id) => deleteDoc(doc(userCol("wishlist"), id));

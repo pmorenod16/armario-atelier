@@ -528,7 +528,7 @@ export async function checkPhoto(url, { wanted, plain, type } = {}) {
 export async function photoPlain(url, opts) { const r = await within(checkPhoto(url, opts), 15000); return r?.ok !== false; }
 
 /** Ficha de producto → {name, image, price}. JSON-LD Product o etiquetas og/product. */
-async function readProduct(url) {
+export async function readProduct(url) {
   const html = (await get(url, 10000)).slice(0, 1_500_000);
   let name = null, image = null, price = null, currency = "€";
   for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {

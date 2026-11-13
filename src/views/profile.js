@@ -242,7 +242,10 @@ export function renderProfile(view) {
   if (remOn) {
     const apply = async () => {
       const time = remOn.checked ? remAt.value || "08:00" : null;
-      try { await setMorningReminder(time); change({ reminder: time }); toast(time ? t("remind.set", { time }) : t("remind.off")); }
+      try {
+        await setMorningReminder(time); store.profile.reminder = time; change({ reminder: time }); toast(time ? t("remind.set", { time }) : t("remind.off"));
+        if (time) import("../morning.js").then((m) => m.prepareMorning(true));
+      }
       catch (e) { remOn.checked = false; toast(e?.message || t("item.saveFail"), "error"); }
     };
     remOn.onchange = apply; remAt.onchange = () => { if (remOn.checked) apply(); };
