@@ -717,25 +717,44 @@ export async function translateTexts(list, ms = 12000) {
   }
   return list.map((x) => dyn[x] || x);
 }
-const FREE = new Set(["title", "why", "how", "missing", "advice", "tips", "note", "suggest", "warn", "piece", "fits", "off", "headline", "extras"]);
-/** Traduce los textos libres de un resultado del motor (in situ) antes de guardarlo o enseñarlo. */
-export async function localize(obj) {
-  if (lang === "es" || !obj) return obj;
+// Campos de texto libre (del motor, de la IA o del análisis de estilo) que se traducen; los del usuario (notes) no.
+const FREE = new Set(["title", "why", "how", "missing", "advice", "tips", "note", "suggest", "warn", "piece", "fits", "off", "headline", "extras",
+  "summary", "keywords", "formulas", "keyPieces", "fabrics", "silhouettes", "footwear", "avoid", "look", "styleFit", "priceNote", "check", "similar", "verdictText"]);
+const NAMED = new Set(["palette", "mix"]); // dentro de estas listas también se traduce «name» (nombre del color o de la estética)
+function collect(obj, skip = new Set(), named = false) {
   const slots = [];
-  const walk = (o) => {
-    if (Array.isArray(o)) return o.forEach(walk);
+  const walk = (o, named) => {
+    if (Array.isArray(o)) return o.forEach((x) => walk(x, named));
     if (!o || typeof o !== "object") return;
     for (const [k, v] of Object.entries(o)) {
-      if (FREE.has(k) && typeof v === "string") slots.push([o, k, null]);
-      else if (FREE.has(k) && Array.isArray(v) && v.every((x) => typeof x === "string")) v.forEach((_, i) => slots.push([v, i, null]));
-      else walk(v);
+      if (skip.has(k) || k === "notes" || k === "_lang") continue;
+      const free = FREE.has(k) || (named && k === "name");
+      if (free && typeof v === "string") slots.push([o, k]);
+      else if (free && Array.isArray(v) && v.every((x) => typeof x === "string")) v.forEach((_, i) => slots.push([v, i]));
+      else if (v && typeof v === "object") walk(v, NAMED.has(k));
     }
   };
-  walk(obj);
+  walk(obj, named);
+  return slots;
+}
+/** Traduce los textos libres de un resultado (in situ, esperando a la IA si hace falta) antes de guardarlo o enseñarlo. */
+export async function localize(obj) {
+  if (lang === "es" || !obj) return obj;
+  const slots = collect(obj);
   const out = await translateTexts(slots.map(([o, k]) => o[k]));
   slots.forEach(([o, k], i) => { o[k] = out[i]; });
   return obj;
 }
+/** Copia traducida con lo que ya está en la caché, al momento; missing = frases que aún hay que pedir. */
+/** named = traducir también «name» de arriba (nombre del estilo). */
+export function localizeNow(obj, skip, named) {
+  if (lang === "es" || !obj) return { obj, missing: [] };
+  const c = structuredClone(obj), missing = [];
+  for (const [o, k] of collect(c, skip, named)) { const v = o[k]; if (!isText(v)) continue; if (dyn[v]) o[k] = dyn[v]; else missing.push(v); }
+  return { obj: c, missing };
+}
+/** Traduce frases sueltas con lo que hay en la caché (las que falten se quedan igual). */
+export const fromCache = (list) => list.map((x) => (lang !== "es" && dyn[x]) || x);
 /** Para textos del motor que se calculan al pintar: si ya está traducido sale traducido; si no, se pide y se cambia en pantalla al llegar. */
 const pend = new Set(); let pendTimer = 0;
 export function tx(s) {
@@ -772,7 +791,11 @@ function runTranslate(l) {
   const p = (async () => {
     const cat = await import("./catalog.js"), { api } = await import("./api.js");
     const src = { ...DICT.es };
-    for (const list of [cat.GROUPS, cat.TYPES, cat.COLORS, cat.PATTERNS, cat.MATERIALS, cat.FITS]) for (const e of list || []) if (e.es) src["~" + e.es] = e.es;
+    // todas las listas del catálogo con texto (también sujetador, transparencia, escote y calcetines)
+    for (const list of Object.values(cat)) if (Array.isArray(list)) for (const e of list) if (e?.es) src["~" + e.es] = e.es;
+    // «Dónde buscar»: descripción de multimarca, grupos de marcas y «cómo es» de cada marca
+    const ss = await import("./storesearch.js");
+    for (const d of [...Object.values(ss.MULTI), ...ss.BRAND_GROUPS.map(([, g]) => g), ...ss.BRANDS.map((b) => b.desc)]) if (d) src["~" + d] = d;
     for (const [, es] of (await import("./weather.js")).CODES) src["~" + es] = es; // el tiempo («Lluvia», «Nublado»…)
     const cache = readCache(l);
     const missing = Object.entries(src).filter(([k, v]) => cache[k]?.[0] !== v);

@@ -76,7 +76,7 @@ export function renderShop(view) {
         <div class="gap-head">
           <i class="swatch" style="background:${g.colorHex}"></i>
           <div class="grow"><b>${esc(g.piece)}</b><small class="muted">${[g.priceMin && t("shop.range", { min: g.priceMin, max: g.priceMax }), size && t("shop.yourSize", { s: esc(size) })].filter(Boolean).join(" · ")}</small></div>
-          <span class="pill prio-${g.priority}">${t("shop.prio." + g.priority)}</span>
+          <span class="pill prio-${g.priority}">${t("shop.prio." + ({ 1: "alta", 2: "media", 3: "baja" }[g.priority] || g.priority))}</span>
         </div>
         <p class="gap-why">${esc(g.why)}${g.newOutfits ? ` <span class="muted">${t("shop.newOutfits", { n: g.newOutfits })}</span>` : ""}</p>
         ${g.pairsWith?.length ? `<div class="gap-pairs"><span class="muted small">${t("shop.pairs")}</span><div class="look-items">${strip(g.pairsWith)}</div></div>` : ""}
@@ -326,7 +326,7 @@ export function renderShop(view) {
   }
 
   draw();
-  const sigOf = () => JSON.stringify([store.shopping?.at, Object.keys(store.shopping?.results || {}).length, store.shopping?.updatedAt, store.wishlist.map((w) => w.id + (w.updatedAt || "")), store.items.length]);
+  const sigOf = () => JSON.stringify([store.locVer, store.shopping?.at, Object.keys(store.shopping?.results || {}).length, store.shopping?.updatedAt, store.wishlist.map((w) => w.id + (w.updatedAt || "")), store.items.length]);
   let sig = sigOf();
   return subscribe(() => {
     const now = sigOf();

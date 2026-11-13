@@ -1,7 +1,7 @@
 // «Dónde buscar»: qué tiendas, grandes almacenes y marcas se miran al buscar modelos en Compras.
 // Vive en Compras, al lado de «Buscar modelos» (9/11/2026, Polete: «así no se va de un lado a otro todo el rato»).
 // Guarda en el perfil: stores (cadenas + multimarca) y brands (marcas por grupo de estilo, con su descripción).
-import { t } from "../i18n.js";
+import { t, tr } from "../i18n.js";
 import { esc, icon, toast, openSheet } from "../ui.js";
 import { store, saveProfile } from "../data.js";
 import { STORES, BRANDS, BRAND_GROUPS, MULTI, LOCAL_DEFAULT, allowedStores, allowedBrands } from "../storesearch.js";
@@ -31,16 +31,16 @@ function pickerHTML(p) {
         <details class="brand-group"><summary><b>${t("stores.multi")}</b> <span class="muted small" data-count="multi"></span></summary>
           <p class="muted small">${t("stores.multiHint")}</p>
           ${allBtns("store", "multi")}
-          ${STORES.filter(([n]) => MULTI[n]).map(([n]) => `<div class="brand-row"><button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${st.includes(n)}">${esc(n)}</button><span class="muted small">${esc(MULTI[n])}</span></div>`).join("")}
+          ${STORES.filter(([n]) => MULTI[n]).map(([n]) => `<div class="brand-row"><button type="button" class="chip" data-store="${esc(n)}" aria-pressed="${st.includes(n)}">${esc(n)}</button><span class="muted small">${esc(tr(MULTI[n]))}</span></div>`).join("")}
         </details>
       </div>
       <h3 class="sub-h">${t("brands.title")}</h3>
       <p class="muted small">${t("brands.hint")}</p>
       ${allBtns("brand", "*")}
       <div id="brandChips">${BRAND_GROUPS.map(([g, title]) => { const list = BRANDS.filter((b) => b.group === g);
-        return `<details class="brand-group" data-group="${esc(g)}"><summary><b>${esc(title)}</b> <span class="muted small" data-count="${esc(g)}">${groupHead(list)}</span></summary>
+        return `<details class="brand-group" data-group="${esc(g)}"><summary><b>${esc(tr(title))}</b> <span class="muted small" data-count="${esc(g)}">${groupHead(list)}</span></summary>
           ${allBtns("brand", g)}
-          ${list.map((b) => `<div class="brand-row"><button type="button" class="chip" data-brand="${esc(b[0])}" aria-pressed="${br.includes(b[0])}">${esc(b[0])}</button><span class="muted small">${esc(b.desc)}</span></div>`).join("")}</details>`; }).join("")}</div>
+          ${list.map((b) => `<div class="brand-row"><button type="button" class="chip" data-brand="${esc(b[0])}" aria-pressed="${br.includes(b[0])}">${esc(b[0])}</button><span class="muted small">${esc(tr(b.desc || ""))}</span></div>`).join("")}</details>`; }).join("")}</div>
       <div class="row wrap where-foot"><button class="btn sm ghost" type="button" id="storesReset">${icon("refresh")}${t("stores.reset")}</button><button class="btn sm primary" type="button" data-close>${icon("check")}${t("where.done")}</button></div>
     </div>`;
 }

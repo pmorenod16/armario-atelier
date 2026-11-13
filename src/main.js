@@ -262,7 +262,7 @@ function openApp() {
     if (k !== baseKey) { baseKey = k; setHaloBase(pal[0]?.hex, pal[1]?.hex || pal[2]?.hex); }
     if (!store.ready.profile) return;
     // idioma: solo cuando cambia (antes se releía en cada cambio de datos y costaba en catalán/inglés)
-    if ((store.profile.language || "es") !== langNow) { langNow = store.profile.language || "es"; setLanguage(langNow); translateDom(); }
+    if ((store.profile.language || "es") !== langNow) { const was = langNow; langNow = store.profile.language || "es"; setLanguage(langNow); translateDom(); if (was && started) { destroyPeeks(); route(); } } // la pantalla abierta se repinta en el idioma nuevo
     // traducción pendiente (o textos nuevos de una versión nueva): se completa en segundo plano y la pantalla se actualiza al acabar
     if (getLanguage() !== "es" && !window.__i18nChecked) {
       window.__i18nChecked = true;

@@ -4,6 +4,7 @@ import {
 } from "./firebase.js";
 import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
 import { layerOf, setCatalogSection } from "./catalog.js";
+import { getLanguage, setLanguage, localizeNow, translateTexts, fromCache } from "./i18n.js";
 
 const DEFAULT_PROFILE = {
   onboarded: false,
@@ -21,18 +22,57 @@ export const store = {
   items: [], profile: null, ready: { items: false, profile: false }, offline: false, error: null,
   wear: [], feedback: [], trips: [], today: null, style: null, layouts: {}, // fase 2
   shopping: null, wishlist: [], looks: [], // fase 4 y extras
+  locVer: 0, // sube cuando llega una traducción de lo guardado: las pantallas lo miran para repintar
 };
 /** Prenda del armario por id (o undefined). */
 export const itemById = (id) => store.items.find((i) => i.id === id);
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
+/* ---------- Lo guardado en otro idioma se enseña traducido ----------
+   Los outfits, la maleta, los huecos de Compras, el análisis de estilo, los looks y el calendario se guardan en el idioma
+   en que se hicieron (_lang; sin _lang = castellano). Si la app está en otro idioma, se enseñan traducidos: al momento con
+   lo que ya hay en la caché y, lo que falte, en cuanto llega la traducción (sin tocar lo guardado). */
+const L = () => getLanguage();
+function loc(raw, apply, skip) {
+  if (!raw || L() === "es" || (raw._lang || "es") === L()) return raw;
+  const { obj, missing } = localizeNow(raw, skip);
+  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(localizeNow(raw, skip).obj); }).catch(() => {});
+  return obj;
+}
+function locStyle(raw, apply) {
+  if (!raw || L() === "es") return raw;
+  const build = () => {
+    const missing = [];
+    const part = (o, skip) => { if ((o._lang || "es") === L()) return o; const r = localizeNow(o, skip, true); missing.push(...r.missing); return r.obj; };
+    const top = part(raw, new Set(["extra"]));
+    return { obj: { ...top, extra: (raw.extra || []).map((b) => part(b)) }, missing };
+  };
+  const { obj, missing } = build();
+  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(build().obj); }).catch(() => {});
+  return obj;
+}
+// nombres de las prendas (los pone la IA al añadirlas, en el idioma de entonces)
+function locItems(items, apply) {
+  if (L() === "es") return items;
+  const names = items.map((i) => i.name || ""), tr = fromCache(names);
+  const missing = [...new Set(names.filter((n, k) => n && tr[k] === n && !(items[k]._lang === L())))];
+  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(); }).catch(() => {});
+  return items.map((i, k) => (tr[k] !== i.name && i._lang !== L() ? { ...i, name: tr[k], nameOrig: i.name } : i));
+}
+const raws = {};
+// cómo se pinta cada colección desde lo guardado; al cambiar el idioma se vuelve a pasar todo (si no, lo que llegaba antes
+// que el perfil se quedaba en castellano para siempre: el idioma se conoce al leer el perfil)
+const puts = {};
+const relocalize = () => { store.locVer++; Object.values(puts).forEach((f) => f()); };
 let unsubs = [];
 export function startData() {
   stopData();
   unsubs.push(onSnapshot(itemsRef(), { includeMetadataChanges: true }, (snap) => {
-    store.items = snap.docs.map((d) => normalizeItem({ id: d.id, ...d.data() }))
+    raws.items = snap.docs.map((d) => normalizeItem({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const put = (puts.items = () => { const r = raws.items; store.items = locItems(r, () => { if (raws.items === r) { store.items = locItems(r, () => {}); emit(); } }); });
+    put();
     store.ready.items = true; store.offline = snap.metadata.fromCache; store.error = null;
     emit();
   }, (e) => { console.error(e); store.error = "load"; store.ready.items = true; emit(); }));
@@ -41,24 +81,31 @@ export function startData() {
     apiDefaults.section = store.profile.section === "mujer" ? "mujer" : "hombre";
     setCatalogSection(apiDefaults.section);
     apiDefaults.lang = ["ca", "en"].includes(store.profile.language) ? store.profile.language : "es";
+    if (apiDefaults.lang !== getLanguage()) { setLanguage(apiDefaults.lang); relocalize(); }
     store.ready.profile = true; emit();
   }, (e) => { console.error(e); store.profile = { ...DEFAULT_PROFILE }; store.ready.profile = true; emit(); }));
-  const list = (name, key, sort) => unsubs.push(onSnapshot(userCol(name), (snap) => {
-    store[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(sort); emit();
+  const list = (name, key, sort, translate) => unsubs.push(onSnapshot(userCol(name), (snap) => {
+    raws[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(sort);
+    (puts[key] = () => { const r = raws[key];
+      store[key] = translate ? r.map((d) => loc(d, (c) => { if (raws[key] === r) { store[key] = store[key].map((x) => (x.id === c.id ? c : x)); emit(); } })) : r; })();
+    emit();
   }, (e) => console.warn(name, e)));
-  list("wear", "wear", (a, b) => b.date.localeCompare(a.date));
+  const meta = (name, key, fn = loc) => unsubs.push(onSnapshot(metaDoc(name), (s) => {
+    raws[key] = s.exists() ? s.data() : null;
+    (puts[key] = () => { const r = raws[key]; store[key] = fn(r, (c) => { if (raws[key] === r) { store[key] = c; emit(); } }); })();
+    emit();
+  }, () => {}));
+  list("wear", "wear", (a, b) => b.date.localeCompare(a.date), true);
   list("feedback", "feedback", (a, b) => (b.at || 0) - (a.at || 0));
-  list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  list("trips", "trips", (a, b) => (b.createdAt || 0) - (a.createdAt || 0), true);
   unsubs.push(onSnapshot(userCol("layouts"), (snap) => { store.layouts = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); emit(); }, () => {}));
-  unsubs.push(onSnapshot(metaDoc("today"), (s) => { store.today = s.exists() ? s.data() : null; emit(); }, () => {}));
-  unsubs.push(onSnapshot(metaDoc("tomorrow"), (s) => { store.tomorrow = s.exists() ? s.data() : null; emit(); }, () => {}));
-  unsubs.push(onSnapshot(metaDoc("shopping"), (s) => { store.shopping = s.exists() ? s.data() : null; emit(); }, () => {}));
+  meta("today", "today"); meta("tomorrow", "tomorrow"); meta("shopping", "shopping");
   list("wishlist", "wishlist", (a, b) => (b.addedAt || 0) - (a.addedAt || 0));
-  list("looks", "looks", (a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  unsubs.push(onSnapshot(metaDoc("style"), (s) => { store.style = s.exists() ? s.data() : null; emit(); }, () => {}));
+  list("looks", "looks", (a, b) => (b.createdAt || 0) - (a.createdAt || 0), true);
+  meta("style", "style", locStyle);
 }
 export function stopData() {
-  unsubs.splice(0).forEach((u) => u());
+  unsubs.splice(0).forEach((u) => u()); for (const k in puts) delete puts[k];
   store.items = []; store.profile = null; store.ready = { items: false, profile: false };
   store.wear = []; store.feedback = []; store.trips = []; store.today = null; store.tomorrow = null; store.style = null; store.layouts = {}; store.shopping = null; store.wishlist = []; store.looks = [];
 }
@@ -87,7 +134,9 @@ export const saveProfile = (patch) => setDoc(metaDoc("profile"), { ...patch, upd
 export async function saveItem(data, { id, cut } = {}) {
   id ||= newItemId();
   const now = Date.now();
-  const item = { ...data, layer: layerOf(data.type), updatedAt: now };
+  const { nameOrig, ...clean } = data; // nameOrig = nombre guardado antes de traducirlo para enseñarlo (locItems)
+  const item = { ...clean, layer: layerOf(data.type), updatedAt: now };
+  if (data.name != null) item._lang = L(); // el nombre está en el idioma de ahora
   if (!item.createdAt) item.createdAt = now;
   const batch = writeBatch(fs);
   if (cut?.blob) {
@@ -137,7 +186,7 @@ export async function logWear({ date = todayKey(), itemIds, extraIds = [], title
   const prev = store.wear.find((w) => w.date === date);
   const b = writeBatch(fs);
   extraIds = extraIds.filter((id) => id && !itemIds.includes(id));
-  b.set(doc(userCol("wear"), date), { date, itemIds, extraIds, title, plan, how, weather, createdAt: Date.now(), ...(prev?.photo ? { photo: true } : {}) });
+  b.set(doc(userCol("wear"), date), { date, itemIds, extraIds, title, plan, how, weather, _lang: L(), createdAt: Date.now(), ...(prev?.photo ? { photo: true } : {}) });
   const all = [...itemIds, ...extraIds], before = wornIds(prev);
   const added = all.filter((id) => !before.includes(id)), removed = before.filter((id) => !all.includes(id));
   // con «preguntarme al día siguiente» (por defecto) no se marca nada aquí: se decide en la revisión de Hoy
@@ -194,7 +243,7 @@ export async function washAll() {
 // users/{uid}/looks/{id}: {title, itemIds, note, source: hoy|mano|pin|combina, createdAt}
 export async function saveLook(look, id) {
   const ref = id ? doc(userCol("looks"), id) : doc(userCol("looks"));
-  await setDoc(ref, { ...look, createdAt: look.createdAt || Date.now(), updatedAt: Date.now() }, { merge: true });
+  await setDoc(ref, { ...look, _lang: L(), createdAt: look.createdAt || Date.now(), updatedAt: Date.now() }, { merge: true });
   return ref.id;
 }
 export const deleteLook = (id) => deleteDoc(doc(userCol("looks"), id));
@@ -222,13 +271,13 @@ export async function deleteWear(date) {
 export const saveFeedback = ({ itemIds, liked, title, plan }) =>
   setDoc(doc(userCol("feedback"), `${itemIds.slice().sort().join("_")}`.slice(0, 600)), { itemIds, liked, title, plan, at: Date.now() });
 
-export const saveToday = (data, which = "today") => setDoc(metaDoc(which), { ...data, updatedAt: Date.now() });
+export const saveToday = (data, which = "today") => setDoc(metaDoc(which), { ...data, _lang: L(), updatedAt: Date.now() });
 /** Propuestas guardadas para una fecha (las de hoy o las preparadas la noche antes). */
 export const dayPlan = (date) => [store.today, store.tomorrow].find((d) => d?.date === date) || null;
 
 export async function saveTrip(trip, id) {
   const ref = id ? doc(userCol("trips"), id) : doc(userCol("trips"));
-  await setDoc(ref, { ...trip, createdAt: trip.createdAt || Date.now() });
+  await setDoc(ref, { ...trip, _lang: L(), createdAt: trip.createdAt || Date.now() });
   return ref.id;
 }
 export const deleteTrip = (id) => deleteDoc(doc(userCol("trips"), id));
@@ -242,17 +291,18 @@ export function saveLayout(ids, boxes) {
 export const deleteLayout = (ids) => deleteDoc(doc(userCol("layouts"), layoutKey(ids)));
 
 /* ---------- fase 3: estilo ---------- */
-export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, updatedAt: Date.now() }, { merge: true });
+export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, ...(data.summary != null ? { _lang: L() } : {}), updatedAt: Date.now() }, { merge: true });
 
 /** Tableros: el principal son los campos de arriba de meta/style; los demás van en `extra` (cada uno con su `use`). */
 export const boardsOf = (s) => s ? [{ ...s, id: "main", extra: undefined }, ...(s.extra || [])] : [];
 export function saveBoard(id, patch) {
   if (id === "main") return saveStyle(patch);
-  const extra = (store.style?.extra || []).map((b) => (b.id === id ? { ...b, ...patch } : b));
+  // sobre lo guardado tal cual (no sobre la copia traducida que se enseña)
+  const extra = (raws.style?.extra || store.style?.extra || []).map((b) => (b.id === id ? { ...b, ...patch, ...(patch.summary != null ? { _lang: L() } : {}) } : b));
   return saveStyle({ extra });
 }
-export const addBoard = (b) => saveStyle({ extra: [...(store.style?.extra || []), b] });
-export const removeBoard = (id) => saveStyle({ extra: (store.style?.extra || []).filter((b) => b.id !== id) });
+export const addBoard = (b) => saveStyle({ extra: [...(raws.style?.extra || store.style?.extra || []), b] });
+export const removeBoard = (id) => saveStyle({ extra: (raws.style?.extra || store.style?.extra || []).filter((b) => b.id !== id) });
 
 function boardText(s, long) {
   return [
@@ -282,7 +332,7 @@ export function styleText(s, { onlyMain = false } = {}) {
 
 /* ---------- Compras (fase 4) ---------- */
 // meta/shopping: {advice, combine[], style[], at, results{gapId:{products,links,searched}}}
-export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, updatedAt: Date.now() }, { merge: true });
+export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, ...(data.combine || data.style ? { _lang: L() } : {}), updatedAt: Date.now() }, { merge: true });
 export const saveShopResult = (gapId, result) => setDoc(metaDoc("shopping"), { results: { [gapId]: result }, updatedAt: Date.now() }, { merge: true });
 export async function saveWish(w, id) {
   id ||= "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);

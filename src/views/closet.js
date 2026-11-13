@@ -92,7 +92,7 @@ export function renderCloset(view) {
     const list = base.filter((it) => !state.group || groupOf(it.type).k === state.group).sort(SORTS[state.sort]);
     if (!list.length) { grid.innerHTML = `<div class="empty"><p>${t("closet.noMatch")}</p><button class="btn" id="clearF" type="button">${t("closet.clearFilters")}</button></div>`; return; }
     // solo se rehace la cuadrícula si de verdad cambia algo (la base de datos avisa muchas veces sin cambios)
-    const key = list.map((it) => `${it.id}:${it.updatedAt || 0}:${it.status}`).join("|");
+    const key = store.locVer + list.map((it) => `${it.id}:${it.updatedAt || 0}:${it.status}`).join("|");
     if (key !== lastKey) {
       grid.innerHTML = `<div class="grid${lastKey ? " no-rise" : ""}">${list.map((it, i) => tile(it, i)).join("")}</div>`;
       lastKey = key;

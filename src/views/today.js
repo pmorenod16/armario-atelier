@@ -59,7 +59,7 @@ export function renderToday(view, only = null) {
 function drawWashCheck(host, today) {
   if (!host || store.profile?.washCheck === false) return;
   const wear = store.wear.find((w) => w.date < today && !w.reviewed && (Date.parse(today) - Date.parse(w.date)) / 864e5 <= 3);
-  const sig = wear ? wear.date + (wear.itemIds || []).join() : "";
+  const sig = wear ? wear.date + (wear.itemIds || []).join() + "#" + store.locVer : "";
   if (host.dataset.sig === sig) return; // no rehacer mientras eliges
   host.dataset.sig = sig;
   if (!wear) { host.innerHTML = ""; return; }
@@ -330,7 +330,7 @@ function tabToday(box) {
     }
     const td = dayPlan(today);
     // las opciones, en miniatura, para elegir de un vistazo
-    const optsSig = outfits.map((x) => x.itemIds.join()).join("|") + "#" + state.sel + JSON.stringify(store.layouts || {}).length;
+    const optsSig = outfits.map((x) => x.itemIds.join()).join("|") + "#" + state.sel + "#" + store.locVer + JSON.stringify(store.layouts || {}).length;
     const opts = $("#opts", result);
     if (opts.dataset.sig !== optsSig) {
       opts.dataset.sig = optsSig;
@@ -393,7 +393,7 @@ function tabToday(box) {
   function showBoard(o) {
     const stage = $("#stage", result); if (!stage) return;
     if (stage.querySelector(".board.editing")) return; // no rehacer mientras se coloca a mano
-    const sig = o.itemIds.join() + JSON.stringify(store.layouts?.[o.itemIds.slice().sort().join("_")]?.boxes || null);
+    const sig = o.itemIds.join() + store.locVer + JSON.stringify(store.layouts?.[o.itemIds.slice().sort().join("_")]?.boxes || null);
     if (sig === shown) return; shown = sig;
     stage.innerHTML = boardHTML(o.itemIds);
     hydrateBoard(stage);
