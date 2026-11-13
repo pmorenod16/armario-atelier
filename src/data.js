@@ -4,7 +4,7 @@ import {
 } from "./firebase.js";
 import { base64ToBlob, blobToBase64, apiDefaults } from "./api.js";
 import { layerOf, setCatalogSection } from "./catalog.js";
-import { getLanguage, setLanguage, localizeNow, translateTexts, fromCache } from "./i18n.js";
+import { getLanguage, setLanguage, localizeNow, requestTexts, fromCache, hasTranslation, onTranslated } from "./i18n.js";
 
 const DEFAULT_PROFILE = {
   onboarded: false,
@@ -29,49 +29,49 @@ export const itemById = (id) => store.items.find((i) => i.id === id);
 const emit = () => listeners.forEach((fn) => fn(store));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
-/* ---------- Lo guardado en otro idioma se enseña traducido ----------
-   Los outfits, la maleta, los huecos de Compras, el análisis de estilo, los looks y el calendario se guardan en el idioma
-   en que se hicieron (_lang; sin _lang = castellano). Si la app está en otro idioma, se enseñan traducidos: al momento con
-   lo que ya hay en la caché y, lo que falte, en cuanto llega la traducción (sin tocar lo guardado). */
+/* ---------- Lo guardado se enseña en el idioma de la app ----------
+   Los outfits, la maleta, los huecos de Compras, el análisis de estilo, los looks, el calendario y los nombres de las prendas
+   se guardan como salieron (del motor, de la IA o escritos al añadir la prenda). Si la app no está en castellano, TODO eso
+   se enseña traducido, sin mirar en qué idioma dice estar (_lang no es fiable: si la traducción no llegaba a tiempo se
+   guardaba en castellano marcado como catalán y ya no se traducía nunca). Lo que ya está en el idioma bueno, el traductor
+   lo devuelve igual. Al momento sale lo que hay en la caché; lo demás se pide (i18n.requestTexts) y, cuando llega,
+   onTranslated vuelve a pasar todo (relocalize) y las pantallas se repintan (store.locVer). Lo guardado no se toca. */
 const L = () => getLanguage();
-function loc(raw, apply, skip) {
-  if (!raw || L() === "es" || (raw._lang || "es") === L()) return raw;
+function loc(raw, skip) {
+  if (!raw || L() === "es") return raw;
   const { obj, missing } = localizeNow(raw, skip);
-  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(localizeNow(raw, skip).obj); }).catch(() => {});
+  requestTexts(missing);
   return obj;
 }
-function locStyle(raw, apply) {
+function locStyle(raw) {
   if (!raw || L() === "es") return raw;
-  const build = () => {
-    const missing = [];
-    const part = (o, skip) => { if ((o._lang || "es") === L()) return o; const r = localizeNow(o, skip, true); missing.push(...r.missing); return r.obj; };
-    const top = part(raw, new Set(["extra"]));
-    return { obj: { ...top, extra: (raw.extra || []).map((b) => part(b)) }, missing };
-  };
-  const { obj, missing } = build();
-  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(build().obj); }).catch(() => {});
+  const missing = [];
+  const part = (o, skip) => { const r = localizeNow(o, skip, true); missing.push(...r.missing); return r.obj; };
+  const obj = { ...part(raw, new Set(["extra"])), extra: (raw.extra || []).map((b) => part(b)) };
+  Object.defineProperty(obj, "raw", { value: raw }); // el motor (engine.js) trabaja con lo guardado
+  requestTexts(missing);
   return obj;
 }
 // nombres de las prendas (los pone la IA al añadirlas, en el idioma de entonces)
-function locItems(items, apply) {
+function locItems(items) {
   if (L() === "es") return items;
   const names = items.map((i) => i.name || ""), tr = fromCache(names);
-  const missing = [...new Set(names.filter((n, k) => n && tr[k] === n && !(items[k]._lang === L())))];
-  if (missing.length) translateTexts(missing).then(() => { store.locVer++; apply(); }).catch(() => {});
-  return items.map((i, k) => (tr[k] !== i.name && i._lang !== L() ? { ...i, name: tr[k], nameOrig: i.name } : i));
+  requestTexts(names.filter((n) => !hasTranslation(n)));
+  return items.map((i, k) => (tr[k] !== i.name ? { ...i, name: tr[k], nameOrig: i.name } : i));
 }
 const raws = {};
 // cómo se pinta cada colección desde lo guardado; al cambiar el idioma se vuelve a pasar todo (si no, lo que llegaba antes
 // que el perfil se quedaba en castellano para siempre: el idioma se conoce al leer el perfil)
 const puts = {};
 const relocalize = () => { store.locVer++; Object.values(puts).forEach((f) => f()); };
+onTranslated(() => { if (Object.keys(puts).length) { relocalize(); emit(); } });
 let unsubs = [];
 export function startData() {
   stopData();
   unsubs.push(onSnapshot(itemsRef(), { includeMetadataChanges: true }, (snap) => {
     raws.items = snap.docs.map((d) => normalizeItem({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    const put = (puts.items = () => { const r = raws.items; store.items = locItems(r, () => { if (raws.items === r) { store.items = locItems(r, () => {}); emit(); } }); });
+    const put = (puts.items = () => { store.items = locItems(raws.items); });
     put();
     store.ready.items = true; store.offline = snap.metadata.fromCache; store.error = null;
     emit();
@@ -87,12 +87,12 @@ export function startData() {
   const list = (name, key, sort, translate) => unsubs.push(onSnapshot(userCol(name), (snap) => {
     raws[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(sort);
     (puts[key] = () => { const r = raws[key];
-      store[key] = translate ? r.map((d) => loc(d, (c) => { if (raws[key] === r) { store[key] = store[key].map((x) => (x.id === c.id ? c : x)); emit(); } })) : r; })();
+      store[key] = translate ? r.map((d) => loc(d)) : r; })();
     emit();
   }, (e) => console.warn(name, e)));
   const meta = (name, key, fn = loc) => unsubs.push(onSnapshot(metaDoc(name), (s) => {
     raws[key] = s.exists() ? s.data() : null;
-    (puts[key] = () => { const r = raws[key]; store[key] = fn(r, (c) => { if (raws[key] === r) { store[key] = c; emit(); } }); })();
+    (puts[key] = () => { store[key] = fn(raws[key]); })();
     emit();
   }, () => {}));
   list("wear", "wear", (a, b) => b.date.localeCompare(a.date), true);
@@ -136,7 +136,6 @@ export async function saveItem(data, { id, cut } = {}) {
   const now = Date.now();
   const { nameOrig, ...clean } = data; // nameOrig = nombre guardado antes de traducirlo para enseñarlo (locItems)
   const item = { ...clean, layer: layerOf(data.type), updatedAt: now };
-  if (data.name != null) item._lang = L(); // el nombre está en el idioma de ahora
   if (!item.createdAt) item.createdAt = now;
   const batch = writeBatch(fs);
   if (cut?.blob) {
@@ -186,7 +185,7 @@ export async function logWear({ date = todayKey(), itemIds, extraIds = [], title
   const prev = store.wear.find((w) => w.date === date);
   const b = writeBatch(fs);
   extraIds = extraIds.filter((id) => id && !itemIds.includes(id));
-  b.set(doc(userCol("wear"), date), { date, itemIds, extraIds, title, plan, how, weather, _lang: L(), createdAt: Date.now(), ...(prev?.photo ? { photo: true } : {}) });
+  b.set(doc(userCol("wear"), date), { date, itemIds, extraIds, title, plan, how, weather, createdAt: Date.now(), ...(prev?.photo ? { photo: true } : {}) });
   const all = [...itemIds, ...extraIds], before = wornIds(prev);
   const added = all.filter((id) => !before.includes(id)), removed = before.filter((id) => !all.includes(id));
   // con «preguntarme al día siguiente» (por defecto) no se marca nada aquí: se decide en la revisión de Hoy
@@ -243,7 +242,7 @@ export async function washAll() {
 // users/{uid}/looks/{id}: {title, itemIds, note, source: hoy|mano|pin|combina, createdAt}
 export async function saveLook(look, id) {
   const ref = id ? doc(userCol("looks"), id) : doc(userCol("looks"));
-  await setDoc(ref, { ...look, _lang: L(), createdAt: look.createdAt || Date.now(), updatedAt: Date.now() }, { merge: true });
+  await setDoc(ref, { ...look, createdAt: look.createdAt || Date.now(), updatedAt: Date.now() }, { merge: true });
   return ref.id;
 }
 export const deleteLook = (id) => deleteDoc(doc(userCol("looks"), id));
@@ -271,13 +270,13 @@ export async function deleteWear(date) {
 export const saveFeedback = ({ itemIds, liked, title, plan }) =>
   setDoc(doc(userCol("feedback"), `${itemIds.slice().sort().join("_")}`.slice(0, 600)), { itemIds, liked, title, plan, at: Date.now() });
 
-export const saveToday = (data, which = "today") => setDoc(metaDoc(which), { ...data, _lang: L(), updatedAt: Date.now() });
+export const saveToday = (data, which = "today") => setDoc(metaDoc(which), { ...data, updatedAt: Date.now() });
 /** Propuestas guardadas para una fecha (las de hoy o las preparadas la noche antes). */
 export const dayPlan = (date) => [store.today, store.tomorrow].find((d) => d?.date === date) || null;
 
 export async function saveTrip(trip, id) {
   const ref = id ? doc(userCol("trips"), id) : doc(userCol("trips"));
-  await setDoc(ref, { ...trip, _lang: L(), createdAt: trip.createdAt || Date.now() });
+  await setDoc(ref, { ...trip, createdAt: trip.createdAt || Date.now() });
   return ref.id;
 }
 export const deleteTrip = (id) => deleteDoc(doc(userCol("trips"), id));
@@ -291,14 +290,14 @@ export function saveLayout(ids, boxes) {
 export const deleteLayout = (ids) => deleteDoc(doc(userCol("layouts"), layoutKey(ids)));
 
 /* ---------- fase 3: estilo ---------- */
-export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, ...(data.summary != null ? { _lang: L() } : {}), updatedAt: Date.now() }, { merge: true });
+export const saveStyle = (data) => setDoc(metaDoc("style"), { ...data, updatedAt: Date.now() }, { merge: true });
 
 /** Tableros: el principal son los campos de arriba de meta/style; los demás van en `extra` (cada uno con su `use`). */
 export const boardsOf = (s) => s ? [{ ...s, id: "main", extra: undefined }, ...(s.extra || [])] : [];
 export function saveBoard(id, patch) {
   if (id === "main") return saveStyle(patch);
   // sobre lo guardado tal cual (no sobre la copia traducida que se enseña)
-  const extra = (raws.style?.extra || store.style?.extra || []).map((b) => (b.id === id ? { ...b, ...patch, ...(patch.summary != null ? { _lang: L() } : {}) } : b));
+  const extra = (raws.style?.extra || store.style?.extra || []).map((b) => (b.id === id ? { ...b, ...patch } : b));
   return saveStyle({ extra });
 }
 export const addBoard = (b) => saveStyle({ extra: [...(raws.style?.extra || store.style?.extra || []), b] });
@@ -332,7 +331,7 @@ export function styleText(s, { onlyMain = false } = {}) {
 
 /* ---------- Compras (fase 4) ---------- */
 // meta/shopping: {advice, combine[], style[], at, results{gapId:{products,links,searched}}}
-export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, ...(data.combine || data.style ? { _lang: L() } : {}), updatedAt: Date.now() }, { merge: true });
+export const saveShopping = (data) => setDoc(metaDoc("shopping"), { ...data, updatedAt: Date.now() }, { merge: true });
 export const saveShopResult = (gapId, result) => setDoc(metaDoc("shopping"), { results: { [gapId]: result }, updatedAt: Date.now() }, { merge: true });
 export async function saveWish(w, id) {
   id ||= "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);

@@ -700,21 +700,57 @@ let dyn = {};
 function loadDyn(l) { try { dyn = JSON.parse(localStorage.getItem(DL(l)) || "{}"); } catch { dyn = {}; } }
 function saveDyn() { try { const k = Object.keys(dyn); if (k.length > 3000) k.slice(0, k.length - 3000).forEach((x) => delete dyn[x]); localStorage.setItem(DL(lang), JSON.stringify(dyn)); } catch {} }
 const isText = (s) => typeof s === "string" && s.length > 2 && /[a-záéíóúñ]{3}/i.test(s);
-/** Traduce frases sueltas (espera a la IA como mucho ms; si no llega, se quedan en castellano). */
-export async function translateTexts(list, ms = 12000) {
+/* La traducción va en segundo plano y no se pierde: antes se esperaba 12 s y, si la IA tardaba más (Gemini lento → reserva),
+   se abandonaba y el texto se quedaba en castellano para siempre. Ahora cada frase se pide una sola vez (aunque la pidan
+   varias pantallas), cada petición tiene 45 s, lo que falla se reintenta (10 s, 30 s, 90 s…) y al llegar se avisa (onTranslated)
+   para que las pantallas se repinten. Quien quiere esperar (localize antes de guardar) espera como mucho ms. */
+const queued = new Set(), dynListeners = new Set();
+let dynJob = null, retryN = 0, retryTimer = null;
+export const onTranslated = (fn) => { dynListeners.add(fn); return () => dynListeners.delete(fn); };
+function pump() {
+  if (dynJob || !queued.size || lang === "es") return dynJob || Promise.resolve();
+  const l = lang;
+  dynJob = (async () => {
+    const { api } = await import("./api.js");
+    let got = 0, failed = false;
+    while (queued.size && lang === l) {
+      const parts = [];
+      const all = [...queued].filter((x) => !dyn[x]); queued.clear();
+      for (let i = 0; i < all.length; i += 40) parts.push(all.slice(i, i + 40));
+      await Promise.all([0, 1, 2].map(async () => {
+        for (let part; (part = parts.shift());) {
+          const entries = Object.fromEntries(part.map((x, j) => [`d${j}`, x]));
+          try {
+            const r = await api("/api/translate", { lang: l, entries }, { timeout: 45000, retries: 1 });
+            part.forEach((x, j) => { const v = r.entries?.[`d${j}`]; if (typeof v === "string" && v) { dyn[x] = v; got++; } });
+          } catch { failed = true; }
+          if (lang !== l) return;
+          part.filter((x) => !dyn[x]).forEach((x) => failedSet.add(x));
+        }
+      }));
+    }
+    if (lang === l) saveDyn();
+    if (got) dynListeners.forEach((f) => { try { f(); } catch {} });
+    // lo que no ha salido se vuelve a pedir más tarde (sin bucles: cada vez espera más)
+    if ((failed || failedSet.size) && lang === l && retryN < 6) {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => { failedSet.forEach((x) => queued.add(x)); failedSet.clear(); retryN++; pump(); }, [10, 30, 90, 180, 300, 600][retryN] * 1000);
+    } else if (!failed) retryN = 0;
+  })().finally(() => { dynJob = null; if (queued.size) pump(); });
+  return dynJob;
+}
+const failedSet = new Set();
+/** Pide traducir frases (sin esperar). */
+export function requestTexts(list) {
+  if (lang === "es") return;
+  for (const x of list) if (isText(x) && !dyn[x]) queued.add(x);
+  pump();
+}
+/** Traduce frases sueltas: espera como mucho ms; lo que no llegue a tiempo sigue traduciéndose en segundo plano. */
+export async function translateTexts(list, ms = 15000) {
   if (lang === "es") return list;
-  const miss = [...new Set(list.filter((x) => isText(x) && !dyn[x]))];
-  if (miss.length) {
-    try {
-      const { api } = await import("./api.js"), until = Date.now() + ms;
-      for (let i = 0; i < miss.length && Date.now() < until; i += 60) {
-        const part = Object.fromEntries(miss.slice(i, i + 60).map((x, j) => [`d${j}`, x]));
-        const r = await api("/api/translate", { lang, entries: part }, { timeout: Math.max(3000, until - Date.now()), retries: 0 });
-        for (const [k, x] of Object.entries(part)) if (typeof r.entries?.[k] === "string" && r.entries[k]) dyn[x] = r.entries[k];
-      }
-      saveDyn();
-    } catch {}
-  }
+  requestTexts(list);
+  if (list.some((x) => isText(x) && !dyn[x])) await Promise.race([new Promise((r) => setTimeout(r, ms)), (async () => { while (dynJob) await dynJob; })()]);
   return list.map((x) => dyn[x] || x);
 }
 // Campos de texto libre (del motor, de la IA o del análisis de estilo) que se traducen; los del usuario (notes) no.
@@ -755,22 +791,23 @@ export function localizeNow(obj, skip, named) {
 }
 /** Traduce frases sueltas con lo que hay en la caché (las que falten se quedan igual). */
 export const fromCache = (list) => list.map((x) => (lang !== "es" && dyn[x]) || x);
+/** ¿Ya hay traducción de esta frase? */
+export const hasTranslation = (x) => !isText(x) || !!dyn[x];
 /** Para textos del motor que se calculan al pintar: si ya está traducido sale traducido; si no, se pide y se cambia en pantalla al llegar. */
-const pend = new Set(); let pendTimer = 0;
 export function tx(s) {
   if (lang === "es" || !isText(s)) return s;
   if (dyn[s]) return dyn[s];
-  pend.add(s); clearTimeout(pendTimer);
-  pendTimer = setTimeout(async () => {
-    const list = [...pend]; pend.clear();
-    await translateTexts(list);
-    // cambio en el sitio: sin repintar la pantalla (no salta ni vuelve arriba)
-    const done = list.filter((x) => dyn[x]); if (!done.length) return;
-    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
-    while ((n = w.nextNode())) { let v = n.nodeValue; for (const x of done) if (v.includes(x)) v = v.split(x).join(dyn[x]); if (v !== n.nodeValue) n.nodeValue = v; }
-  }, 300);
+  txWanted.add(s); requestTexts([s]);
   return s;
 }
+// cambio en el sitio cuando llega la traducción: sin repintar la pantalla (no salta ni vuelve arriba)
+const txWanted = new Set();
+onTranslated(() => {
+  const done = [...txWanted].filter((x) => dyn[x]); if (!done.length) return;
+  done.forEach((x) => txWanted.delete(x));
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
+  while ((n = w.nextNode())) { let v = n.nodeValue; for (const x of done) if (v.includes(x)) v = v.split(x).join(dyn[x]); if (v !== n.nodeValue) n.nodeValue = v; }
+});
 export const getLanguage = () => lang;
 /** Formato regional de fechas, horas y números del idioma elegido (y del dictado por voz). */
 export const locale = () => ({ es: "es-ES", ca: "ca-ES", en: "en-GB" }[lang] || "es-ES");

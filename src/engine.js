@@ -26,15 +26,15 @@ const SHOES = new Set(["zapatillas", "zapatos", "mocasines", "botas", "botines",
 const SEASON_OF_MONTH = ["invierno", "invierno", "primavera", "primavera", "primavera", "verano", "verano", "verano", "otono", "otono", "otono", "invierno"];
 
 const PLAN_RULES = [ // palabras del plan → formalidad buscada y matiz
-  [/gym|gimnasio|deporte|correr|entren|padel|pádel|fútbol|futbol|bici/i, 1, "deporte"],
-  [/casa|sof[aá]|relax|descans|recados|compra(r|s)? del super/i, 1.8, "relax"],
-  [/boda|gala|evento|entrevista|graduaci|ceremonia|comuni[oó]n|bautizo/i, 4.5, "evento"],
-  [/trabaj|oficina|reuni[oó]n|geieg|pr[aá]cticas|cliente/i, 3.2, "trabajo"],
-  [/cita|cena|restaurante|teatro|concierto|aniversario/i, 3.5, "cita"],
-  [/fiesta|discoteca|salir|noche|copas|bar\b|club/i, 3.3, "noche"],
-  [/clase|uni|universidad|facultad|estudi|biblioteca|examen|laboratorio/i, 2.5, "clase"],
-  [/viaje|aeropuerto|avi[oó]n|tren|coche/i, 2.2, "viaje"],
-  [/paseo|amigos|caf[eé]|tarde|centro|museo|cine/i, 2.6, "paseo"],
+  [/gym|gimnasio|deporte|esport|sport|correr|c[oó]rrer|running|entren|training|workout|padel|pádel|fútbol|futbol|bici/i, 1, "deporte"],
+  [/casa|home|sof[aá]|relax|descans|recados|enc[aà]rrecs|errands|compra(r|s)? del super/i, 1.8, "relax"],
+  [/boda|casament|wedding|gala|evento|esdeveniment|event|entrevista|interview|graduaci|ceremonia|cerim[oò]nia|ceremony|comuni[oó]n|bautizo|bateig|christening/i, 4.5, "evento"],
+  [/trabaj|treball|work|oficina|office|reuni[oó]n?|meeting|geieg|pr[aá]cti(cas|ques)|internship|client/i, 3.2, "trabajo"],
+  [/cita|date|cena|sopar|dinner|restaurant|teatr|theat|concier|concert|aniversari|anniversary/i, 3.5, "cita"],
+  [/fiesta|festa|party|discoteca|salir|sortir|going out|noche|nit\b|night|copas|copes|drinks|bar\b|club/i, 3.3, "noche"],
+  [/clase|classe|class|uni|universi|facultad|facultat|estudi|study|biblioteca|library|examen|exam|laboratori|\blab\b/i, 2.5, "clase"],
+  [/viaje|viatge|trip|travel|aeropuerto|aeroport|airport|avi[oó]n?|plane|flight|tren|train|coche|cotxe|\bcar\b/i, 2.2, "viaje"],
+  [/paseo|passeig|walk|amigos|amics|friends|caf[eéè]|coffee|tarde|tarda|afternoon|centro|centre|downtown|museo|museu|museum|cine|cinema|movies/i, 2.6, "paseo"],
 ];
 
 /* ---------- utilidades ---------- */
@@ -72,6 +72,13 @@ function colorPair(a, b) {
   if (dh > 150 && Math.min(x.s, y.s) < 0.35) return 0.3; // complementarios apagados
   return -1.5; // dos colores fuertes distintos
 }
+
+/* ---------- en otro idioma: el motor trabaja con lo guardado ----------
+   En catalán o inglés las prendas llegan con el nombre traducido para enseñarlo (data.js: name traducido, nameOrig el
+   guardado) y el estilo traducido (con .raw = el guardado). Las reglas del motor buscan palabras en castellano, así que
+   usa siempre lo original. */
+const orig = (list) => (list || []).map((i) => (i?.nameOrig ? { ...i, name: i.nameOrig } : i));
+const rawStyle = (st) => st?.raw || st;
 
 /* ---------- contexto: tiempo, plan, estilo ---------- */
 function contextFrom({ weather, plan, style, date = new Date() }) {
@@ -173,6 +180,7 @@ function harmony(items) {
  * Devuelve {outfits:[{title,itemIds,why,how[],tucked[],repeats[]}], missing, engine:true}
  */
 export function suggestOutfits({ items, weather, plan, style, wear = [], feedback = [], exclude = [], count = 4, date = new Date(), must = null }) {
+  items = orig(items); style = rawStyle(style);
   const ctx = contextFrom({ weather, plan, style, date });
   const today = date.toISOString().slice(0, 10);
   const recentDays = new Map();
@@ -409,6 +417,7 @@ function nearestMix(c, ctx) {
 
 /* ---------- maleta ---------- */
 export function packTrip({ items, weather, plan, style, days }) {
+  items = orig(items); style = rawStyle(style);
   const out = [], pack = new Set();
   const wdays = weather?.days?.length ? weather.days : Array.from({ length: days }, () => null);
   for (let d = 0; d < days; d++) {
@@ -448,6 +457,7 @@ const ESSENTIALS = [ // [tipo, colores aceptados, prenda, por qué, precio min-m
 const GROUP_OF = { camiseta: ["camiseta", "camiseta-ml", "polo"], camisa: ["camisa", "camisa-mc"], jersey: ["jersey", "cardigan", "chaleco-punto"], chino: ["chino", "pantalon"], vaquero: ["vaquero"], zapatillas: ["zapatillas"], mocasines: ["mocasines", "zapatos"], cazadora: ["cazadora", "chaqueta", "sobrecamisa", "gabardina"], abrigo: ["abrigo", "plumifero", "parka", "gabardina"], cinturon: ["cinturon"] };
 
 export function findGaps({ items, style }) {
+  items = orig(items); style = rawStyle(style);
   const has = (type, colors) => items.some((it) => (GROUP_OF[type] || [type]).includes(it.type) && (!colors || (it.colors || []).some((c) => colors.includes(c.k))));
   const pairsFor = (type) => {
     const f = FORMALITY[type] || 2.5, layer = TYPE[type]?.g;
@@ -496,6 +506,7 @@ function priceFor(type) {
 
 /* ---------- encaje armario ↔ estilo ---------- */
 export function matchStyle({ items, style }) {
+  items = orig(items); style = rawStyle(style);
   const ctx = contextFrom({ weather: null, plan: "", style });
   const scored = items.map((it) => ({ id: it.id, s: styleBonus(it, ctx) }));
   const fits = scored.filter((x) => x.s >= 0.9).sort((a, b) => b.s - a.s).map((x) => x.id);
@@ -523,6 +534,7 @@ function sheerOf(it) {
  * palabra de honor / espalda al aire → sin tirantes; con poca tela o deporte → el que toca. Devuelve {id, why, warn}.
  */
 export function pickUnder(items, all) {
+  items = orig(items); all = orig(all);
   const bras = all.filter((i) => BRA_TYPES_E.has(i.type) && (i.status || "disponible") === "disponible");
   // la prenda que va pegada al cuerpo: vestido/mono, si no la de arriba de base, si no el jersey
   const base = items.find((i) => i.type === "vestido" || i.type === "mono") || items.find((i) => BASE_TOP.has(i.type)) || items.find((i) => MID.has(i.type));
@@ -574,6 +586,7 @@ const sockLen = (s) => s.sockLength || (/invisible|pinkie|no.?show/i.test(s.name
  * Devuelve {id, why, warn} o null si el conjunto no tiene calzado.
  */
 export function pickSocks(items, all, { temp = null } = {}) {
+  items = orig(items); all = orig(all);
   const shoe = items.find(isKind(SHOES)); if (!shoe) return null;
   if (shoe.type === "sandalias") return { id: null, suggest: "Sin calcetines", why: "Con sandalias, mejor el pie al aire", warn: "" };
   const bottom = items.find(isKind(BOTTOM)) || items.find((i) => i.type === "vestido" || i.type === "mono");
