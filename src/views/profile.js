@@ -1,5 +1,6 @@
 // Perfil y bienvenida: cuerpo (maniquí con tus proporciones), tallas, ubicaciones, idioma y cuenta.
 // Las mismas piezas sirven para la bienvenida (primer uso) y para la pestaña Perfil.
+import { getTheme, applyTheme } from "../theme.js";
 import { t, LANGUAGES, getLanguage, ensureLanguage, languageReady } from "../i18n.js";
 import { SIZE_KEYS, TYPE, label } from "../catalog.js";
 import { $, $$, esc, icon, toast, say, isNative } from "../ui.js";
@@ -124,6 +125,9 @@ export function renderProfile(view) {
       <section class="card" data-pt="me"><h2 class="display">${t("profile.section")}</h2>
         <div class="seg" id="section">${["hombre", "mujer"].map((k) => `<button type="button" data-sec="${k}" aria-pressed="${(store.profile?.section || "hombre") === k}">${t("section." + k)}</button>`).join("")}</div>
         <p class="muted small" style="margin:0">${t("profile.sectionHint")}</p></section>
+      <section class="card" data-pt="me"><h2 class="display">${t("theme.title")}</h2>
+        <div class="seg" id="themes">${["system", "light", "dark"].map((k) => `<button type="button" data-theme-opt="${k}" aria-pressed="${getTheme() === k}">${t("theme." + k)}</button>`).join("")}</div>
+        <p class="muted small" style="margin:0">${t("theme.hint")}</p></section>
       <section class="card" data-pt="me"><h2 class="display">${t("profile.language")}</h2>
         <div class="seg" id="langs">${LANGUAGES.map((l) => `<button type="button" data-lang="${l.k}" aria-pressed="${l.k === getLanguage()}">${l.label}</button>`).join("")}</div>
         <p class="status" id="langSt" aria-live="polite"></p>
@@ -189,6 +193,12 @@ export function renderProfile(view) {
   };
   $("#copy", view).onclick = async () => { try { await navigator.clipboard.writeText(user.uid); toast(t("profile.copied")); } catch {} };
   $("#out", view).onclick = () => logOut();
+  $("#themes", view).onclick = (e) => {
+    const b = e.target.closest("[data-theme-opt]"); if (!b) return;
+    const mode = b.dataset.themeOpt;
+    $("#themes", view).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    applyTheme(mode); store.profile.theme = mode; change({ theme: mode });
+  };
   $("#langs", view).onclick = async (e) => {
     const b = e.target.closest("[data-lang]"); if (!b || b.dataset.lang === getLanguage()) return;
     const l = b.dataset.lang, st = $("#langSt", view);

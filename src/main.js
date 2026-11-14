@@ -1,4 +1,5 @@
 // Arranque: acceso, bienvenida, navegación entre secciones y botón atrás de Android.
+import { applyTheme, getTheme } from "./theme.js";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/bricolage-grotesque";
 import "./styles.css";
@@ -312,6 +313,10 @@ function toastOffline() { import("./ui.js").then((m) => m.toast(t("offline.toast
 
 /* ---------- actualizaciones ---------- */
 startUpdater();
+// aspecto: al cambiarlo se repinta la pantalla (los tonos de fondo de las prendas se calculan para claro u oscuro)
+applyTheme(getTheme());
+addEventListener("themechange", () => { if (store.ready.profile && store.profile?.onboarded) { destroyPeeks(); route(); } });
+
 // outfit listo al despertar (morning.js): se prepara al abrir la app (cuando ya están los datos) y al dejarla;
 // a la vez se miran los precios de la lista de deseos (pricewatch.js, como mucho cada 12 h por prenda)
 import("./morning.js").then((m) => {

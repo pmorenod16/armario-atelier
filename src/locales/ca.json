@@ -1125,5 +1125,10 @@
 "season.head.entre": "Entretemps",
 "season.partStore.calor": "guarda {a} peces d'hivern",
 "season.partStore.frio": "guarda {a} peces d'estiu",
-"season.partOut": "treu-ne {b} que tenies guardades"
+"season.partOut": "treu-ne {b} que tenies guardades",
+"theme.title": "Aspecte",
+"theme.system": "Com el telèfon",
+"theme.light": "Clar",
+"theme.dark": "Fosc",
+"theme.hint": "«Com el telèfon» canvia sol quan el teu mòbil o ordinador passa a mode fosc."
 }

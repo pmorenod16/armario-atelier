@@ -1125,5 +1125,10 @@
 "season.head.entre": "Between seasons",
 "season.partStore.calor": "store {a} winter items",
 "season.partStore.frio": "store {a} summer items",
-"season.partOut": "take out {b} you had stored"
+"season.partOut": "take out {b} you had stored",
+"theme.title": "Appearance",
+"theme.system": "Like my phone",
+"theme.light": "Light",
+"theme.dark": "Dark",
+"theme.hint": "«Like my phone» switches by itself when your phone or computer goes into dark mode."
 }

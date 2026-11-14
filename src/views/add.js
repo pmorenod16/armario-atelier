@@ -1,6 +1,7 @@
 // Añadir una prenda: foto → recorte en el móvil + lectura con IA a la vez → foto de etiqueta (opcional) → revisar y guardar.
 // Editar usa el mismo formulario.
 import { t } from "../i18n.js";
+import { isDark } from "../theme.js";
 import { $, esc, icon, openSheet, pickPhoto, isCancel, dropZone, toast, say, soften, isNative, tempHalo } from "../ui.js";
 import { shrinkPhoto, makeCutout, clearLenses } from "../cutout.js";
 import { api, blobToBase64 } from "../api.js";
@@ -10,7 +11,7 @@ import { base64ToBlob } from "../api.js";
 import { searchWithLens } from "../lens.js";
 import { TYPE, COLOR, label } from "../catalog.js";
 
-const tintFor = (hex) => soften(hex, matchMedia("(prefers-color-scheme: dark)").matches ? 0.72 : 0.8, matchMedia("(prefers-color-scheme: dark)").matches ? 20 : 255);
+const tintFor = (hex) => soften(hex, isDark() ? 0.72 : 0.8, isDark() ? 20 : 255);
 
 async function choosePhoto() {
   try { return await pickPhoto(); }

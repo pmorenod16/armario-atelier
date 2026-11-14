@@ -11,6 +11,10 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <script>
+    // Aspecto elegido en Perfil (theme.js): se aplica antes de pintar para que no parpadee al abrir
+    try { var th = localStorage.getItem("theme"); if (th === "light" || th === "dark") document.documentElement.dataset.theme = th; } catch (e) {}
+  </script>
+  <script>
     // Arranque a prueba de cachés: si el móvil guardó una página vieja que apunta a archivos que ya no existen
     // (cada versión nueva los cambia), la app no cargaba y se quedaba en el logo. Si un archivo falla o la app no
     // arranca en 12 s, se recarga una vez saltándose la caché.

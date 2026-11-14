@@ -1,4 +1,5 @@
 // Datos del usuario en Firestore: prendas, imágenes y perfil. Todo bajo users/{uid}.
+import { getTheme, applyTheme } from "./theme.js";
 import {
   fs, itemsRef, metaDoc, imageDoc, newItemId, doc, setDoc, getDoc, getDocs, onSnapshot, writeBatch, updateDoc, increment, userCol, deleteDoc,
 } from "./firebase.js";
@@ -82,6 +83,8 @@ export function startData() {
     setCatalogSection(apiDefaults.section);
     apiDefaults.lang = ["ca", "en"].includes(store.profile.language) ? store.profile.language : "es";
     if (apiDefaults.lang !== getLanguage()) { setLanguage(apiDefaults.lang); relocalize(); }
+    // aspecto elegido en otro dispositivo (Perfil → Aspecto)
+    if (store.profile.theme && store.profile.theme !== getTheme()) applyTheme(store.profile.theme);
     store.ready.profile = true; emit();
   }, (e) => { console.error(e); store.profile = { ...DEFAULT_PROFILE }; store.ready.profile = true; emit(); }));
   const list = (name, key, sort, translate) => unsubs.push(onSnapshot(userCol(name), (snap) => {
