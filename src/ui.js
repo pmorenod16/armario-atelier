@@ -166,14 +166,36 @@ function glowOf(colors) {
 // Los colores del halo van en el propio .halo (cambiarlos en :root obligaba a recalcular toda la página en cada ficha
 // abierta o cerrada: tirón en el móvil). El color secundario (--glow) sí va en :root, y solo si cambia de verdad.
 let lastGlow = "";
+/* Cambio de color del halo SIN animar los colores (14/11/2026, «la web va a trompicones»): animar --halo-a/--halo-b
+   repintaba el fondo entero en cada fotograma durante 1,1 s (en el ordenador, a pantalla grande, 50-100 ms por fotograma al
+   cambiar de sección o pasar el ratón por el armario). Ahora se pone encima una capa nueva con los colores nuevos y se funde
+   con opacidad (lo hace la tarjeta gráfica, sin repintar); al acabar se quita la vieja. Como mucho dos capas a la vez: si
+   llega otro color mientras se funde, se aplica el último al terminar. */
+let haloFading = false, haloNext = null;
+function haloColors(a, b) {
+  const cur = document.querySelector(".halo:not(.out)"); if (!cur) return;
+  const want = a ? [a, b || a] : ["", ""];
+  const same = (el) => el.style.getPropertyValue("--halo-a") === want[0] && el.style.getPropertyValue("--halo-b") === want[1];
+  const put = (el) => { if (want[0]) { el.style.setProperty("--halo-a", want[0]); el.style.setProperty("--halo-b", want[1]); } else { el.style.removeProperty("--halo-a"); el.style.removeProperty("--halo-b"); } };
+  if (haloFading) { haloNext = [a, b]; return; }
+  if (same(cur)) return;
+  if (reduceMotion() || document.hidden) { put(cur); return; }
+  haloFading = true;
+  const nx = cur.cloneNode(false); put(nx); nx.style.opacity = "0"; nx.style.transform = cur.style.transform;
+  cur.classList.add("out"); cur.after(nx);
+  requestAnimationFrame(() => requestAnimationFrame(() => { nx.style.opacity = ""; }));
+  setTimeout(() => {
+    cur.remove(); haloFading = false;
+    if (haloNext) { const [x, y] = haloNext; haloNext = null; haloColors(x, y); }
+  }, 750);
+}
 function paint(a, b) {
-  const st = document.documentElement.style, hs = document.querySelector(".halo")?.style;
+  const st = document.documentElement.style;
+  haloColors(a, b);
   if (!a) {
-    hs?.removeProperty("--halo-a"); hs?.removeProperty("--halo-b");
     if (lastGlow) { st.removeProperty("--glow-l"); st.removeProperty("--glow-d"); lastGlow = ""; }
     return;
   }
-  hs?.setProperty("--halo-a", a); hs?.setProperty("--halo-b", b || a);
   const g = glowOf([a, b]), key = g ? g.light + g.dark : "";
   if (g && key !== lastGlow) { lastGlow = key; st.setProperty("--glow-l", g.light); st.setProperty("--glow-d", g.dark); }
 }
@@ -184,9 +206,8 @@ export function setHalo(a, b) { if (window.__peek) { window.__peekHalo = [a, b];
 let tempOn = false;
 export function tempHalo(a, b) {
   tempOn = !!a;
-  const hs = document.querySelector(".halo")?.style; if (!hs) return;
   const [x, y] = a ? [a, b || a] : shown;
-  if (x) { hs.setProperty("--halo-a", x); hs.setProperty("--halo-b", y || x); } else { hs.removeProperty("--halo-a"); hs.removeProperty("--halo-b"); }
+  haloColors(x || null, y || x);
 }
 /** Colores de fondo cuando la pantalla no enseña nada concreto (la paleta de tu estilo). */
 /** Halo pedido desde una pantalla: si esa pantalla es la vecina pintada de antemano para deslizar (.view.peek) o ya no está,

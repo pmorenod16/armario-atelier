@@ -3,7 +3,7 @@ import { t } from "../i18n.js";
 import {
   GROUPS, TYPE, COLORS, COLOR, PATTERNS, MATERIALS, FITS, SEASONS, STATUSES, label, groupOf, TYPES,
 } from "../catalog.js";
-import { $, $$, esc, icon, openSheet, tilt, setHalo, viewHalo } from "../ui.js";
+import { $, $$, esc, icon, openSheet, tilt, tempHalo, viewHalo } from "../ui.js";
 import { store, subscribe } from "../data.js";
 import { openItem } from "./item.js";
 import { openAdd, tintFor } from "./add.js";
@@ -67,7 +67,10 @@ export function renderCloset(view) {
     if (e.target.closest("#clearF")) { clearFilters(); draw(); }
   };
   // el halo sigue al ratón solo en el ordenador (en el móvil, al deslizar, repintaba la pantalla a cada toque)
-  grid.addEventListener("pointerover", (e) => { if (e.pointerType !== "mouse") return; const tl = e.target.closest(".tile"); if (tl) setHalo(tl.dataset.tone); });
+  // con el ratón, el fondo toma el color de la prenda que señalas: solo el fondo (tempHalo), sin cambiar el color
+  // secundario de toda la app (--glow en :root recalculaba la página entera en cada prenda: tareas de 50-80 ms)
+  grid.addEventListener("pointerover", (e) => { if (e.pointerType !== "mouse") return; const tl = e.target.closest(".tile"); if (tl?.dataset.tone) tempHalo(tl.dataset.tone); });
+  grid.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") tempHalo(null); });
   let tops = null, lastKey = "";
   grid.addEventListener("pointerleave", () => viewHalo(view, ...(tops || [null])));
   tilt(grid, ".tile");
